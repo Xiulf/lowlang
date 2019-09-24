@@ -1,0 +1,11 @@
+[package]
+name = "diagnostics"
+version = "0.1.0"
+authors = ["Cyberduc-k <tttymo@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+fluix-encode = { git = "https://github.com/Cyberduc-k/fluix.git", branch = "yet-another-rewrite" }
+colored = "*"
+diagnostics-derive = { path = "./diagnostics-derive" }
+path-absolutize = "*"

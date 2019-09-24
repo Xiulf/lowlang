@@ -1,0 +1,9 @@
+[package]
+name = "parser"
+version = "0.1.0"
+authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+diagnostics = { path = "../../diagnostics" }
+fluix-encode = { git = "https://github.com/Cyberduc-k/fluix.git", branch = "yet-another-rewrite" }
