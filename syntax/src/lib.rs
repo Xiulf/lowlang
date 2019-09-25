@@ -12,9 +12,9 @@ pub struct Program {
 #[derive(Encodable, Decodable, Debug, Clone)]
 pub struct Function {
     pub name: Ident,
-    pub params: Vec<(Ident, Type)>,
+    pub params: Vec<(LocalId, Type)>,
     pub ret: Type,
-    pub bindings: Vec<(Ident, Type)>,
+    pub bindings: Vec<(LocalId, Type)>,
     pub blocks: Vec<BasicBlock>,
 }
 

@@ -40,31 +40,122 @@ token![punct "->" Arrow/2];
 
 impl Parse for Program {
     fn parse(input: ParseStream) -> Result<Self> {
+        let mut fns = Vec::new();
         
+        while !input.is_empty() {
+            fns.push(input.parse()?);
+        }
+        
+        Ok(Program {
+            fns,
+        })
     }
 }
 
 impl Parse for Function {
     fn parse(input: ParseStream) -> Result<Self> {
+        input.parse::<Fn>()?;
         
+        let name = input.parse()?;
+        
+        input.parse::<LParen>()?;
+        
+        let mut params = Vec::new();
+        
+        while !input.is_empty() && !input.peek::<RParen>() {
+            let name = input.parse()?;
+            
+            input.parse::<Colon>()?;
+            
+            let ty = input.parse()?;
+            
+            params.push((name, ty));
+            
+            if !input.peek::<RParen>() {
+                input.parse::<Comma>()?;
+            }
+        }
+        
+        input.parse::<RParen>()?;
+        input.parse::<Arrow>()?;
+        
+        let ret = input.parse()?;
+        
+        input.parse::<LBrace>()?;
+        
+        let mut bindings = Vec::new();
+        let mut blocks = Vec::new();
+        
+        while !input.is_empty() && input.peek::<Let>() {
+            input.parse::<Let>()?;
+            
+            let name = input.parse()?;
+            
+            input.parse::<Colon>()?;
+            
+            let ty = input.parse()?;
+            
+            bindings.push((name, ty));
+        }
+        
+        while !input.is_empty() && input.peek::<Pct>() {
+            blocks.push(input.parse()?);
+        }
+        
+        input.parse::<RBrace>()?;
+        
+        Ok(Function {
+            name,
+            params,
+            ret,
+            bindings,
+            blocks,
+        })
     }
 }
 
 impl Parse for BlockId {
     fn parse(input: ParseStream) -> Result<Self> {
+        input.parse::<Pct>()?;
         
+        let lit = input.parse::<IntLiteral>()?;
+        
+        Ok(BlockId(lit.int as usize))
     }
 }
 
 impl Parse for LocalId {
     fn parse(input: ParseStream) -> Result<Self> {
+        input.parse::<Pound>()?;
         
+        let lit = input.parse::<IntLiteral>()?;
+        
+        Ok(LocalId(lit.int as usize))
     }
 }
 
 impl Parse for BasicBlock {
     fn parse(input: ParseStream) -> Result<Self> {
+        let id = input.parse()?;
         
+        input.parse::<Colon>()?;
+        input.parse::<LBrace>()?;
+        
+        let mut statements = Vec::new();
+        
+        while let Ok(statement) = input.parse() {
+            statements.push(statement);
+        }
+        
+        let terminator = input.parse()?;
+        
+        input.parse::<RBrace>()?;
+        
+        Ok(BasicBlock {
+            id,
+            statements,
+            terminator,
+        })
     }
 }
 
