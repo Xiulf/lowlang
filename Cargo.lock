@@ -85,7 +85,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "lowlang"
 version = "0.1.0"
 dependencies = [
+ "diagnostics 0.1.0",
  "syntax 0.1.0",
+ "vm 0.1.0",
 ]
 
 [[package]]
@@ -210,6 +212,13 @@ dependencies = [
 name = "unicode-xid"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "vm"
+version = "0.1.0"
+dependencies = [
+ "syntax 0.1.0",
+]
 
 [[package]]
 name = "winapi"

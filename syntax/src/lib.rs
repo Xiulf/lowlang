@@ -1,6 +1,7 @@
 mod parsing;
 
 pub use parser::ident::Ident;
+pub use parser::parse;
 use fluix_encode::{Encodable, Decodable};
 use std::fmt;
 
@@ -18,11 +19,11 @@ pub struct Function {
     pub blocks: Vec<BasicBlock>,
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub struct BlockId(usize);
+#[derive(Encodable, Decodable, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BlockId(pub usize);
 
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub struct LocalId(usize);
+#[derive(Encodable, Decodable, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LocalId(pub usize);
 
 #[derive(Encodable, Decodable, Debug, Clone)]
 pub struct BasicBlock {
@@ -98,7 +99,7 @@ pub enum BinOp {
     Ne,
     BitAnd,
     BitOr,
-    BitXOr,
+    BitXor,
     Shl,
     Shr,
 }
@@ -145,6 +146,26 @@ pub enum FloatTy {
     F32, F64,
 }
 
+impl Type {
+    pub fn size(&self) -> usize {
+        match self {
+            Type::Unit => 0,
+            Type::Tuple(t) => t.iter().fold(0, |acc, t| acc + t.size()),
+            Type::Int(IntTy::I8) => 1,
+            Type::Int(IntTy::I16) => 2,
+            Type::Int(IntTy::I32) => 4,
+            Type::Int(IntTy::I64) => 8,
+            Type::UInt(UIntTy::U8) => 1,
+            Type::UInt(UIntTy::U16) => 2,
+            Type::UInt(UIntTy::U32) => 4,
+            Type::UInt(UIntTy::U64) => 8,
+            Type::Float(FloatTy::F32) => 1,
+            Type::Float(FloatTy::F64) => 1,
+            Type::Bool => 1,
+        }
+    }
+}
+
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for i in 0..self.fns.len() {
@@ -166,7 +187,7 @@ impl fmt::Display for Function {
         writeln!(f, "fn {}({}) -> {} {{", self.name, params, self.ret)?;
         
         for binding in &self.bindings {
-            writeln!(f, "let {}: {};", binding.0, binding.1)?;
+            writeln!(f, "    let {}: {};", binding.0, binding.1)?;
         }
         
         writeln!(f)?;
@@ -175,8 +196,12 @@ impl fmt::Display for Function {
             s.lines().map(|l| format!("    {}", l)).collect::<Vec<_>>().join("\n")
         }
         
-        for block in &self.blocks {
-            writeln!(f, "{}", indent(block.to_string()))?;
+        for i in 0..self.blocks.len() {
+            if i != self.blocks.len() - 1 {
+                writeln!(f, "{}\n", indent(self.blocks[i].to_string()))?;
+            } else {
+                writeln!(f, "{}", indent(self.blocks[i].to_string()))?;
+            }
         }
         
         write!(f, "}}")
@@ -203,7 +228,7 @@ impl fmt::Display for BasicBlock {
             writeln!(f, "    {}", stmt)?;
         }
         
-        writeln!(f, "{}", self.terminator)?;
+        writeln!(f, "    {}", self.terminator)?;
         write!(f, "}}")
     }
 }
@@ -212,8 +237,8 @@ impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Statement::Assign(l, r) => write!(f, "{} = {};", l, r),
-            Statement::StorageLive(l) => writeln!(f, "StorageLive({})", l),
-            Statement::StorageDead(l) => writeln!(f, "StorageDead({})", l),
+            Statement::StorageLive(l) => write!(f, "StorageLive({});", l),
+            Statement::StorageDead(l) => write!(f, "StorageDead({});", l),
         }
     }
 }
@@ -221,12 +246,14 @@ impl fmt::Display for Statement {
 impl fmt::Display for Terminator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Terminator::Goto(i) => write!(f, "goto {}", i),
+            Terminator::Goto(i) => write!(f, "goto({})", i),
             Terminator::Return => write!(f, "return"),
             Terminator::Resume => write!(f, "resume"),
             Terminator::Abort => write!(f, "abort"),
             Terminator::Unreachable => write!(f, "unreachable"),
             Terminator::Call(func, args, a, b) => {
+                write!(f, "call(")?;
+                
                 if let Some((dest, _)) = a {
                     write!(f, "{} = ", dest)?;
                 }
@@ -236,24 +263,22 @@ impl fmt::Display for Terminator {
                 write!(f, "{}({})", func, args)?;
                 
                 if let Some((_, next)) = a {
-                    if let Some(fail) = b {
-                        write!(f, " -> [return {}, unwind {}]", next, fail)
-                    } else {
-                        write!(f, " -> return {}", next)
-                    }
-                } else if let Some(fail) = b {
-                    write!(f, " -> unwind {}", fail)
-                } else {
-                    Ok(())
+                    write!(f, ", goto {}", next)?;
                 }
+                
+                if let Some(fail) = b {
+                    write!(f, ", unwind {}", fail)?;
+                }
+                
+                write!(f, ")")
             },
             Terminator::Assert(cond, expected, next, fail) => {
-                write!(f, "assert({}{})", if *expected { "" } else { "!" }, cond)?;
+                write!(f, "assert({}{}, goto {}", if *expected { "" } else { "!" }, cond, next)?;
                 
                 if let Some(fail) = fail {
-                    write!(f, " -> [success {}, unwind {}]", next, fail)
+                    write!(f, ", unwind {})", fail)
                 } else {
-                    write!(f, " -> {}", next)
+                    write!(f, ")")
                 }
             },
         }
@@ -263,8 +288,8 @@ impl fmt::Display for Terminator {
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Operand::Move(p) => write!(f, "move({})", p),
-            Operand::Copy(p) => write!(f, "copy({})", p),
+            Operand::Move(p) => write!(f, "move {}", p),
+            Operand::Copy(p) => write!(f, "copy {}", p),
             Operand::Constant(c) => write!(f, "const {}", c),
         }
     }
@@ -284,7 +309,7 @@ impl fmt::Display for Place {
         for elem in self.projection.iter() {
             match elem {
                 PlaceElem::Deref => write!(f, ")")?,
-                PlaceElem::Field(i) => write!(f, ".{})", i)?,
+                PlaceElem::Field(i) => write!(f, ">{})", i)?,
             }
         }
         
@@ -305,23 +330,14 @@ impl fmt::Display for RValue {
         match self {
             RValue::Use(v) => v.fmt(f),
             RValue::Ref(v) => write!(f, "&{}", v),
-            RValue::Box(t) => write!(f, "box({})", t),
+            RValue::Box(t) => write!(f, "box {}", t),
             RValue::Binary(o, l, r) => write!(f, "{:?}({}, {})", o, l, r),
-            RValue::Unary(o, v) => write!(f, "{}{}", o, v),
+            RValue::Unary(o, v) => write!(f, "{:?}({})", o, v),
             RValue::Tuple(t) => {
                 let t = t.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
                 
                 write!(f, "({})", t)
             }
-        }
-    }
-}
-
-impl fmt::Display for UnOp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            UnOp::Not => write!(f, "!"),
-            UnOp::Neg => write!(f, "-"),
         }
     }
 }
@@ -334,7 +350,7 @@ impl fmt::Display for Constant {
             Constant::Float(i, t) => write!(f, "{}{}", i, t),
             Constant::Bool(b) => b.fmt(f),
             Constant::Bytes(b) => write!(f, "{}", std::str::from_utf8(b).unwrap()),
-            Constant::Item(i) => write!(f, "#{}", i),
+            Constant::Item(i) => i.fmt(f),
             Constant::Tuple(t) => {
                 let t = t.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
                 
