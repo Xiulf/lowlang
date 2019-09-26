@@ -165,9 +165,8 @@ impl VM {
                 },
                 Terminator::Assert(op, expected, success, fail) => {
                     let op = self.operand(op);
-                    let val = self.memory.read_u8(op.0 as usize);
                     
-                    if (val != 0) == expected {
+                    if (op.0 != 0) == expected {
                         self.frame_mut().block = success;
                     } else {
                         if let Some(fail) = fail {
@@ -200,10 +199,8 @@ impl VM {
         match v {
             RValue::Use(op) => self.operand(op).0,
             RValue::Binary(op, lhs, rhs) => {
-                let lhs = self.operand(lhs);
-                let rhs = self.operand(rhs);
-                let lhs = self.memory.read(lhs.0 as usize, lhs.1);
-                let rhs = self.memory.read(rhs.0 as usize, rhs.1);
+                let lhs = self.operand(lhs).0;
+                let rhs = self.operand(rhs).0;
                 
                 match op {
                     BinOp::Add => lhs + rhs,
@@ -224,6 +221,11 @@ impl VM {
                     BinOp::Shr => lhs >> rhs,
                 }
             },
+            RValue::Ref(p) => {
+                let p = self.place(p);
+                
+                p.0 as u64
+            },
             _ => unimplemented!()
         }
     }
@@ -231,7 +233,11 @@ impl VM {
     fn operand(&mut self, o: Operand) -> (u64, usize) {
         match o {
             Operand::Constant(c) => self.constant(c),
-            Operand::Copy(p) => { let p = self.place(p); (p.0 as u64, p.1) },
+            Operand::Copy(p) => {
+                let p = self.place(p);
+                
+                (self.memory.read(p.0, p.1), p.1)
+            },
             Operand::Move(p) => unimplemented!()
         }
     }
