@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct VM {
-    memory: memory::Memory,
+    pub memory: memory::Memory,
     frames: Vec<StackFrame>,
     fns: HashMap<String, Function>,
 }
@@ -82,10 +82,18 @@ impl VM {
                 Terminator::Return => return Some(loc),
                 Terminator::Unreachable => unreachable!(),
                 Terminator::Goto(id) => self.frame_mut().block = id,
-                Terminator::Abort => return None,
-                Terminator::Call(f, args, Some((place, next)), Some(fail)) => {
+                Terminator::Abort => {
+                    // StorageDead($0)
+                    self.drop(self.frame().sizes[&f.bindings[0].0]);
+                    
+                    return None;
+                },
+                Terminator::Resume => {
+                    
+                },
+                Terminator::Call(f, args, goto, fail) => {
                     let f = self.operand(f);
-                    let f = self.fns.iter().nth(f as usize).unwrap().1.clone();
+                    let f = self.fns.iter().nth(f.0 as usize).unwrap().1.clone();
                     let mut frame = StackFrame {
                         locals: HashMap::new(),
                         sizes: f.bindings.iter().map(|b| (b.0, b.1.size())).collect(),
@@ -100,7 +108,7 @@ impl VM {
                         frame.locals.insert(*id, loc);
                         self.init(size);
                         
-                        let val = self.operand(arg.clone());
+                        let val = self.operand(arg.clone()).0;
                         let bytes = val.to_le_bytes();
                         
                         for i in 0..size { self.memory.stack[loc + i] = bytes[i]; }
@@ -112,126 +120,63 @@ impl VM {
                     
                     self.frames.pop().unwrap();
                     
-                    if let Some(val) = val {
-                        let (loc, size) = self.place(place);
-                        let bytes = val.to_le_bytes();
-                        
-                        for i in 0..size { self.memory.stack[loc + i] = bytes[i]; } 
-                        
-                        self.frame_mut().block = next;
+                    match (goto, fail) {
+                        (Some((place, next)), Some(fail)) => {
+                            if let Some(val) = val {
+                                let (loc, size) = self.place(place);
+                                let bytes = val.to_le_bytes();
+                                
+                                for i in 0..size { self.memory.stack[loc + i] = bytes[i]; } 
+                                
+                                self.drop(size);
+                                self.frame_mut().block = next;
+                            } else {
+                                self.frame_mut().block = fail;
+                            }
+                        },
+                        (Some((place, next)), None) => {
+                            if let Some(val) = val {
+                                let (loc, size) = self.place(place);
+                                let bytes = val.to_le_bytes();
+                                
+                                for i in 0..size { self.memory.stack[loc + i] = bytes[i]; } 
+                                
+                                self.drop(size);
+                                self.frame_mut().block = next;
+                            } else {
+                                return None;
+                            }
+                        },
+                        (None, Some(fail)) => {
+                            if let None = val {
+                                self.frame_mut().block = fail;
+                            } else {
+                                return Some(loc);
+                            }
+                        },
+                        (None, None) => {
+                            if let None = val {
+                                return None;
+                            } else {
+                                return Some(loc);
+                            }
+                        }
+                    }
+                },
+                Terminator::Assert(op, expected, success, fail) => {
+                    let op = self.operand(op);
+                    let val = self.memory.read_u8(op.0 as usize);
+                    
+                    if (val != 0) == expected {
+                        self.frame_mut().block = success;
                     } else {
-                        self.frame_mut().block = fail;
+                        if let Some(fail) = fail {
+                            self.frame_mut().block = fail;
+                        } else {
+                            return None;
+                        }
                     }
-                },
-                Terminator::Call(f, args, Some((place, next)), None) => {
-                    let f = self.operand(f);
-                    let f = self.fns.iter().nth(f as usize).unwrap().1.clone();
-                    let mut frame = StackFrame {
-                        locals: HashMap::new(),
-                        sizes: f.bindings.iter().map(|b| (b.0, b.1.size())).collect(),
-                        block: BlockId(0),
-                    };
-                    
-                    // init params
-                    for ((id, ty), arg) in f.params.iter().zip(args.iter()) {
-                        let size = ty.size();
-                        let loc = self.memory.stack.len();
-                        
-                        frame.locals.insert(*id, loc);
-                        self.init(size);
-                        
-                        let val = self.operand(arg.clone());
-                        let bytes = val.to_le_bytes();
-                        
-                        for i in 0..size { self.memory.stack[loc + i] = bytes[i]; }
-                    }
-                    
-                    self.frames.push(frame);
-                    
-                    let val = self.run_fn(f);
-                    
-                    self.frames.pop().unwrap();
-                    
-                    if let Some(val) = val {
-                        let (loc, size) = self.place(place);
-                        let bytes = val.to_le_bytes();
-                        
-                        for i in 0..size { self.memory.stack[loc + i] = bytes[i]; } 
-                        
-                        self.frame_mut().block = next;
-                    } else {
-                        return None;
-                    }
-                },
-                Terminator::Call(f, args, None, Some(fail)) => {
-                     let f = self.operand(f);
-                    let f = self.fns.iter().nth(f as usize).unwrap().1.clone();
-                    let mut frame = StackFrame {
-                        locals: HashMap::new(),
-                        sizes: f.bindings.iter().map(|b| (b.0, b.1.size())).collect(),
-                        block: BlockId(0),
-                    };
-                    
-                    // init params
-                    for ((id, ty), arg) in f.params.iter().zip(args.iter()) {
-                        let size = ty.size();
-                        let loc = self.memory.stack.len();
-                        
-                        frame.locals.insert(*id, loc);
-                        self.init(size);
-                        
-                        let val = self.operand(arg.clone());
-                        let bytes = val.to_le_bytes();
-                        
-                        for i in 0..size { self.memory.stack[loc + i] = bytes[i]; }
-                    }
-                    
-                    self.frames.push(frame);
-                    
-                    let val = self.run_fn(f);
-                    
-                    self.frames.pop().unwrap();
-                    
-                    if let None = val {
-                        self.frame_mut().block = fail;
-                    }
-                },
-                Terminator::Call(f, args, None, None) => {
-                    let f = self.operand(f);
-                    let f = self.fns.iter().nth(f as usize).unwrap().1.clone();
-                    let mut frame = StackFrame {
-                        locals: HashMap::new(),
-                        sizes: f.bindings.iter().map(|b| (b.0, b.1.size())).collect(),
-                        block: BlockId(0),
-                    };
-                    
-                    // init params
-                    for ((id, ty), arg) in f.params.iter().zip(args.iter()) {
-                        let size = ty.size();
-                        let loc = self.memory.stack.len();
-                        
-                        frame.locals.insert(*id, loc);
-                        self.init(size);
-                        
-                        let val = self.operand(arg.clone());
-                        let bytes = val.to_le_bytes();
-                        
-                        for i in 0..size { self.memory.stack[loc + i] = bytes[i]; }
-                    }
-                    
-                    self.frames.push(frame);
-                    
-                    let val = self.run_fn(f);
-                    
-                    self.frames.pop().unwrap();
-                    
-                    if let None = val {
-                        return None;
-                    } else {
-                        return Some(loc);
-                    }
-                },
-                _ => unimplemented!()
+                }
             }
         }
     }
@@ -253,28 +198,60 @@ impl VM {
     
     fn rvalue(&mut self, v: RValue) -> u64 {
         match v {
-            RValue::Use(op) => self.operand(op),
+            RValue::Use(op) => self.operand(op).0,
+            RValue::Binary(op, lhs, rhs) => {
+                let lhs = self.operand(lhs);
+                let rhs = self.operand(rhs);
+                let lhs = self.memory.read(lhs.0 as usize, lhs.1);
+                let rhs = self.memory.read(rhs.0 as usize, rhs.1);
+                
+                match op {
+                    BinOp::Add => lhs + rhs,
+                    BinOp::Sub => lhs - rhs,
+                    BinOp::Mul => lhs * rhs,
+                    BinOp::Div => lhs / rhs,
+                    BinOp::Mod => lhs % rhs,
+                    BinOp::Lt => (lhs < rhs) as u64,
+                    BinOp::Le => (lhs <= rhs) as u64,
+                    BinOp::Gt => (lhs > rhs) as u64,
+                    BinOp::Ge => (lhs >= rhs) as u64,
+                    BinOp::Eq => (lhs == rhs) as u64,
+                    BinOp::Ne => (lhs != rhs) as u64,
+                    BinOp::BitAnd => lhs & rhs,
+                    BinOp::BitOr => lhs | rhs,
+                    BinOp::BitXor => lhs ^ rhs,
+                    BinOp::Shl => lhs << rhs,
+                    BinOp::Shr => lhs >> rhs,
+                }
+            },
             _ => unimplemented!()
         }
     }
     
-    fn operand(&mut self, o: Operand) -> u64 {
+    fn operand(&mut self, o: Operand) -> (u64, usize) {
         match o {
             Operand::Constant(c) => self.constant(c),
-            Operand::Copy(p) => self.place(p).0 as u64,
+            Operand::Copy(p) => { let p = self.place(p); (p.0 as u64, p.1) },
             Operand::Move(p) => unimplemented!()
         }
     }
     
-    fn constant(&mut self, c: Constant) -> u64 {
+    fn constant(&mut self, c: Constant) -> (u64, usize) {
         match c {
-            Constant::Int(v, _) => v as u64,
-            Constant::UInt(v, _) => v,
-            Constant::Float(v, _) => v as u64,
-            Constant::Bool(b) => b as u64,
+            Constant::Int(v, IntTy::I8) => (v as u64, 1),
+            Constant::Int(v, IntTy::I16) => (v as u64, 2),
+            Constant::Int(v, IntTy::I32) => (v as u64, 4),
+            Constant::Int(v, IntTy::I64) => (v as u64, 8),
+            Constant::UInt(v, UIntTy::U8) => (v, 1),
+            Constant::UInt(v, UIntTy::U16) => (v, 2),
+            Constant::UInt(v, UIntTy::U32) => (v, 4),
+            Constant::UInt(v, UIntTy::U64) => (v, 8),
+            Constant::Float(v, FloatTy::F32) => (v.to_bits(), 4),
+            Constant::Float(v, FloatTy::F64) => (v.to_bits(), 8),
+            Constant::Bool(b) => (b as u64, 1),
             Constant::Item(id) => {
                 for (i, (name, _)) in self.fns.iter().enumerate() {
-                    if name == &id.text { return i as u64; }
+                    if name == &id.text { return (i as u64, 0); }
                 }
                 
                 panic!("unknown symbol")

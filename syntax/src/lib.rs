@@ -289,7 +289,7 @@ impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Operand::Move(p) => write!(f, "move {}", p),
-            Operand::Copy(p) => write!(f, "copy {}", p),
+            Operand::Copy(p) => write!(f, "{}", p),
             Operand::Constant(c) => write!(f, "const {}", c),
         }
     }

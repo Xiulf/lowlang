@@ -9,11 +9,9 @@ fn main() {
     
     reporter.report(&filemap, true);
     
-    println!("{}", ast);
-    
     let mut vm = vm::VM::new(ast);
     let res = vm.run();
     
     println!("result: {:?}", res);
-    println!("{:#?}", vm);
+    println!("{:#?}", vm.memory);
 }

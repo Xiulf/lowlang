@@ -1,24 +1,19 @@
-fn test() -> i32 {
-    let $0: i32;
-    
-    %0: {
-        $0 = const 4i32;
-        return
-    }
-}
-
 fn main() -> i32 {
     let $0: i32;
     let $1: i32;
+    let $2: i32;
     
     %0: {
-        StorageLive($1);
-        call($1 = const test(), goto %1)
-    }
-    
-    %1: {
-        $0 = copy $1;
-        StorageDead($1);
+        init $1;
+        init $2;
+        
+        $1 = const 4i32;
+        $2 = const 5i32;
+        $0 = Add($1, $2);
+        
+        drop $1;
+        drop $2;
+        
         return
     }
 }

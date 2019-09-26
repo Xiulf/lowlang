@@ -16,7 +16,6 @@ token![ident "f32" F32];
 token![ident "f64" F64];
 token![ident "bool" Bool];
 
-token![ident "copy" Copy];
 token![ident "move" Move];
 token![ident "const" Const];
 token![ident "box" TBox];
@@ -25,8 +24,8 @@ token![ident "fn" Fn];
 token![ident "true" True];
 token![ident "false" False];
 
-token![ident "StorageLive" StorageLive];
-token![ident "StorageDead" StorageDead];
+token![ident "init" Init];
+token![ident "drop" Drop];
 token![ident "goto" Goto];
 token![ident "resume" Resume];
 token![ident "abort" Abort];
@@ -206,23 +205,17 @@ impl Parse for BasicBlock {
 
 impl Parse for Statement {
     fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<StorageLive>() {
-            input.parse::<StorageLive>()?;
-            input.parse::<LParen>()?;
-            
+        if input.peek::<Init>() {
+            input.parse::<Init>()?;
             let v = input.parse()?;
             
-            input.parse::<RParen>()?;
             input.parse::<Semi>()?;
             
             Ok(Statement::StorageLive(v))
-        } else if input.peek::<StorageDead>() {
-            input.parse::<StorageDead>()?;
-            input.parse::<LParen>()?;
-            
+        } else if input.peek::<Drop>() {
+            input.parse::<Drop>()?;
             let v = input.parse()?;
             
-            input.parse::<RParen>()?;
             input.parse::<Semi>()?;
             
             Ok(Statement::StorageDead(v))
@@ -299,6 +292,7 @@ impl Parse for Terminator {
                 input.parse::<Comma>()?;
                 input.parse::<Goto>()?;
                 
+                let to = input.parse()?;
                 let fail = if let Ok(_) = input.parse::<Comma>() {
                     input.parse::<Unwind>()?;
                     
@@ -307,7 +301,7 @@ impl Parse for Terminator {
                     None
                 };
                 
-                (Some((goto, input.parse()?)), fail)
+                (Some((goto, to)), fail)
             } else if let Ok(_) = input.parse::<Comma>() {
                 input.parse::<Unwind>()?;
                 
@@ -323,7 +317,7 @@ impl Parse for Terminator {
             input.parse::<Assert>()?;
             input.parse::<LParen>()?;
             
-            let expected = input.parse::<Option<Bang>>()?.is_some();
+            let expected = input.parse::<Option<Bang>>()?.is_none();
             let op = input.parse()?;
             
             input.parse::<Comma>()?;
@@ -385,18 +379,14 @@ impl Parse for PlaceBase {
 
 impl Parse for Operand {
     fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<Copy>() {
-            input.parse::<Copy>()?;
-            
-            Ok(Operand::Copy(input.parse()?))
-        } else if input.peek::<Move>() {
+        if input.peek::<Move>() {
             input.parse::<Move>()?;
             
             Ok(Operand::Move(input.parse()?))
         } else if input.peek::<Const>() {
             Ok(Operand::Constant(input.parse()?))
         } else {
-            input.error("invalid operand")
+            Ok(Operand::Copy(input.parse()?))
         }
     }
 }
