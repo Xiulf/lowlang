@@ -1,22 +1,16 @@
 fn main() -> i32 {
     let $0: i32;
     let $1: i32;
-    let $2: i32;
-    let $3: i32;
     
     %0: {
         init $1;
-        init $2;
-        init $3;
         
-        $1 = const 5i32;
-        $2 = &$1;
-        $3 = &$2;
-        $0 = **$3;
-        
+        call($1 = const loop(), goto %1)
+    }
+    
+    %1: {
+        $0 = $1;
         drop $1;
-        drop $2;
-        drop $3;
         
         return
     }

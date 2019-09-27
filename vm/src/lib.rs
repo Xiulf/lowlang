@@ -17,6 +17,15 @@ struct StackFrame {
     block: BlockId,
 }
 
+#[derive(Debug)]
+pub enum Value {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    Ptr(usize, usize),
+}
+
 impl VM {
     pub fn new(program: Program) -> VM {
         let memory = memory::Memory::new();
@@ -39,8 +48,8 @@ impl VM {
             block: BlockId(0),
         });
         
-        if let Some(loc) = self.run_fn(f) {
-            Some(self.memory.read_u32(loc) as usize)
+        if let Some(val) = self.run_fn(f) {
+            Some(val as usize)
         } else {
             None
         }
@@ -79,7 +88,10 @@ impl VM {
             }
             
             match block.terminator {
-                Terminator::Return => return Some(loc),
+                Terminator::Return => return Some(self.memory.read(
+                    loc,
+                    self.frame().sizes[&f.bindings[0].0]
+                ) as usize),
                 Terminator::Unreachable => unreachable!(),
                 Terminator::Goto(id) => self.frame_mut().block = id,
                 Terminator::Abort => {
