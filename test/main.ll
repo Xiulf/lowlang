@@ -15,6 +15,12 @@ fn main() -> i32 {
     }
 }
 
+/*
+fn factorial(n: i32) -> i32 {
+    if n < 1 { 1 }
+    else { n * factorial(n - 1) }
+}
+*/
 fn factorial($1: i32) -> i32 {
     let $0: i32;
     let $2: bool;

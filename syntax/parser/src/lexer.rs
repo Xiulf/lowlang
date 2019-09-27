@@ -95,19 +95,23 @@ impl<'a> Lexer<'a> {
                             self.advance();
                         }
                     } else if self.peek_n(1) == '*' {
+                        self.advance();
+                        self.advance();
+                        
                         blocks += 1;
                         
                         while !self.eof() && blocks > 0 {
-                            self.advance();
-                            
                             if self.peek() == '/' && self.peek_n(1) == '*' {
                                 blocks += 1;
+                                self.advance();
                             }
                             
                             if self.peek() == '*' && self.peek_n(1) == '/' {
                                 blocks -= 1;
                                 self.advance();
                             }
+                            
+                            self.advance();
                         }
                     } else {
                         break;

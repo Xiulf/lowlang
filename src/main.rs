@@ -10,8 +10,10 @@ fn main() {
     reporter.report(&filemap, true);
     
     let mut vm = vm::VM::new(ast);
+    let start = std::time::Instant::now();
     let res = vm.run();
+    let elapsed = start.elapsed();
     
-    println!("result: {:?}", res);
+    println!("result: {:?} in {:?}", res, elapsed);
     println!("{}", vm.memory);
 }
