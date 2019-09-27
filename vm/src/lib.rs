@@ -23,6 +23,12 @@ pub enum Value {
     U16(u16),
     U32(u32),
     U64(u64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    F32(f32),
+    F64(f64),
     Ptr(usize, usize),
 }
 
@@ -57,10 +63,9 @@ impl VM {
     
     fn run_fn(&mut self, f: Function) -> Option<usize> {
         // init return memory
-        let loc = self.memory.stack.len();
+        let loc = self.memory.alloc(self.frame().sizes[&LocalId(0)]);
         
-        self.frame_mut().locals.insert(f.bindings[0].0, loc);
-        self.init(self.frame().sizes[&f.bindings[0].0]);
+        self.frame_mut().locals.insert(LocalId(0), loc);
         
         loop {
             let block = self.block(&f);
@@ -68,21 +73,21 @@ impl VM {
             for stmt in block.statements {
                 match stmt {
                     Statement::StorageLive(id) => {
-                        let loc = self.memory.stack.len();
+                        let loc = self.memory.alloc(self.frame().sizes[&id]);
                         
                         self.frame_mut().locals.insert(id, loc);
-                        self.init(self.frame().sizes[&id]);
                     },
                     Statement::StorageDead(id) => {
+                        self.drop(id);
                         self.frame_mut().locals.remove(&id);
-                        self.drop(self.frame().sizes[&id]);
+                        self.frame_mut().sizes.remove(&id);
                     },
                     Statement::Assign(place, value) => {
                         let (loc, size) = self.place(place);
                         let val = self.rvalue(value);
                         let bytes = val.to_le_bytes();
                         
-                        for i in 0..size { self.memory.stack[loc + i] = bytes[i]; }
+                        for i in 0..size { self.memory.data[loc + i] = bytes[i]; }
                     },
                 }
             }
@@ -95,8 +100,7 @@ impl VM {
                 Terminator::Unreachable => unreachable!(),
                 Terminator::Goto(id) => self.frame_mut().block = id,
                 Terminator::Abort => {
-                    // StorageDead($0)
-                    self.drop(self.frame().sizes[&f.bindings[0].0]);
+                    self.drop(LocalId(0));
                     
                     return None;
                 },
@@ -115,22 +119,29 @@ impl VM {
                     // init params
                     for ((id, ty), arg) in f.params.iter().zip(args.iter()) {
                         let size = ty.size();
-                        let loc = self.memory.stack.len();
+                        let loc = self.memory.alloc(size);
                         
+                        frame.sizes.insert(*id, size);
                         frame.locals.insert(*id, loc);
-                        self.init(size);
                         
                         let val = self.operand(arg.clone()).0;
                         let bytes = val.to_le_bytes();
                         
-                        for i in 0..size { self.memory.stack[loc + i] = bytes[i]; }
+                        for i in 0..size { self.memory.data[loc + i] = bytes[i]; }
                     }
+                    
+                    let params_iter = f.params.clone();
                     
                     self.frames.push(frame);
                     
                     let val = self.run_fn(f);
+                    let frame = self.frames.pop().unwrap();
                     
-                    self.frames.pop().unwrap();
+                    let drop_params = |this: &mut Self| {
+                        for (id, _) in params_iter.into_iter().rev() {
+                            this.drop_frame(id, &frame);
+                        }
+                    };
                     
                     match (goto, fail) {
                         (Some((place, next)), Some(fail)) => {
@@ -138,11 +149,13 @@ impl VM {
                                 let (loc, size) = self.place(place);
                                 let bytes = val.to_le_bytes();
                                 
-                                for i in 0..size { self.memory.stack[loc + i] = bytes[i]; } 
+                                for i in 0..size { self.memory.data[loc + i] = bytes[i]; } 
                                 
-                                self.drop(size);
+                                self.drop_frame(LocalId(0), &frame);
+                                drop_params(self);
                                 self.frame_mut().block = next;
                             } else {
+                                drop_params(self);
                                 self.frame_mut().block = fail;
                             }
                         },
@@ -151,25 +164,35 @@ impl VM {
                                 let (loc, size) = self.place(place);
                                 let bytes = val.to_le_bytes();
                                 
-                                for i in 0..size { self.memory.stack[loc + i] = bytes[i]; } 
+                                for i in 0..size { self.memory.data[loc + i] = bytes[i]; } 
                                 
-                                self.drop(size);
+                                self.drop_frame(LocalId(0), &frame);
+                                drop_params(self);
                                 self.frame_mut().block = next;
                             } else {
+                                drop_params(self);
+                                
                                 return None;
                             }
                         },
                         (None, Some(fail)) => {
                             if let None = val {
+                                drop_params(self);
                                 self.frame_mut().block = fail;
                             } else {
+                                drop_params(self);
+                                
                                 return Some(loc);
                             }
                         },
                         (None, None) => {
                             if let None = val {
+                                drop_params(self);
+                                
                                 return None;
                             } else {
+                                drop_params(self);
+                                
                                 return Some(loc);
                             }
                         }
@@ -250,7 +273,14 @@ impl VM {
                 
                 (self.memory.read(p.0, p.1), p.1)
             },
-            Operand::Move(p) => unimplemented!()
+            Operand::Move(p) => {
+                let p = self.place(p);
+                let r = (self.memory.read(p.0, p.1), p.1);
+                
+                self.memory.free(p.0, p.1);
+                
+                r
+            }
         }
     }
     
@@ -278,12 +308,18 @@ impl VM {
         }
     }
     
-    fn init(&mut self, size: usize) {
-        for _ in 0..size { self.memory.stack.push(0); }
+    fn drop(&mut self, id: LocalId) {
+        let loc = self.frame().locals[&id];
+        let size = self.frame().sizes[&id];
+        
+        self.memory.free(loc, size);
     }
     
-    fn drop(&mut self, size: usize) {
-        for _ in 0..size { self.memory.stack.pop().expect("stack underflow"); }
+    fn drop_frame(&mut self, id: LocalId, frame: &StackFrame) {
+        let loc = frame.locals[&id];
+        let size = frame.sizes[&id];
+        
+        self.memory.free(loc, size);
     }
     
     fn block(&self, f: &Function) -> BasicBlock {

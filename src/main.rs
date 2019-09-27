@@ -13,5 +13,5 @@ fn main() {
     let res = vm.run();
     
     println!("result: {:?}", res);
-    println!("{:#?}", vm.memory);
+    println!("{}", vm.memory);
 }
