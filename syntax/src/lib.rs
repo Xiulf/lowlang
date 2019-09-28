@@ -37,6 +37,7 @@ pub enum Statement {
     Assign(Place, RValue),
     StorageLive(LocalId),
     StorageDead(LocalId),
+    Free(Place),
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
@@ -81,33 +82,20 @@ pub enum RValue {
     Binary(BinOp, Operand, Operand),
     Unary(UnOp, Operand),
     Tuple(Vec<Operand>),
-    Box(Type),
+    Alloc(Operand, Type),
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
 pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-    Eq,
-    Ne,
-    BitAnd,
-    BitOr,
-    BitXor,
-    Shl,
-    Shr,
+    Add, Sub, Mul, Div, Mod,
+    Lt, Le, Gt, Ge, Eq, Ne,
+    BitAnd, BitOr, BitXor,
+    Shl, Shr,
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
 pub enum UnOp {
-    Not,
-    Neg,
+    Not, Neg,
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
@@ -125,6 +113,7 @@ pub enum Constant {
 pub enum Type {
     Unit,
     Tuple(Vec<Type>),
+    Ptr(Box<Type>),
     Int(IntTy),
     UInt(UIntTy),
     Float(FloatTy),
@@ -151,6 +140,7 @@ impl Type {
         match self {
             Type::Unit => 0,
             Type::Tuple(t) => t.iter().fold(0, |acc, t| acc + t.size()),
+            Type::Ptr(_) => 8,
             Type::Int(IntTy::I8) => 1,
             Type::Int(IntTy::I16) => 2,
             Type::Int(IntTy::I32) => 4,
@@ -239,6 +229,7 @@ impl fmt::Display for Statement {
             Statement::Assign(l, r) => write!(f, "{} = {};", l, r),
             Statement::StorageLive(l) => write!(f, "StorageLive({});", l),
             Statement::StorageDead(l) => write!(f, "StorageDead({});", l),
+            Statement::Free(p) => write!(f, "free {};", p),
         }
     }
 }
@@ -330,7 +321,7 @@ impl fmt::Display for RValue {
         match self {
             RValue::Use(v) => v.fmt(f),
             RValue::Ref(v) => write!(f, "&{}", v),
-            RValue::Box(t) => write!(f, "box {}", t),
+            RValue::Alloc(v, t) => write!(f, "alloc {}: {}", v, t),
             RValue::Binary(o, l, r) => write!(f, "{:?}({}, {})", o, l, r),
             RValue::Unary(o, v) => write!(f, "{:?}({})", o, v),
             RValue::Tuple(t) => {
@@ -368,11 +359,12 @@ impl fmt::Display for Type {
             Type::Float(i) => i.fmt(f),
             Type::Unit => write!(f, "()"),
             Type::Bool => write!(f, "bool"),
+            Type::Ptr(t) => write!(f, "&{}", t),
             Type::Tuple(t) => {
                 let t = t.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
                 
                 write!(f, "({})", t)
-            }
+            },
         }
     }
 }

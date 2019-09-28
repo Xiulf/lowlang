@@ -18,7 +18,8 @@ token![ident "bool" Bool];
 
 token![ident "move" Move];
 token![ident "const" Const];
-token![ident "box" TBox];
+token![ident "alloc" Alloc];
+token![ident "free" Free];
 token![ident "let" Let];
 token![ident "fn" Fn];
 token![ident "true" True];
@@ -207,6 +208,7 @@ impl Parse for Statement {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek::<Init>() {
             input.parse::<Init>()?;
+            
             let v = input.parse()?;
             
             input.parse::<Semi>()?;
@@ -214,11 +216,20 @@ impl Parse for Statement {
             Ok(Statement::StorageLive(v))
         } else if input.peek::<Drop>() {
             input.parse::<Drop>()?;
+            
             let v = input.parse()?;
             
             input.parse::<Semi>()?;
             
             Ok(Statement::StorageDead(v))
+        } else if input.peek::<Free>() {
+            input.parse::<Free>()?;
+            
+            let v = input.parse()?;
+            
+            input.parse::<Semi>()?;
+            
+            Ok(Statement::Free(v))
         } else {
             let l = input.parse()?;
             
@@ -437,10 +448,16 @@ impl Parse for RValue {
             } else {
                 Ok(RValue::Tuple(ops))
             }
-        } else if input.peek::<TBox>() {
-            input.parse::<TBox>()?;
+        } else if input.peek::<Alloc>() {
+            input.parse::<Alloc>()?;
             
-            Ok(RValue::Box(input.parse()?))
+            let v = input.parse()?;
+            
+            input.parse::<Colon>()?;
+            
+            let ty = input.parse()?;
+            
+            Ok(RValue::Alloc(v, ty))
         } else {
             Ok(RValue::Use(input.parse()?))
         }
@@ -555,6 +572,10 @@ impl Parse for Type {
             } else {
                 Ok(Type::Tuple(tys))
             }
+        } else if input.peek::<Ref>() {
+            input.parse::<Ref>()?;
+            
+            Ok(Type::Ptr(Box::new(input.parse()?)))
         } else if input.peek::<Bool>() {
             input.parse::<Bool>()?;
             

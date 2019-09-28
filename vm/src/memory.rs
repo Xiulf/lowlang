@@ -40,8 +40,21 @@ impl Memory {
         }
     }
     
+    pub fn clear(&mut self, loc: usize, size: usize) {
+        for i in 0..size { self.data[loc + i] = 0; }
+    }
+    
     pub fn read_u8(&self, loc: usize) -> u8 {
         self.data[loc]
+    }
+    
+    pub fn read_u16(&self, loc: usize) -> u16 {
+        let bytes = [
+            self.data[loc + 0],
+            self.data[loc + 1],
+        ];
+        
+        u16::from_le_bytes(bytes)
     }
     
     pub fn read_u32(&self, loc: usize) -> u32 {
@@ -53,6 +66,103 @@ impl Memory {
         ];
         
         u32::from_le_bytes(bytes)
+    }
+    
+    pub fn read_u64(&self, loc: usize) -> u64 {
+        let bytes = [
+            self.data[loc + 0],
+            self.data[loc + 1],
+            self.data[loc + 2],
+            self.data[loc + 3],
+            self.data[loc + 4],
+            self.data[loc + 5],
+            self.data[loc + 6],
+            self.data[loc + 7],
+        ];
+        
+        u64::from_le_bytes(bytes)
+    }
+    
+    pub fn read_i8(&self, loc: usize) -> i8 {
+        i8::from_le_bytes([self.data[loc]])
+    }
+    
+    pub fn read_i16(&self, loc: usize) -> i16 {
+        let bytes = [
+            self.data[loc + 0],
+            self.data[loc + 1],
+        ];
+        
+        i16::from_le_bytes(bytes)
+    }
+    
+    pub fn read_i32(&self, loc: usize) -> i32 {
+        let bytes = [
+            self.data[loc + 0],
+            self.data[loc + 1],
+            self.data[loc + 2],
+            self.data[loc + 3],
+        ];
+        
+        i32::from_le_bytes(bytes)
+    }
+    
+    pub fn read_i64(&self, loc: usize) -> i64 {
+        let bytes = [
+            self.data[loc + 0],
+            self.data[loc + 1],
+            self.data[loc + 2],
+            self.data[loc + 3],
+            self.data[loc + 4],
+            self.data[loc + 5],
+            self.data[loc + 6],
+            self.data[loc + 7],
+        ];
+        
+        i64::from_le_bytes(bytes)
+    }
+    
+    pub fn read_f32(&self, loc: usize) -> f32 {
+        f32::from_bits(self.read_u32(loc))
+    }
+    
+    pub fn read_f64(&self, loc: usize) -> f64 {
+        f64::from_bits(self.read_u64(loc))
+    }
+    
+    pub fn write(&mut self, mut loc: usize, value: crate::Value) -> usize {
+        use crate::Value::*;
+        
+        match value {
+            Unit => 0,
+            U8(v) => { self.data[loc] = v; 1 },
+            U16(v) => { let bytes = v.to_le_bytes(); for i in 0..2 { self.data[loc + i] = bytes[i]; } 2 },
+            U32(v) => { let bytes = v.to_le_bytes(); for i in 0..4 { self.data[loc + i] = bytes[i]; } 4 },
+            U64(v) => { let bytes = v.to_le_bytes(); for i in 0..8 { self.data[loc + i] = bytes[i]; } 8 },
+            I8(v) => { self.data[loc] = v.to_le_bytes()[0]; 1 },
+            I16(v) => { let bytes = v.to_le_bytes(); for i in 0..2 { self.data[loc + i] = bytes[i]; } 2 },
+            I32(v) => { let bytes = v.to_le_bytes(); for i in 0..4 { self.data[loc + i] = bytes[i]; } 4 },
+            I64(v) => { let bytes = v.to_le_bytes(); for i in 0..8 { self.data[loc + i] = bytes[i]; } 8 },
+            F32(v) => { let bytes = v.to_bits().to_le_bytes(); for i in 0..4 { self.data[loc + i] = bytes[i]; } 4 },
+            F64(v) => { let bytes = v.to_bits().to_le_bytes(); for i in 0..8 { self.data[loc + i] = bytes[i]; } 8 },
+            Ptr(v, v2) => {
+                let bytes = (v as u32).to_le_bytes(); for i in 0..4 { self.data[loc + i] = bytes[i]; } loc += 4;
+                let bytes = (v2 as u32).to_le_bytes(); for i in 0..4 { self.data[loc + i] = bytes[i]; }
+                8
+            },
+            Tuple(vs) => {
+                let mut total = 0;
+                
+                for v in vs {
+                    let written = self.write(loc, v);
+                    
+                    total += written;
+                    loc += written;
+                }
+                
+                total
+            }
+        }
     }
     
     pub fn read(&self, loc: usize, size: usize) -> u64 {
