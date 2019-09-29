@@ -9,6 +9,12 @@ fn main() {
     
     reporter.report(&filemap, true);
     
+    let mut type_ctx = check::ctx::TypeCtx::new(&reporter);
+    
+    check::typecheck::typecheck(&mut type_ctx, &ast);
+    
+    reporter.report(&filemap, true);
+    
     let mut vm = vm::VM::new(ast);
     let start = std::time::Instant::now();
     let res = vm.run();

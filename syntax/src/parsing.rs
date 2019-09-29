@@ -354,26 +354,33 @@ impl Parse for Terminator {
 
 impl Parse for Place {
     fn parse(input: ParseStream) -> Result<Self> {
+        let start = input.span();
         let mut projection = Vec::new();
         
         while !input.is_empty() && input.peek::<Deref>() {
+            let span = input.span();
+            
             input.parse::<Deref>()?;
-            projection.push(PlaceElem::Deref);
+            projection.push(PlaceElem::Deref(span));
         }
         
         let base = input.parse()?;
         
         while !input.is_empty() && input.peek::<Proj>() {
+            let start = input.span();
+            
             input.parse::<Proj>()?;
             
             let lit = input.parse::<IntLiteral>()?;
+            let span = start.to(input.prev_span());
             
-            projection.push(PlaceElem::Field(lit.int as usize));
+            projection.push(PlaceElem::Field(lit.int as usize, span));
         }
         
         Ok(Place {
             base,
             projection,
+            span: start.to(input.prev_span())
         })
     }
 }
@@ -381,7 +388,10 @@ impl Parse for Place {
 impl Parse for PlaceBase {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek::<Pound>() {
-            Ok(PlaceBase::Local(input.parse()?))
+            let start = input.span();
+            let l = input.parse()?;
+            
+            Ok(PlaceBase::Local(l, start.to(input.prev_span())))
         } else {
             input.error("invalid place")
         }
@@ -391,13 +401,19 @@ impl Parse for PlaceBase {
 impl Parse for Operand {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek::<Move>() {
+            let start = input.span();
+            
             input.parse::<Move>()?;
             
-            Ok(Operand::Move(input.parse()?))
+            Ok(Operand::Move(input.parse()?, start.to(input.prev_span())))
         } else if input.peek::<Const>() {
-            Ok(Operand::Constant(input.parse()?))
+            let start = input.span();
+            
+            Ok(Operand::Constant(input.parse()?, start.to(input.prev_span())))
         } else {
-            Ok(Operand::Copy(input.parse()?))
+            let start = input.span();
+            
+            Ok(Operand::Copy(input.parse()?, start.to(input.prev_span())))
         }
     }
 }
@@ -405,10 +421,15 @@ impl Parse for Operand {
 impl Parse for RValue {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek::<Ref>() {
+            let start = input.span();
+            
             input.parse::<Ref>()?;
             
-            Ok(RValue::Ref(input.parse()?))
-        } else if let Ok(op) = input.parse::<BinOp>() {
+            Ok(RValue::Ref(input.parse()?, start.to(input.prev_span())))
+        } else if input.fork().parse::<BinOp>().is_ok() {
+            let start = input.span();
+            let op = input.parse()?;
+            
             input.parse::<LParen>()?;
             
             let lhs = input.parse()?;
@@ -419,16 +440,21 @@ impl Parse for RValue {
             
             input.parse::<RParen>()?;
             
-            Ok(RValue::Binary(op, lhs, rhs))
-        } else if let Ok(op) = input.parse::<UnOp>() {
+            Ok(RValue::Binary(op, lhs, rhs, start.to(input.prev_span())))
+        } else if input.fork().parse::<UnOp>().is_ok() {
+            let start = input.span();
+            let op = input.parse()?;
+            
             input.parse::<LParen>()?;
             
             let lhs = input.parse()?;
             
             input.parse::<RParen>()?;
             
-            Ok(RValue::Unary(op, lhs))
+            Ok(RValue::Unary(op, lhs, start.to(input.prev_span())))
         } else if input.peek::<LParen>() {
+            let start = input.span();
+            
             input.parse::<LParen>()?;
             
             let mut ops = Vec::new();
@@ -446,9 +472,11 @@ impl Parse for RValue {
             if ops.len() == 1 {
                 input.error("tuple expects 0 or 2 or more elements")
             } else {
-                Ok(RValue::Tuple(ops))
+                Ok(RValue::Tuple(ops, start.to(input.prev_span())))
             }
         } else if input.peek::<Alloc>() {
+            let start = input.span();
+            
             input.parse::<Alloc>()?;
             
             let v = input.parse()?;
@@ -457,7 +485,7 @@ impl Parse for RValue {
             
             let ty = input.parse()?;
             
-            Ok(RValue::Alloc(v, ty))
+            Ok(RValue::Alloc(v, ty, start.to(input.prev_span())))
         } else {
             Ok(RValue::Use(input.parse()?))
         }

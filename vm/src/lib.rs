@@ -228,12 +228,12 @@ impl VM {
     
     fn place(&mut self, p: Place) -> (usize, Type) {
         let (mut loc, mut ty) = match p.base {
-            PlaceBase::Local(id) => (self.frame().locals[&id], self.frame().sizes[&id].clone())
+            PlaceBase::Local(id, _) => (self.frame().locals[&id], self.frame().sizes[&id].clone())
         };
         
         for proj in p.projection.into_iter().rev() {
             match proj {
-                PlaceElem::Field(i) => match &ty {
+                PlaceElem::Field(i, _) => match &ty {
                     Type::Tuple(tys) => {
                         for j in 0..i { loc += tys[j].size(); }
                         
@@ -241,7 +241,7 @@ impl VM {
                     },
                     _ => panic!("type error")
                 },
-                PlaceElem::Deref => match &ty {
+                PlaceElem::Deref(_) => match &ty {
                     Type::Ptr(t) => {
                         loc = self.memory.read_u32(loc) as usize;
                         ty = *t.clone();
@@ -257,7 +257,7 @@ impl VM {
     fn rvalue(&mut self, v: RValue) -> Value {
         match v {
             RValue::Use(op) => self.operand(op),
-            RValue::Binary(op, lhs, rhs) => {
+            RValue::Binary(op, lhs, rhs, _) => {
                 let lhs = self.operand(lhs);
                 let rhs = self.operand(rhs);
                 
@@ -401,7 +401,7 @@ impl VM {
                     (lhs, rhs, op) => panic!("type error: {:?}({:?}, {:?})", op, lhs, rhs)
                 }
             },
-            RValue::Unary(op, val) => {
+            RValue::Unary(op, val, _) => {
                 let val = self.operand(val);
                 
                 match (val, op) {
@@ -415,17 +415,17 @@ impl VM {
                     _ => panic!("type error")
                 }
             },
-            RValue::Ref(p) => {
+            RValue::Ref(p, _) => {
                 let p = self.place(p);
                 
                 Value::Ptr(p.0 as u32, p.1.size() as u32)
             },
-            RValue::Tuple(ops) => {
+            RValue::Tuple(ops, _) => {
                 let values = ops.into_iter().map(|op| self.operand(op)).collect();
                 
                 Value::Tuple(values)
             },
-            RValue::Alloc(op, ty) => {
+            RValue::Alloc(op, ty, _) => {
                 let op = self.operand(op);
                 let len = match op {
                     Value::U8(v) => v as usize,
@@ -445,8 +445,8 @@ impl VM {
     
     fn operand(&mut self, o: Operand) -> Value {
         match o {
-            Operand::Constant(c) => self.constant(c),
-            Operand::Copy(p) => {
+            Operand::Constant(c, _) => self.constant(c),
+            Operand::Copy(p, _) => {
                 let (loc, ty) = self.place(p);
                 
                 match ty {
@@ -463,10 +463,11 @@ impl VM {
                     Type::Bool => Value::U8(self.memory.read_u8(loc)),
                     Type::Unit => Value::Unit,
                     Type::Ptr(_) => Value::Ptr(self.memory.read_u32(loc), self.memory.read_u32(loc + 4)),
-                    Type::Tuple(..) => unimplemented!()
+                    Type::Tuple(..) => unimplemented!(),
+                    Type::Fn(..) => unreachable!(),
                 }
             },
-            Operand::Move(p) => {
+            Operand::Move(p, _) => {
                 let (loc, ty) = self.place(p);
                 
                 let r = match &ty {
@@ -483,7 +484,8 @@ impl VM {
                     Type::Bool => Value::U8(self.memory.read_u8(loc)),
                     Type::Unit => Value::Unit,
                     Type::Ptr(_) => Value::Ptr(self.memory.read_u32(loc), self.memory.read_u32(loc + 4)),
-                    Type::Tuple(..) => unimplemented!()
+                    Type::Tuple(..) => unimplemented!(),
+                    Type::Fn(..) => unreachable!(),
                 };
                 
                 self.memory.clear(loc, ty.size());

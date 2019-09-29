@@ -1,10 +1,9 @@
 [package]
-name = "syntax"
+name = "check"
 version = "0.1.0"
 authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
 edition = "2018"
 
 [dependencies]
-parser = { path = "parser" }
 diagnostics = { path = "../diagnostics" }
-fluix-encode = { git = "https://github.com/Cyberduc-k/fluix.git", branch = "yet-another-rewrite" }
+syntax = { path = "../syntax" }

@@ -3,6 +3,7 @@ mod parsing;
 pub use parser::ident::Ident;
 pub use parser::parse;
 use fluix_encode::{Encodable, Decodable};
+use diagnostics::Span;
 use std::fmt;
 
 #[derive(Encodable, Decodable, Debug, Clone)]
@@ -22,7 +23,7 @@ pub struct Function {
 #[derive(Encodable, Decodable, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockId(pub usize);
 
-#[derive(Encodable, Decodable, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Encodable, Decodable, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LocalId(pub usize);
 
 #[derive(Encodable, Decodable, Debug, Clone)]
@@ -55,34 +56,35 @@ pub enum Terminator {
 pub struct Place {
     pub base: PlaceBase,
     pub projection: Vec<PlaceElem>,
+    pub span: Span,
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
 pub enum PlaceBase {
-    Local(LocalId),
+    Local(LocalId, Span),
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
 pub enum PlaceElem {
-    Deref,
-    Field(usize),
+    Deref(Span),
+    Field(usize, Span),
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
 pub enum Operand {
-    Copy(Place),
-    Move(Place),
-    Constant(Constant),
+    Copy(Place, Span),
+    Move(Place, Span),
+    Constant(Constant, Span),
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
 pub enum RValue {
     Use(Operand),
-    Ref(Place),
-    Binary(BinOp, Operand, Operand),
-    Unary(UnOp, Operand),
-    Tuple(Vec<Operand>),
-    Alloc(Operand, Type),
+    Ref(Place, Span),
+    Binary(BinOp, Operand, Operand, Span),
+    Unary(UnOp, Operand, Span),
+    Tuple(Vec<Operand>, Span),
+    Alloc(Operand, Type, Span),
 }
 
 #[derive(Encodable, Decodable, Debug, Clone)]
@@ -109,28 +111,29 @@ pub enum Constant {
     Tuple(Vec<Constant>),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
+#[derive(Encodable, Decodable, Debug, Clone, PartialEq)]
 pub enum Type {
     Unit,
+    Bool,
     Tuple(Vec<Type>),
     Ptr(Box<Type>),
     Int(IntTy),
     UInt(UIntTy),
     Float(FloatTy),
-    Bool,
+    Fn(Vec<Type>, Box<Type>),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
+#[derive(Encodable, Decodable, Debug, Clone, PartialEq)]
 pub enum IntTy {
     I8, I16, I32, I64
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
+#[derive(Encodable, Decodable, Debug, Clone, PartialEq)]
 pub enum UIntTy {
     U8, U16, U32, U64
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
+#[derive(Encodable, Decodable, Debug, Clone, PartialEq)]
 pub enum FloatTy {
     F32, F64,
 }
@@ -152,6 +155,30 @@ impl Type {
             Type::Float(FloatTy::F32) => 1,
             Type::Float(FloatTy::F64) => 1,
             Type::Bool => 1,
+            Type::Fn(..) => 4,
+        }
+    }
+}
+
+impl RValue {
+    pub fn span(&self) -> Span {
+        match self {
+            RValue::Use(op) => op.span(),
+            RValue::Ref(_, span) => *span,
+            RValue::Tuple(_, span) => *span,
+            RValue::Binary(.., span) => *span,
+            RValue::Unary(.., span) => *span,
+            RValue::Alloc(.., span) => *span,
+        }
+    }
+}
+
+impl Operand {
+    pub fn span(&self) -> Span {
+        match self {
+            Operand::Move(_, span) => *span,
+            Operand::Copy(_, span) => *span,
+            Operand::Constant(_, span) => *span,
         }
     }
 }
@@ -279,9 +306,9 @@ impl fmt::Display for Terminator {
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Operand::Move(p) => write!(f, "move {}", p),
-            Operand::Copy(p) => write!(f, "{}", p),
-            Operand::Constant(c) => write!(f, "const {}", c),
+            Operand::Move(p, _) => write!(f, "move {}", p),
+            Operand::Copy(p, _) => write!(f, "{}", p),
+            Operand::Constant(c, _) => write!(f, "const {}", c),
         }
     }
 }
@@ -290,8 +317,8 @@ impl fmt::Display for Place {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for elem in self.projection.iter().rev() {
             match elem {
-                PlaceElem::Deref => write!(f, "(*")?,
-                PlaceElem::Field(_) => write!(f, "(")?,
+                PlaceElem::Deref(_) => write!(f, "(*")?,
+                PlaceElem::Field(_, _) => write!(f, "(")?,
             }
         }
         
@@ -299,8 +326,8 @@ impl fmt::Display for Place {
         
         for elem in self.projection.iter() {
             match elem {
-                PlaceElem::Deref => write!(f, ")")?,
-                PlaceElem::Field(i) => write!(f, ">{})", i)?,
+                PlaceElem::Deref(_) => write!(f, ")")?,
+                PlaceElem::Field(i, _) => write!(f, ">{})", i)?,
             }
         }
         
@@ -311,7 +338,7 @@ impl fmt::Display for Place {
 impl fmt::Display for PlaceBase {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            PlaceBase::Local(l) => l.fmt(f),
+            PlaceBase::Local(l, _) => l.fmt(f),
         }
     }
 }
@@ -320,11 +347,11 @@ impl fmt::Display for RValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             RValue::Use(v) => v.fmt(f),
-            RValue::Ref(v) => write!(f, "&{}", v),
-            RValue::Alloc(v, t) => write!(f, "alloc {}: {}", v, t),
-            RValue::Binary(o, l, r) => write!(f, "{:?}({}, {})", o, l, r),
-            RValue::Unary(o, v) => write!(f, "{:?}({})", o, v),
-            RValue::Tuple(t) => {
+            RValue::Ref(v, _) => write!(f, "&{}", v),
+            RValue::Alloc(v, t, _) => write!(f, "alloc {}: {}", v, t),
+            RValue::Binary(o, l, r, _) => write!(f, "{:?}({}, {})", o, l, r),
+            RValue::Unary(o, v, _) => write!(f, "{:?}({})", o, v),
+            RValue::Tuple(t, _) => {
                 let t = t.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
                 
                 write!(f, "({})", t)
@@ -364,6 +391,11 @@ impl fmt::Display for Type {
                 let t = t.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
                 
                 write!(f, "({})", t)
+            },
+            Type::Fn(p, r) => {
+                let p = p.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
+                
+                write!(f, "fn ({}) -> {}", p, r)
             },
         }
     }

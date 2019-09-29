@@ -41,6 +41,10 @@ impl<'a> ParseBuffer<'a> {
         }
     }
     
+    pub fn prev_span(&self) -> Span {
+        self.prev_span.borrow().clone()
+    }
+    
     pub fn span(&self) -> Span {
         if self.is_empty() {
             self.prev_span.borrow().clone()

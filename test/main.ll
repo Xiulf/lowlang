@@ -1,6 +1,7 @@
 fn main() -> i32 {
     let $0: i32;
     let $1: i32;
+    let $2: (i32, i32);
     
     %0: {
         init $1;
@@ -17,6 +18,15 @@ fn main() -> i32 {
     }
 }
 
+/*
+int boxed() {
+    int* result = (int*)malloc(3 * 4);
+    
+    *result = 4;
+    
+    return *result;
+}
+*/
 fn boxed() -> i32 {
     let $0: i32;
     let $1: &i32;

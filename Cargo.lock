@@ -21,6 +21,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "check"
+version = "0.1.0"
+dependencies = [
+ "diagnostics 0.1.0",
+ "syntax 0.1.0",
+]
+
+[[package]]
 name = "colored"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -85,6 +93,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "lowlang"
 version = "0.1.0"
 dependencies = [
+ "check 0.1.0",
  "diagnostics 0.1.0",
  "syntax 0.1.0",
  "vm 0.1.0",
@@ -204,6 +213,7 @@ dependencies = [
 name = "syntax"
 version = "0.1.0"
 dependencies = [
+ "diagnostics 0.1.0",
  "fluix-encode 0.1.0 (git+https://github.com/Cyberduc-k/fluix.git?branch=yet-another-rewrite)",
  "parser 0.1.0",
 ]

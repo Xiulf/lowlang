@@ -36,5 +36,7 @@ impl Reporter {
         if self.has_errors() && exit {
             std::process::exit(0);
         }
+        
+        self.diagnostics.borrow_mut().clear();
     }
 }

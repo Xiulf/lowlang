@@ -7,4 +7,5 @@ edition = "2018"
 [dependencies]
 diagnostics = { path = "diagnostics" }
 syntax = { path = "syntax" }
+check = { path = "check" }
 vm = { path = "vm" }
