@@ -9,3 +9,4 @@ diagnostics = { path = "diagnostics" }
 syntax = { path = "syntax" }
 check = { path = "check" }
 vm = { path = "vm" }
+ll-cranelift = { path = "ll-cranelift" }

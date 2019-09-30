@@ -1,4 +1,5 @@
 mod parsing;
+pub mod builder;
 
 pub use parser::ident::Ident;
 pub use parser::parse;

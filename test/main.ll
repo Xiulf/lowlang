@@ -6,7 +6,7 @@ fn main() -> i32 {
     %0: {
         init $1;
         
-        call($1 = const boxed(), goto %1)
+        call($1 = const loop(), goto %1)
     }
     
     %1: {
