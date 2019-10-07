@@ -119,6 +119,7 @@ fn factorial($1: i32) -> i32 {
 }
 
 /*
+-- rust
 fn loop() -> i32 {
     let i = 0;
     let sum = 0;
@@ -129,6 +130,19 @@ fn loop() -> i32 {
     }
     
     sum
+}
+
+-- c#
+int Loop() {
+    int i = 0;
+    int sum = 0;
+    
+    while i < 10 {
+        i++;
+        sum += 5;
+    }
+    
+    return sum;
 }
 */
 fn loop() -> i32 {
