@@ -255,8 +255,8 @@ impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Statement::Assign(l, r) => write!(f, "{} = {};", l, r),
-            Statement::StorageLive(l) => write!(f, "StorageLive({});", l),
-            Statement::StorageDead(l) => write!(f, "StorageDead({});", l),
+            Statement::StorageLive(l) => write!(f, "init {};", l),
+            Statement::StorageDead(l) => write!(f, "drop {};", l),
             Statement::Free(p) => write!(f, "free {};", p),
         }
     }
