@@ -1,0 +1,9 @@
+[package]
+name = "ll-llvm"
+version = "0.1.0"
+authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+syntax = { path = "../syntax" }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm8-0" }

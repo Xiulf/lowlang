@@ -10,3 +10,4 @@ syntax = { path = "syntax" }
 check = { path = "check" }
 vm = { path = "vm" }
 ll-cranelift = { path = "ll-cranelift" }
+ll-llvm = { path = "ll-llvm" }

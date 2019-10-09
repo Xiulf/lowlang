@@ -26,13 +26,6 @@ fn main() {
     // }
     
     {
-        let mut jit = ll_cranelift::JIT::new();
-        let fns = jit.compile(&ast).expect("JIT error");
-        let jit_main: fn() -> i32 = unsafe { std::mem::transmute(fns["main"]) };
-        let start = std::time::Instant::now();
-        let result = jit_main();
-        let elapsed = start.elapsed();
-        
-        println!("result: {} in {:?}", result, elapsed);
+        ll_llvm::Compiler::compile("test", &ast);
     }
 }
