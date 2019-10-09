@@ -265,6 +265,23 @@ impl<'a> Translator<'a> {
                     unimplemented!();
                 }
             },
+            Terminator::Assert(op, expected, goto, unwind) => {
+                let op = self.translate_operand(op);
+                
+                if *expected {
+                    self.builder.ins().brnz(op, self.blocks[goto], &[]);
+                    
+                    if let Some(unwind) = unwind {
+                        self.builder.ins().jump(self.blocks[unwind], &[]);
+                    }
+                } else {
+                    self.builder.ins().brz(op, self.blocks[goto], &[]);
+                    
+                    if let Some(unwind) = unwind {
+                        self.builder.ins().jump(self.blocks[unwind], &[]);
+                    }
+                }
+            },
             _ => unimplemented!()
         }
     }
@@ -320,10 +337,28 @@ impl<'a> Translator<'a> {
         match rvalue {
             RValue::Use(op) => self.translate_operand(op),
             RValue::Ref(place, _) => {
-                let place = self.translate_place(place);
+                match &place.base {
+                    PlaceBase::Local(id, _) => match self.variables[id].0 {
+                        VariableOrStackSlot::StackSlot(ss) => {
+                            self.builder.ins().stack_addr(
+                                self.module.target_config().pointer_type(),
+                                ss,
+                                0,
+                            )
+                        },
+                        _ => unimplemented!()
+                    }
+                }
+            },
+            RValue::Binary(op, lhs, rhs, _) => {
+                let lhs = self.translate_operand(lhs);
+                let rhs = self.translate_operand(rhs);
                 
-                // @TODO
-                place
+                match op {
+                    BinOp::Add => self.builder.ins().iadd(lhs, rhs),
+                    BinOp::Lt => self.builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs),
+                    _ => unimplemented!(),
+                }
             },
             _ => unimplemented!()
         }
