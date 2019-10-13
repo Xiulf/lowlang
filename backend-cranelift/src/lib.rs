@@ -99,7 +99,6 @@ impl JIT {
         
         builder.append_ebb_params_for_function_params(entry_ebb);
         builder.switch_to_block(entry_ebb);
-        builder.seal_block(entry_ebb);
         
         let variables = {
             let mut vars = HashMap::new();
@@ -356,7 +355,11 @@ impl<'a> Translator<'a> {
                 
                 match op {
                     BinOp::Add => self.builder.ins().iadd(lhs, rhs),
-                    BinOp::Lt => self.builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs),
+                    BinOp::Lt => {
+                        let r = self.builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
+                        
+                        self.builder.ins().bint(types::I8, r)
+                    },
                     _ => unimplemented!(),
                 }
             },
@@ -366,7 +369,7 @@ impl<'a> Translator<'a> {
     
     fn translate_const(&mut self, c: &Constant) -> Value {
         match c {
-            Constant::Bool(v) => self.builder.ins().bconst(types::B1, *v),
+            Constant::Bool(v) => self.builder.ins().bconst(types::I8, *v),
             Constant::UInt(v, UIntTy::U8) => self.builder.ins().iconst(types::I8, *v as i64),
             Constant::UInt(v, UIntTy::U16) => self.builder.ins().iconst(types::I16, *v as i64),
             Constant::UInt(v, UIntTy::U32) => self.builder.ins().iconst(types::I32, *v as i64),
@@ -402,7 +405,7 @@ impl<'a> Translator<'a> {
 
 fn translate_uninit(builder: &mut FunctionBuilder, ty: &syntax::Type) -> Value {
     match ty {
-        syntax::Type::Bool => builder.ins().bconst(types::B1, false),
+        syntax::Type::Bool => builder.ins().bconst(types::I8, false),
         syntax::Type::Unit => builder.ins().null(types::INVALID),
         syntax::Type::Int(IntTy::I8) => builder.ins().iconst(types::I8, 0),
         syntax::Type::Int(IntTy::I16) => builder.ins().iconst(types::I16, 0),
@@ -437,7 +440,7 @@ fn convert_ty(ty: &syntax::Type, ptr_ty: cranelift::prelude::Type) -> cranelift:
     use cranelift::prelude::types::*;
     
     match ty {
-        syntax::Type::Bool => B1,
+        syntax::Type::Bool => I8,
         syntax::Type::Int(IntTy::I8) => I8,
         syntax::Type::Int(IntTy::I16) => I16,
         syntax::Type::Int(IntTy::I32) => I32,

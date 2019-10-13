@@ -125,7 +125,7 @@ impl<'a> Lexer<'a> {
     fn ident(&mut self) -> Result<Entry> {
         while !self.eof() {
             match self.peek() {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => self.advance(),
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | '#' => self.advance(),
                 _ => break
             }
         }

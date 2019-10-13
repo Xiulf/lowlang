@@ -26,6 +26,11 @@ fn main() {
     // }
     
     {
-        ll_llvm::Compiler::compile("test", &ast);
+        let mut jit = backend_cranelift::JIT::new();
+        let fns = jit.compile(&ast).unwrap();
+        let main_fn = unsafe { std::mem::transmute::<_, fn() -> i32>(fns["main"]) };
+        let res = main_fn();
+        
+        println!("result: {}", res);
     }
 }
