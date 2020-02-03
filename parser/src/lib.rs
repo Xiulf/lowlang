@@ -1,3 +1,5 @@
+#![feature(ptr_offset_from)]
+
 pub mod parse;
 pub mod token;
 pub mod error;
@@ -9,18 +11,17 @@ pub mod lexer;
 
 pub use diagnostics;
 
-pub trait Spanned {
-    fn span(&self) -> diagnostics::Span;
-}
-
-pub fn parse<T: parse::Parse>(
-    source: &diagnostics::SourceFile,
+pub fn parse<T: parse::Parse + Default>(
+    source: &str,
+    file: diagnostics::FileId,
     reporter: &diagnostics::Reporter,
     start: Option<diagnostics::Span>
 ) -> T {
-    let mut lexer = lexer::Lexer::new(source, reporter);
+    use diagnostics::Spanned;
+    
+    let mut lexer = lexer::Lexer::new(source, file, reporter);
     let buffer = lexer.run();
-    let stream = parse::ParseBuffer::new(buffer.begin(), reporter, if let Some(start) = start {
+    let stream = parse::ParseBuffer::new(buffer.begin(), reporter, (), if let Some(start) = start {
         start
     } else if !buffer.tokens.is_empty() {
         buffer.tokens[0].span()
@@ -28,7 +29,14 @@ pub fn parse<T: parse::Parse>(
         Default::default()
     });
     
-    stream.parse().unwrap()
+    if let Ok(res) = stream.parse() {
+        if !stream.is_empty() {
+        }
+        
+        res
+    } else {
+        T::default()
+    }
 }
 
 // pub fn parse_buffer<T: parse::Parse>(buffer: &buffer::TokenBuffer, flags: usize, start: Option<diagnostics::Span>) -> error::Result<T> {

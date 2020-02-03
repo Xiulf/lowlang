@@ -2,7 +2,6 @@ use crate::buffer::Cursor;
 
 pub trait Token {
     fn peek(cursor: Cursor) -> bool;
-    
     fn display() -> &'static str;
 }
 
@@ -14,7 +13,7 @@ macro_rules! token {
             span: $crate::diagnostics::Span
         }
         
-        token!(@i punct $token $name/$n);
+        $crate::token!(@i punct $token $name/$n);
     };
     
     (ident $token:literal pub $name:ident) => {
@@ -23,7 +22,7 @@ macro_rules! token {
             span: $crate::diagnostics::Span
         }
         
-        token!(@i ident $token $name);
+        $crate:token!(@i ident $token $name);
     };
     
     (punct $token:literal $name:ident/$n:literal) => {
@@ -32,7 +31,7 @@ macro_rules! token {
             span: $crate::diagnostics::Span
         }
         
-        token!(@i punct $token $name/$n);
+        $crate::token!(@i punct $token $name/$n);
     };
     
     (ident $token:literal $name:ident) => {
@@ -41,15 +40,15 @@ macro_rules! token {
             span: $crate::diagnostics::Span
         }
         
-        token!(@i ident $token $name);
+        $crate::token!(@i ident $token $name);
     };
     
     (@i punct $token:literal $name:ident/$n:literal) => {
-        token!(@i $token $name);
+        $crate::token!(@i $token $name);
         
-        impl $crate::parse::Parse for $name {
-            fn parse(input: $crate::parse::ParseStream) -> $crate::error::Result<$name> {
-                use $crate::Spanned;
+        impl<D> $crate::parse::Parse<D> for $name {
+            fn parse(input: $crate::parse::ParseStream<D>) -> $crate::error::Result<$name> {
+                use $crate::diagnostics::Spanned;
                 
                 let mut span = input.span();
                 
@@ -74,7 +73,6 @@ macro_rules! token {
                             None => break
                         }
                     }
-                    
                     Err(cur.error(concat!("expected `", $token, "`")))
                 })?;
                 
@@ -137,14 +135,14 @@ macro_rules! token {
     };
     
     (@i ident $token:literal $name:ident) => {
-        token!(@i $token $name);
+        $crate::token!(@i $token $name);
         
-        impl $crate::parse::Parse for $name {
-            fn parse(input: $crate::parse::ParseStream) -> $crate::error::Result<$name> {
+        impl<D> $crate::parse::Parse<D> for $name {
+            fn parse(input: $crate::parse::ParseStream<D>) -> $crate::error::Result<$name> {
                 input.step(|cursor| {
                     if let Some((ident, rest)) = cursor.ident() {
-                        if ident.text == $token {
-                            use $crate::Spanned;
+                        if ident.name == $token {
+                            use $crate::diagnostics::Spanned;
                             
                             return Ok(($name::from(ident.span()), rest))
                         }
@@ -158,7 +156,7 @@ macro_rules! token {
         impl $crate::token::Token for $name {
             fn peek(cursor: $crate::buffer::Cursor) -> bool {
                 if let Some((ident, _rest)) = cursor.ident() {
-                    ident.text == $token
+                    ident.name == $token
                 } else {
                     false
                 }
@@ -173,8 +171,8 @@ macro_rules! token {
             fn to_tokens(&self) -> $crate::buffer::TokenBuffer {
                 $crate::buffer::TokenBuffer::new(vec![
                     $crate::buffer::Entry::Ident($crate::ident::Ident {
-                        span: self.span.clone(),
-                        text: $token.to_string()
+                        span: self.span,
+                        name: $token.to_string()
                     })
                 ])
             }
@@ -182,9 +180,9 @@ macro_rules! token {
     };
     
     (@i $token:literal $name:ident) => {
-        impl $crate::Spanned for $name {
+        impl $crate::diagnostics::Spanned for $name {
             fn span(&self) -> $crate::diagnostics::Span {
-                self.span.clone()
+                self.span
             }
         }
         

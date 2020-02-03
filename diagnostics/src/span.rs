@@ -1,38 +1,67 @@
-use crate::file::FileId;
-use fluix_encode::{Encodable, Decodable};
+use crate::file::{FileId, FileInfo};
+use intern::Intern;
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Encodable, Decodable)]
-pub struct Position {
-    pub offset: usize,
-    pub col: usize,
-    pub line: usize
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Encodable, Decodable)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
+    pub file: FileId,
     pub start: Position,
     pub end: Position,
-    pub file: FileId,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Position {
+    pub offset: usize,
+    pub line: usize,
+    pub col: usize,
 }
 
 impl Span {
+    pub fn empty(file: FileId) -> Span {
+        Span { file, .. Default::default() }
+    }
+    
     pub fn to(self, other: Span) -> Span {
-        Span {
-            start: self.start,
-            end: other.end,
-            file: self.file
+        assert_eq!(self.file, other.file);
+        Span { start: self.start, .. other }
+    }
+    
+    pub fn line_start(&self, end: bool) -> Position {
+        if end {
+            Position {
+                offset: self.end.offset - self.end.col,
+                line: self.end.line,
+                col: 0,
+            }
+        } else {
+            Position {
+                offset: self.start.offset - self.start.col,
+                line: self.start.line,
+                col: 0,
+            }
+        }
+    }
+
+    pub fn line_end(&self, start: bool) -> Position {
+        if start {
+            let len = FileInfo::untern(self.file).source.lines().nth(self.start.line).unwrap().len();
+
+            Position {
+                offset: self.start.offset + (len - self.start.col),
+                line: self.start.line,
+                col: len,
+            }
+        } else {
+            let len = FileInfo::untern(self.file).source.lines().nth(self.end.line).unwrap().len();
+
+            Position {
+                offset: self.end.offset + (len - self.end.col),
+                line: self.end.line,
+                col: len,
+            }
         }
     }
 }
 
-impl std::fmt::Display for Position {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}:{}", self.line + 1, self.col + 1)
-    }
-}
-
-impl std::fmt::Display for Span {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}..{}", self.start, self.end)
-    }
+pub trait Spanned {
+    fn span(&self) -> Span;
 }

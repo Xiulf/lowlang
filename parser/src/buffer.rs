@@ -1,11 +1,10 @@
 use crate::ident::Ident;
 use crate::punct::Punct;
 use crate::literal::Literal;
-use crate::Spanned;
-use diagnostics::Span;
+use diagnostics::{Span, Spanned};
 use std::marker::PhantomData;
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Entry {
     Ident(Ident),
     Punct(Punct),
@@ -13,14 +12,14 @@ pub enum Entry {
     Empty,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cursor<'a> {
     ptr: *const Entry,
     end: *const Entry,
     marker: PhantomData<&'a Entry>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TokenBuffer {
     pub tokens: Vec<Entry>
 }
@@ -74,6 +73,10 @@ impl<'a> Cursor<'a> {
             _ => None
         }
     }
+
+    pub fn offset(self, other: Cursor) -> usize {
+        unsafe { other.ptr.offset_from(self.ptr) as usize }
+    }
 }
 
 impl TokenBuffer {
@@ -119,6 +122,10 @@ impl TokenBuffer {
             tokens: self.tokens.into_iter().chain(other.tokens.into_iter()).collect()
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.tokens.is_empty()
+    }
 }
 
 impl Spanned for Entry {
@@ -137,7 +144,7 @@ impl std::fmt::Display for TokenBuffer {
         for entry in &self.tokens {
             match entry {
                 Entry::Empty => (),
-                Entry::Ident(id) => write!(f, "{} ", id.text)?,
+                Entry::Ident(id) => write!(f, "{} ", id.name)?,
                 Entry::Punct(p) => if let crate::punct::Spacing::Joint = &p.spacing {
                     p.ch.fmt(f)?;
                 } else {

@@ -1,0 +1,11 @@
+package test
+
+#1:
+export global a: i128;
+
+#0:
+export fn test "Fluix"(_0: usize, _1: &&u8) -> (_3: isize) {
+    %0 {
+        return
+    }
+}

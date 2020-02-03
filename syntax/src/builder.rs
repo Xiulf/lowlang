@@ -1,323 +1,250 @@
 use crate::*;
-use diagnostics::Span;
 use std::collections::BTreeMap;
 
-pub struct Builder {
-    functions: BTreeMap<String, Function>,
-}
-
-pub struct FunctionBuilder<'a> {
-    local_id: usize,
-    function: &'a mut Function,
-    block: Option<BlockId>,
-}
-
-pub struct Ins<'a> {
-    block: &'a mut BasicBlock,
-}
-
-#[macro_export]
-macro_rules! place {
-    (@rec [* $($rest:tt)+]; $proj:expr) => {{
-        $proj.push($crate::PlaceElem::Deref(Default::default()));
-        place!(@rec [$($rest)+]; $proj)
-    }};
-    
-    (@rec [$($rest:tt)+ > $num:literal]; $proj:expr) => {{
-        $proj.push($crate::PlaceElem::Field($num, Default::default()));
-        place!(@rec [$($rest)+]; $proj)
-    }};
-    
-    (@rec [$name:ident]; $proj:expr) => {
-        $crate::Place {
-            base: $crate::PlaceBase::Local($name, Default::default()),
-            projection: $proj,
-            span: Default::default(),
-        }
-    };
-    
-    ($($input:tt)+) => {
-        place!(@rec [$($input)+]; Vec::new())
-    };
-}
-
-impl Builder {
-    pub fn new() -> Builder {
-        Builder {
-            functions: BTreeMap::new()
+impl Package {
+    pub fn new(name: String) -> Package {
+        Package {
+            name,
+            externs: BTreeMap::new(),
+            globals: BTreeMap::new(),
+            bodies: BTreeMap::new(),
         }
     }
-    
-    pub fn create_function<'a>(&'a mut self, name: String, span: Span, ret: impl Into<Type>) -> FunctionBuilder<'a> {
-        let ret = ret.into();
-        
-        self.functions.insert(name.clone(), Function {
-            name: Ident {
-                text: name.clone(),
-                span,
-            },
-            params: Vec::new(),
-            ret: ret.clone(),
-            bindings: Vec::new(),
-            blocks: Vec::new()
+
+    fn next_id(&self) -> ItemId {
+        ItemId(self.externs.len() + self.globals.len() + self.bodies.len())
+    }
+
+    pub fn declare_extern_proc(&mut self, name: String, sig: Signature) -> ItemId {
+        let id = self.next_id();
+
+        self.externs.insert(id, Extern::Proc(name, sig));
+
+        id
+    }
+
+    pub fn declare_extern_global(&mut self, name: String, ty: Type) -> ItemId {
+        let id = self.next_id();
+
+        self.externs.insert(id, Extern::Global(name, ty));
+
+        id
+    }
+
+    pub fn declare_global(&mut self, export: bool, name: String, ty: Type) -> ItemId {
+        let id = self.next_id();
+
+        self.globals.insert(id, Global {
+            export,
+            name,
+            ty,
+            init: None,
         });
-        
-        FunctionBuilder {
-            local_id: 0,
-            function: self.functions.get_mut(&name).unwrap(),
-            block: None
-        }
+
+        id
     }
-    
-    pub fn get_function(&self, name: &str) -> Option<&Function> {
-        self.functions.get(name)
+
+    pub fn define_global(&mut self, id: ItemId, value: Box<[u8]>) {
+        self.globals.get_mut(&id).unwrap().init = Some(value);
+    }
+
+    pub fn declare_body(&mut self, export: bool, name: String, sig: Signature) -> ItemId {
+        let id = self.next_id();
+        let mut locals = BTreeMap::new();
+
+        for param in sig.1 {
+            let id = LocalId(locals.len());
+
+            locals.insert(id, Local {
+                id,
+                kind: LocalKind::Arg,
+                ty: param,
+            });
+        }
+
+        for ret in sig.2 {
+            let id = LocalId(locals.len());
+
+            locals.insert(id, Local {
+                id,
+                kind: LocalKind::Ret,
+                ty: ret,
+            });
+        }
+
+        self.bodies.insert(id, Body {
+            name,
+            export,
+            conv: sig.0,
+            locals,
+            blocks: BTreeMap::new(),
+        });
+
+        id
+    }
+
+    pub fn define_body(&mut self, id: ItemId) -> BodyBuilder {
+        let body = self.bodies.get_mut(&id).unwrap();
+
+        BodyBuilder {
+            body,
+            current_block: None,
+        }
     }
 }
 
-impl<'a> FunctionBuilder<'a> {
-    pub fn add_param(&mut self, ty: impl Into<Type>) -> LocalId {
-        let id = LocalId(self.local_id);
-        
-        self.local_id += 1;
-        self.function.params.push((id, ty.into()));
-        
-        id
+impl Signature {
+    pub fn new() -> Signature {
+        Signature(CallConv::Fluix, Vec::new(), Vec::new())
     }
-    
-    pub fn add_local(&mut self, ty: impl Into<Type>) -> LocalId {
-        let id = LocalId(self.local_id);
-        
-        self.local_id += 1;
-        self.function.bindings.push((id, ty.into()));
-        
-        id
+
+    pub fn call_conv(mut self, conv: CallConv) -> Signature {
+        self.0 = conv;
+        self
     }
-    
-    pub fn create_bb(&mut self) -> BlockId {
-        let id = BlockId(self.function.blocks.len());
-        
-        self.function.blocks.push(BasicBlock {
+
+    pub fn arg(mut self, ty: Type) -> Signature {
+        self.1.push(ty);
+        self
+    }
+
+    pub fn ret(mut self, ty: Type) -> Signature {
+        self.2.push(ty);
+        self
+    }
+}
+
+impl Place {
+    pub fn local(id: LocalId) -> Place {
+        Place {
+            base: PlaceBase::Local(id),
+            elems: Vec::new(),
+        }
+    }
+
+    pub fn global(id: ItemId) -> Place {
+        Place {
+            base: PlaceBase::Global(id),
+            elems: Vec::new(),
+        }
+    }
+
+    pub fn deref(mut self) -> Place {
+        self.elems.push(PlaceElem::Deref);
+        self
+    }
+
+    pub fn field(mut self, idx: usize) -> Place {
+        self.elems.push(PlaceElem::Field(idx));
+        self
+    }
+
+    pub fn index(mut self, idx: Place) -> Place {
+        self.elems.push(PlaceElem::Index(idx));
+        self
+    }
+
+    pub fn const_index(mut self, idx: usize) -> Place {
+        self.elems.push(PlaceElem::ConstIndex(idx));
+        self
+    }
+}
+
+pub struct BodyBuilder<'a> {
+    body: &'a mut Body,
+    current_block: Option<BlockId>,
+}
+
+impl<'a> BodyBuilder<'a> {
+    fn block(&mut self) -> &mut Block {
+        self.body.blocks.get_mut(self.current_block.as_ref().unwrap()).unwrap()
+    }
+
+    pub fn create_var(&mut self, ty: Type) -> LocalId {
+        let id = LocalId(self.body.locals.len());
+
+        self.body.locals.insert(id, Local {
             id,
-            statements: Vec::new(),
-            terminator: Terminator::Unreachable,
+            kind: LocalKind::Var,
+            ty,
         });
         
         id
     }
-    
-    pub fn use_bb(&mut self, id: BlockId) {
-        self.block = Some(id);
-    }
-    
-    pub fn ins<'b>(&'b mut self) -> Ins<'b> {
-        let mut block = None;
-        
-        for bb in &mut self.function.blocks {
-            if Some(bb.id) == self.block {
-                block = Some(bb);
-                
-                break;
-            }
-        }
-        
-        Ins {
-            block: block.unwrap()
-        }
-    }
-    
-    pub fn copy(&self, p: Place, span: Span) -> Operand {
-        Operand::Copy(p, span)
-    }
-    
-    pub fn move_(&self, p: Place, span: Span) -> Operand {
-        Operand::Move(p, span)
-    }
-    
-    pub fn const_(&self, c: Constant, span: Span) -> Operand {
-        Operand::Constant(c, span)
-    }
-    
-    pub fn tuple(&self, vals: Vec<Constant>) -> Constant {
-        Constant::Tuple(vals)
-    }
-    
-    pub fn item(&self, name: Ident) -> Constant {
-        Constant::Item(name)
-    }
-    
-    pub fn u8(&self, val: u8) -> Constant {
-        Constant::UInt(val as u64, UIntTy::U8)
-    }
-    
-    pub fn u16(&self, val: u16) -> Constant {
-        Constant::UInt(val as u64, UIntTy::U16)
-    }
-    
-    pub fn u32(&self, val: u32) -> Constant {
-        Constant::UInt(val as u64, UIntTy::U32)
-    }
-    
-    pub fn u64(&self, val: u64) -> Constant {
-        Constant::UInt(val as u64, UIntTy::U64)
-    }
-    
-    pub fn i8(&self, val: i8) -> Constant {
-        Constant::Int(val as i64, IntTy::I8)
-    }
-    
-    pub fn i16(&self, val: i16) -> Constant {
-        Constant::Int(val as i64, IntTy::I16)
-    }
-    
-    pub fn i32(&self, val: i32) -> Constant {
-        Constant::Int(val as i64, IntTy::I32)
-    }
-    
-    pub fn i64(&self, val: i64) -> Constant {
-        Constant::Int(val as i64, IntTy::I64)
-    }
-    
-    pub fn f32(&self, val: f32) -> Constant {
-        Constant::Float(val as f64, FloatTy::F32)
-    }
-    
-    pub fn f64(&self, val: f64) -> Constant {
-        Constant::Float(val as f64, FloatTy::F64)
-    }
-    
-    pub fn bool(&self, val: bool) -> Constant {
-        Constant::Bool(val)
-    }
-}
 
-impl<'a> Ins<'a> {
+    pub fn create_tmp(&mut self, ty: Type) -> LocalId {
+        let id = LocalId(self.body.locals.len());
+
+        self.body.locals.insert(id, Local {
+            id,
+            kind: LocalKind::Tmp,
+            ty,
+        });
+
+        id
+    }
+
+    pub fn create_block(&mut self) -> BlockId {
+        let id = BlockId(self.body.blocks.len());
+
+        self.body.blocks.insert(id, Block {
+            id,
+            stmts: Vec::new(),
+            term: Terminator::Unset,
+        });
+
+        id
+    }
+
+    pub fn use_(&mut self, place: Place, op: Operand) {
+        self.block().stmts.push(Stmt::Assign(place, Value::Use(op)));
+    }
+
+    pub fn ref_(&mut self, place: Place, to: Place) {
+        self.block().stmts.push(Stmt::Assign(place, Value::Ref(to)));
+    }
+
+    pub fn slice(&mut self, place: Place, arr: Operand, lo: Operand, hi: Operand) {
+        self.block().stmts.push(Stmt::Assign(place, Value::Slice(arr, lo, hi)));
+    }
+
+    pub fn binary(&mut self, place: Place, op: BinOp, lhs: Operand, rhs: Operand) {
+        self.block().stmts.push(Stmt::Assign(place, Value::BinOp(op, lhs, rhs)));
+    }
+
+    pub fn unary(&mut self, place: Place, op: UnOp, val: Operand) {
+        self.block().stmts.push(Stmt::Assign(place, Value::UnOp(op, val)));
+    }
+
+    pub fn nullary(&mut self, place: Place, op: NullOp, ty: Type) {
+        self.block().stmts.push(Stmt::Assign(place, Value::NullOp(op, ty)));
+    }
+
+    pub fn init(&mut self, place: Place, ty: Type, ops: Vec<Operand>) {
+        self.block().stmts.push(Stmt::Assign(place, Value::Init(ty, ops)));
+    }
+
     pub fn return_(&mut self) {
-        self.block.terminator = Terminator::Return;
+        if let Terminator::Unset = self.block().term {
+            self.block().term = Terminator::Return;
+        }
     }
-    
-    pub fn abort(&mut self) {
-        self.block.terminator = Terminator::Abort;
+
+    pub fn jump(&mut self, target: BlockId) {
+        if let Terminator::Unset = self.block().term {
+            self.block().term = Terminator::Jump(target);
+        }
     }
-    
-    pub fn unreachable(&mut self) {
-        self.block.terminator = Terminator::Unreachable;
+
+    pub fn call(&mut self, places: Vec<Place>, proc: Operand, args: Vec<Operand>, target: BlockId) {
+        if let Terminator::Unset = self.block().term {
+            self.block().term = Terminator::Call(places, proc, args, target);
+        }
     }
-    
-    pub fn goto(&mut self, block: BlockId) {
-        self.block.terminator = Terminator::Goto(block);
-    }
-    
-    pub fn call(&mut self, func: Operand, args: Vec<Operand>, unwind: Option<BlockId>) {
-        self.block.terminator = Terminator::Call(func, args, None, unwind);
-    }
-    
-    pub fn call_assign(&mut self, func: Operand, args: Vec<Operand>, to: Place, goto: BlockId, unwind: Option<BlockId>) {
-        self.block.terminator = Terminator::Call(func, args, Some((to, goto)), unwind);
-    }
-    
-    pub fn assert(&mut self, condition: Operand, expected: bool, goto: BlockId, unwind: Option<BlockId>) {
-        self.block.terminator = Terminator::Assert(condition, expected, goto, unwind);
-    }
-    
-    pub fn init(&mut self, var: LocalId) {
-        self.block.statements.push(Statement::StorageLive(var));
-    }
-    
-    pub fn drop(&mut self, var: LocalId) {
-        self.block.statements.push(Statement::StorageDead(var));
-    }
-    
-    pub fn free(&mut self, p: Place) {
-        self.block.statements.push(Statement::Free(p));
-    }
-    
-    pub fn use_(&mut self, tmp: Place, op: Operand) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Use(op)));
-    }
-    
-    pub fn ref_(&mut self, tmp: Place, to: Place) {
-        let span = to.span;
-        
-        self.block.statements.push(Statement::Assign(tmp, RValue::Ref(to, span)));
-    }
-    
-    pub fn tuple(&mut self, tmp: Place, ops: Vec<Operand>, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Tuple(ops, span)));
-    }
-    
-    pub fn alloc(&mut self, tmp: Place, len: Operand, ty: Type, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Alloc(len, ty, span)));
-    }
-    
-    pub fn add(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Add, lhs, rhs, span)));
-    }
-    
-    pub fn sub(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Sub, lhs, rhs, span)));
-    }
-    
-    pub fn mul(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Mul, lhs, rhs, span)));
-    }
-    
-    pub fn div(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Div, lhs, rhs, span)));
-    }
-    
-    pub fn rem(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Mod, lhs, rhs, span)));
-    }
-    
-    pub fn lt(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Lt, lhs, rhs, span)));
-    }
-    
-    pub fn le(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Le, lhs, rhs, span)));
-    }
-    
-    pub fn gt(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Gt, lhs, rhs, span)));
-    }
-    
-    pub fn ge(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Ge, lhs, rhs, span)));
-    }
-    
-    pub fn eq(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Eq, lhs, rhs, span)));
-    }
-    
-    pub fn ne(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Ne, lhs, rhs, span)));
-    }
-    
-    pub fn bit_and(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::BitAnd, lhs, rhs, span)));
-    }
-    
-    pub fn bit_or(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::BitOr, lhs, rhs, span)));
-    }
-    
-    pub fn bit_xor(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::BitXor, lhs, rhs, span)));
-    }
-    
-    pub fn shl(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Shl, lhs, rhs, span)));
-    }
-    
-    pub fn shr(&mut self, tmp: Place, lhs: Operand, rhs: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Binary(BinOp::Shr, lhs, rhs, span)));
-    }
-    
-    pub fn not(&mut self, tmp: Place, op: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Unary(UnOp::Not, op, span)));
-    }
-    
-    pub fn neg(&mut self, tmp: Place, op: Operand, span: Span) {
-        self.block.statements.push(Statement::Assign(tmp, RValue::Unary(UnOp::Neg, op, span)));
+
+    pub fn switch(&mut self, op: Operand, vals: Vec<u128>, targets: Vec<BlockId>) {
+        if let Terminator::Unset = self.block().term {
+            self.block().term = Terminator::Switch(op, vals, targets);
+        }
     }
 }

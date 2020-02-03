@@ -1,17 +1,22 @@
-pub mod code;
-pub mod diagnostic;
-pub mod span;
-pub mod file;
-pub mod reporter;
+#![feature(decl_macro)]
 
-pub use diagnostic::*;
-pub use span::*;
+mod span;
+mod file;
+mod diagnostic;
+mod reporter;
+mod emit;
+
 pub use file::*;
+pub use span::*;
+pub use diagnostic::*;
 pub use reporter::*;
-pub use diagnostics_derive::ToDiagnostic;
 
-pub fn warn(span: span::Span, msg: String) {
-    let d = diagnostic::Diagnostic::new(diagnostic::Severity::Warning, span, msg);
-    
-    d.print("", "");
+pub macro unimpl($span:expr, $msg:literal $(, $arg:expr)*) {
+    $crate::Diagnostic::new($crate::Severity::Bug, None, format!("Unimplemented feature: {}", format!($msg $(, $arg)*)))
+        .label($crate::Severity::Bug, $span, None::<String>)
+}
+
+pub macro unreach($span:expr, $msg:literal $(, $arg:expr)*) {
+    $crate::Diagnostic::new($crate::Severity::Bug, None, format!("Unreachable code reached: {}", format!($msg $(, $arg)*)))
+        .label($crate::Severity::Bug, $span, None::<String>)
 }

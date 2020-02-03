@@ -1,8 +1,8 @@
 [package]
-name = "vm"
+name = "parser"
 version = "0.1.0"
 authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
 edition = "2018"
 
 [dependencies]
-syntax = { path = "../syntax" }
+diagnostics = { path = "../diagnostics" }

@@ -5,8 +5,6 @@ authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
 edition = "2018"
 
 [dependencies]
+intern = { path = "intern" }
 diagnostics = { path = "diagnostics" }
 syntax = { path = "syntax" }
-check = { path = "check" }
-vm = { path = "vm" }
-backend-cranelift = { path = "backend-cranelift" }

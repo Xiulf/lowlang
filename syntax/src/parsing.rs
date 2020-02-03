@@ -1,689 +1,681 @@
 use crate::*;
 use parser::parse::{Parse, ParseStream};
+use parser::ident::Ident;
+use parser::literal::StringLiteral;
+use parser::literal::IntLiteral;
 use parser::error::Result;
-use parser::literal::*;
-use parser::token;
+use std::collections::BTreeMap;
 
-token![ident "i8" I8];
-token![ident "i16" I16];
-token![ident "i32" I32];
-token![ident "i64" I64];
-token![ident "u8" U8];
-token![ident "u16" U16];
-token![ident "u32" U32];
-token![ident "u64" U64];
-token![ident "f32" F32];
-token![ident "f64" F64];
-token![ident "bool" Bool];
+parser::token![ident "package" TPackage];
+parser::token![ident "extern" TExtern];
+parser::token![ident "global" TGlobal];
+parser::token![ident "fn" TFn];
+parser::token![ident "export" TExport];
+parser::token![ident "return" TReturn];
+parser::token![ident "jump" TJump];
+parser::token![ident "call" TCall];
+parser::token![ident "switch" TSwitch];
+parser::token![ident "otherwise" TOtherwise];
+parser::token![ident "unit" TUnit];
+parser::token![ident "add" TAdd];
+parser::token![ident "sub" TSub];
+parser::token![ident "mul" TMul];
+parser::token![ident "div" TDiv];
+parser::token![ident "rem" TRem];
+parser::token![ident "eq" TEq];
+parser::token![ident "ne" TNe];
+parser::token![ident "lt" TLt];
+parser::token![ident "le" TLe];
+parser::token![ident "gt" TGt];
+parser::token![ident "ge" TGe];
+parser::token![ident "band" TBand];
+parser::token![ident "bor" TBor];
+parser::token![ident "bxor" TBxor];
+parser::token![ident "shl" TShl];
+parser::token![ident "shr" TShr];
+parser::token![ident "neg" TNeg];
+parser::token![ident "not" TNot];
+parser::token![ident "sizeof" TSizeof];
+parser::token![ident "alignof" TAlignof];
+parser::token![ident "bool" TBool];
+parser::token![ident "char" TChar];
+parser::token![ident "str" TStr];
+parser::token![ident "ratio" TRatio];
+parser::token![ident "i8" TI8];
+parser::token![ident "i16" TI16];
+parser::token![ident "i32" TI32];
+parser::token![ident "i64" TI64];
+parser::token![ident "i128" TI128];
+parser::token![ident "isize" TIsize];
+parser::token![ident "u8" TU8];
+parser::token![ident "u16" TU16];
+parser::token![ident "u32" TU32];
+parser::token![ident "u64" TU64];
+parser::token![ident "u128" TU128];
+parser::token![ident "usize" TUsize];
+parser::token![ident "f32" TF32];
+parser::token![ident "f64" TF64];
+parser::token![ident "fsize" TFsize];
 
-token![ident "move" Move];
-token![ident "const" Const];
-token![ident "alloc" Alloc];
-token![ident "free" Free];
-token![ident "let" Let];
-token![ident "fn" Fn];
-token![ident "true" True];
-token![ident "false" False];
+parser::token![punct "(" TLParen/1];
+parser::token![punct ")" TRParen/1];
+parser::token![punct "{" TLBrace/1];
+parser::token![punct "}" TRBrace/1];
+parser::token![punct "[" TLBracket/1];
+parser::token![punct "]" TRBracket/1];
+parser::token![punct "." TDot/1];
+parser::token![punct "," TComma/1];
+parser::token![punct ":" TColon/1];
+parser::token![punct ";" TSemi/1];
+parser::token![punct "=" TEquals/1];
+parser::token![punct "#" THash/1];
+parser::token![punct "%" TPct/1];
+parser::token![punct "&" TAnd/1];
+parser::token![punct "*" TStar/1];
+parser::token![punct "->" TArrow/2];
+parser::token![punct ".." TDots/2];
 
-token![ident "init" Init];
-token![ident "drop" Drop];
-token![ident "goto" Goto];
-token![ident "resume" Resume];
-token![ident "abort" Abort];
-token![ident "return" Return];
-token![ident "unreachable" Unreachable];
-token![ident "call" Call];
-token![ident "assert" Assert];
-token![ident "unwind" Unwind];
+impl Parse for Package {
+    fn parse(input: ParseStream) -> Result<Package> {
+        input.parse::<TPackage>()?;
 
-token![ident "Add" Add];
-token![ident "Sub" Sub];
-token![ident "Mul" Mul];
-token![ident "Div" Div];
-token![ident "Mod" Mod];
-token![ident "Lt" Lt];
-token![ident "Le" Le];
-token![ident "Gt" Gt];
-token![ident "Ge" Ge];
-token![ident "Eq" Eq];
-token![ident "Ne" Ne];
-token![ident "BitAnd" BitAnd];
-token![ident "BitOr" BitOr];
-token![ident "BitXor" BitXor];
-token![ident "Shl" Shl];
-token![ident "Shr" Shr];
-token![ident "Not" Not];
-token![ident "Neg" Neg];
-
-token![punct ">" Proj/1];
-token![punct "," Comma/1];
-token![punct ":" Colon/1];
-token![punct ";" Semi/1];
-token![punct "%" Pct/1];
-token![punct "$" Pound/1];
-token![punct "!" Bang/1];
-token![punct "*" Deref/1];
-token![punct "&" Ref/1];
-token![punct "=" Equals/1];
-token![punct "(" LParen/1];
-token![punct ")" RParen/1];
-token![punct "{" LBrace/1];
-token![punct "}" RBrace/1];
-token![punct "[" LBracket/1];
-token![punct "]" RBracket/1];
-token![punct "->" Arrow/2];
-
-impl Parse for Program {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let mut fns = Vec::new();
+        let name = input.parse::<Ident>()?.name;
+        let mut externs = BTreeMap::new();
+        let mut globals = BTreeMap::new();
+        let mut bodies = BTreeMap::new();
         
         while !input.is_empty() {
-            match input.parse() {
-                Ok(f) => fns.push(f),
-                Err(e) => {
-                    input.reporter.add(e);
-                    
-                    while !input.is_empty() && !input.peek::<Fn>() {
-                        input.bump();
-                    }
+            let id = input.parse()?;
+
+            input.parse::<TColon>()?;
+
+            if input.peek::<TExtern>() {
+                match input.parse() {
+                    Ok(v) => { externs.insert(id, v); },
+                    Err(e) => {
+                        input.reporter.add(e);
+                                                
+                        while !input.is_empty() && !input.peek::<THash>() {
+                            input.bump();
+                        }
+                    },
+                }
+            } else if input.peek::<TGlobal>() || (input.peek::<TExport>() && input.peek2::<TGlobal>()) {
+                match input.parse() {
+                    Ok(v) => { globals.insert(id, v); },
+                    Err(e) => {
+                        input.reporter.add(e);
+                                                
+                        while !input.is_empty() && !input.peek::<THash>() {
+                            input.bump();
+                        }
+                    },
+                }
+            } else {
+                match input.parse() {
+                    Ok(v) => { bodies.insert(id, v); },
+                    Err(e) => {
+                        input.reporter.add(e);
+                        
+                        while !input.is_empty() && !input.peek::<THash>() {
+                            input.bump();
+                        }
+                    },
                 }
             }
         }
-        
-        Ok(Program {
-            fns,
+
+        Ok(Package {
+            name: name,
+            externs,
+            globals,
+            bodies,
         })
     }
 }
 
-impl Parse for Function {
-    fn parse(input: ParseStream) -> Result<Self> {
-        input.parse::<Fn>()?;
-        
-        let name = input.parse()?;
-        
-        input.parse::<LParen>()?;
-        
+impl Parse for Signature {
+    fn parse(input: ParseStream) -> Result<Signature> {
+        input.parse::<TFn>()?;
+
+        let conv = input.parse()?;
         let mut params = Vec::new();
-        
-        while !input.is_empty() && !input.peek::<RParen>() {
-            let name = input.parse()?;
-            
-            input.parse::<Colon>()?;
-            
-            let ty = input.parse()?;
-            
-            params.push((name, ty));
-            
-            if !input.peek::<RParen>() {
-                input.parse::<Comma>()?;
+
+        input.parse::<TLParen>()?;
+
+        while !input.is_empty() && !input.peek::<TRParen>() {
+            params.push(input.parse()?);
+
+            if !input.peek::<TRParen>() {
+                input.parse::<TComma>()?;
             }
         }
-        
-        input.parse::<RParen>()?;
-        input.parse::<Arrow>()?;
-        
-        let ret = input.parse()?;
-        
-        input.parse::<LBrace>()?;
-        
-        let mut bindings = Vec::new();
-        let mut blocks = Vec::new();
-        
-        while !input.is_empty() && input.peek::<Let>() {
-            input.parse::<Let>()?;
-            
-            let name = input.parse()?;
-            
-            input.parse::<Colon>()?;
-            
-            let ty = input.parse()?;
-            
-            input.parse::<Semi>()?;
-            bindings.push((name, ty));
+
+        input.parse::<TRParen>()?;
+
+        let mut rets = Vec::new();
+
+        input.parse::<TLParen>()?;
+
+        while !input.is_empty() && !input.peek::<TRParen>() {
+            rets.push(input.parse()?);
+
+            if !input.peek::<TRParen>() {
+                input.parse::<TComma>()?;
+            }
         }
+
+        input.parse::<TRParen>()?;
+
+        Ok(Signature(conv, params, rets))
+    }
+}
+
+impl Parse for Extern {
+    fn parse(input: ParseStream) -> Result<Extern> {
+        input.parse::<TExtern>()?;
+
+        let name = input.parse::<Ident>()?.name;
+
+        input.parse::<TColon>()?;
+
+        let ext = if input.peek::<TFn>() {
+            Extern::Proc(name, input.parse()?)
+        } else {
+            Extern::Global(name, input.parse()?)
+        };
+
+        input.parse::<TSemi>()?;
+
+        Ok(ext)
+    }
+}
+
+impl Parse for Global {
+    fn parse(input: ParseStream) -> Result<Global> {
+        let export = input.parse::<TExport>().is_ok();
         
-        while !input.is_empty() && input.peek::<Pct>() {
-            blocks.push(input.parse()?);
-        }
-        
-        input.parse::<RBrace>()?;
-        
-        Ok(Function {
+        input.parse::<TGlobal>()?;
+
+        let name = input.parse::<Ident>()?.name;
+
+        input.parse::<TColon>()?;
+
+        let ty = input.parse()?;
+
+        input.parse::<TSemi>()?;
+
+        Ok(Global {
+            export,
             name,
-            params,
-            ret,
-            bindings,
+            ty,
+            init: None,
+        })
+    }
+}
+
+impl Parse for Body {
+    fn parse(input: ParseStream) -> Result<Body> {
+        let export = input.parse::<TExport>().is_ok();
+        
+        input.parse::<TFn>()?;
+
+        let name = input.parse::<Ident>()?.name;
+        let conv = input.parse()?;
+        let mut locals = BTreeMap::new();
+
+        input.parse::<TLParen>()?;
+
+        while !input.is_empty() && !input.peek::<TRParen>() {
+            let id = input.parse()?;
+
+            input.parse::<TColon>()?;
+
+            let ty = input.parse()?;
+
+            locals.insert(id, Local {
+                id,
+                kind: LocalKind::Arg,
+                ty,
+            });
+            
+            if !input.peek::<TRParen>() {
+                input.parse::<TComma>()?;
+            }
+        }
+
+        input.parse::<TRParen>()?;
+        input.parse::<TArrow>()?;
+        input.parse::<TLParen>()?;
+
+        while !input.is_empty() && !input.peek::<TRParen>() {
+            let id = input.parse()?;
+
+            input.parse::<TColon>()?;
+
+            let ty = input.parse()?;
+
+            locals.insert(id, Local {
+                id,
+                kind: LocalKind::Ret,
+                ty,
+            });
+            
+            if !input.peek::<TRParen>() {
+                input.parse::<TComma>()?;
+            }
+        }
+
+        input.parse::<TRParen>()?;
+        input.parse::<TLBrace>()?;
+
+        let mut blocks = BTreeMap::new();
+
+        while !input.is_empty() && input.peek::<LocalId>() {
+            let id = input.parse()?;
+
+            input.parse::<TColon>()?;
+
+            let ty = input.parse()?;
+
+            locals.insert(id, Local {
+                id,
+                kind: LocalKind::Var,
+                ty,
+            });
+        }
+
+        while !input.is_empty() && !input.peek::<TRBrace>() {
+            let id = input.parse()?;
+            let block = Block::parse(input, id)?;
+
+            blocks.insert(id, block);
+        }
+
+        input.parse::<TRBrace>()?;
+
+        Ok(Body {
+            export,
+            name,
+            conv,
+            locals,
             blocks,
         })
     }
 }
 
-impl Parse for BlockId {
-    fn parse(input: ParseStream) -> Result<Self> {
-        input.parse::<Pct>()?;
-        
-        let lit = input.parse::<IntLiteral>()?;
-        
-        Ok(BlockId(lit.int as usize))
-    }
-}
+impl Block {
+    fn parse(input: ParseStream, id: BlockId) -> Result<Block> {
+        let mut stmts = Vec::new();
+        let mut term = Terminator::Unset;
 
-impl Parse for LocalId {
-    fn parse(input: ParseStream) -> Result<Self> {
-        input.parse::<Pound>()?;
-        
-        let lit = input.parse::<IntLiteral>()?;
-        
-        Ok(LocalId(lit.int as usize))
-    }
-}
+        input.parse::<TLBrace>()?;
 
-impl Parse for BasicBlock {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let id = input.parse()?;
-        
-        input.parse::<Colon>()?;
-        input.parse::<LBrace>()?;
-        
-        let mut statements = Vec::new();
-        
-        while let Ok(_) = input.fork().parse::<Statement>() {
-            statements.push(input.parse()?);
+        while !input.is_empty() && !input.peek::<TRBrace>() {
+            if input.peek::<TJump>() ||
+                input.peek::<TReturn>() ||
+                input.peek::<TCall>() ||
+                input.peek::<TSwitch>()
+            {
+                term = input.parse()?;
+
+                break;
+            } else {
+                stmts.push(input.parse()?);
+            }
         }
-        
-        let terminator = input.parse()?;
-        
-        input.parse::<RBrace>()?;
-        
-        Ok(BasicBlock {
+
+        input.parse::<TRBrace>()?;
+
+        Ok(Block {
             id,
-            statements,
-            terminator,
+            stmts,
+            term,
         })
     }
 }
 
-impl Parse for Statement {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<Init>() {
-            input.parse::<Init>()?;
-            
-            let v = input.parse()?;
-            
-            input.parse::<Semi>()?;
-            
-            Ok(Statement::StorageLive(v))
-        } else if input.peek::<Drop>() {
-            input.parse::<Drop>()?;
-            
-            let v = input.parse()?;
-            
-            input.parse::<Semi>()?;
-            
-            Ok(Statement::StorageDead(v))
-        } else if input.peek::<Free>() {
-            input.parse::<Free>()?;
-            
-            let v = input.parse()?;
-            
-            input.parse::<Semi>()?;
-            
-            Ok(Statement::Free(v))
-        } else {
-            let l = input.parse()?;
-            
-            input.parse::<Equals>()?;
-            
-            let r = input.parse()?;
-            
-            input.parse::<Semi>()?;
-            
-            Ok(Statement::Assign(l, r))
-        }
+impl Parse for Stmt {
+    fn parse(input: ParseStream) -> Result<Stmt> {
+        let place = input.parse()?;
+
+        input.parse::<TEquals>()?;
+
+        let value = input.parse()?;
+
+        Ok(Stmt::Assign(place, value))
     }
 }
 
 impl Parse for Terminator {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<Goto>() {
-            input.parse::<Goto>()?;
-            input.parse::<LParen>()?;
-            
-            let to = input.parse()?;
-            
-            input.parse::<RParen>()?;
-            
-            Ok(Terminator::Goto(to))
-        } else if input.peek::<Resume>() {
-            input.parse::<Resume>()?;
-            
-            Ok(Terminator::Resume)
-        } else if input.peek::<Abort>() {
-            input.parse::<Abort>()?;
-            
-            Ok(Terminator::Abort)
-        } else if input.peek::<Return>() {
-            input.parse::<Return>()?;
-            
+    fn parse(input: ParseStream) -> Result<Terminator> {
+        if let Ok(_) = input.parse::<TReturn>() {
             Ok(Terminator::Return)
-        } else if input.peek::<Unreachable>() {
-            input.parse::<Unreachable>()?;
-            
-            Ok(Terminator::Unreachable)
-        } else if input.peek::<Call>() {
-            input.parse::<Call>()?;
-            input.parse::<LParen>()?;
-            
-            let goto = if let Ok(p) = input.parse::<Place>() {
-                input.parse::<Equals>()?;
-                
-                Some(p)
-            } else {
-                None
-            };
-            
-            let op = input.parse()?;
-            
-            input.parse::<LParen>()?;
-            
+        } else if let Ok(_) = input.parse::<TJump>() {
+            Ok(Terminator::Jump(input.parse()?))
+        } else if let Ok(_) = input.parse::<TCall>() {
+            let mut places = vec![input.parse()?];
+
+            while !input.is_empty() && input.peek::<TComma>() {
+                input.parse::<TComma>()?;
+                places.push(input.parse()?);
+            }
+
+            input.parse::<TEquals>()?;
+
+            let proc = input.parse()?;
             let mut args = Vec::new();
-            
-            while !input.is_empty() && !input.peek::<RParen>() {
+
+            input.parse::<TLParen>()?;
+
+            while !input.is_empty() && !input.peek::<TRParen>() {
                 args.push(input.parse()?);
-                
-                if !input.peek::<RParen>() {
-                    input.parse::<Comma>()?;
+
+                if !input.peek::<TRParen>() {
+                    input.parse::<TComma>()?;
                 }
             }
-            
-            input.parse::<RParen>()?;
-            
-            let (goto, fail) = if let Some(goto) = goto {
-                input.parse::<Comma>()?;
-                input.parse::<Goto>()?;
-                
-                let to = input.parse()?;
-                let fail = if let Ok(_) = input.parse::<Comma>() {
-                    input.parse::<Unwind>()?;
-                    
-                    Some(input.parse()?)
-                } else {
-                    None
-                };
-                
-                (Some((goto, to)), fail)
-            } else if let Ok(_) = input.parse::<Comma>() {
-                input.parse::<Unwind>()?;
-                
-                (None, Some(input.parse()?))
-            } else {
-                (None, None)
-            };
-            
-            input.parse::<RParen>()?;
-            
-            Ok(Terminator::Call(op, args, goto, fail))
-        } else if input.peek::<Assert>() {
-            input.parse::<Assert>()?;
-            input.parse::<LParen>()?;
-            
-            let expected = input.parse::<Option<Bang>>()?.is_none();
-            let op = input.parse()?;
-            
-            input.parse::<Comma>()?;
-            input.parse::<Goto>()?;
-            
-            let success = input.parse()?;
-            let fail = if let Ok(_) = input.parse::<Comma>() {
-                input.parse::<Unwind>()?;
-                
-                Some(input.parse()?)
-            } else {
-                None
-            };
-            
-            input.parse::<RParen>()?;
-            
-            Ok(Terminator::Assert(op, expected, success, fail))
+
+            input.parse::<TRParen>()?;
+            input.parse::<TComma>()?;
+
+            let target = input.parse()?;
+
+            Ok(Terminator::Call(places, proc, args, target))
         } else {
-            input.error("invalid terminator")
+            input.parse::<TSwitch>()?;
+
+            let pred = input.parse()?;
+            let mut values = Vec::new();
+            let mut targets = Vec::new();
+
+            input.parse::<TLBracket>()?;
+
+            while !input.is_empty() && !input.peek::<TOtherwise>() {
+                values.push(input.parse::<IntLiteral>()?.int as u128);
+                input.parse::<TColon>()?;
+                targets.push(input.parse()?);
+                input.parse::<TComma>()?;
+            }
+
+            input.parse::<TOtherwise>()?;
+            targets.push(input.parse()?);
+            input.parse::<TRBracket>()?;
+
+            Ok(Terminator::Switch(pred, values, targets))
         }
     }
 }
 
 impl Parse for Place {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let start = input.span();
-        let mut projection = Vec::new();
-        
-        while !input.is_empty() && input.peek::<Deref>() {
-            let span = input.span();
-            
-            input.parse::<Deref>()?;
-            projection.push(PlaceElem::Deref(span));
+    fn parse(input: ParseStream) -> Result<Place> {
+        let mut elems = Vec::new();
+
+        while !input.is_empty() && input.peek::<TStar>() {
+            input.parse::<TStar>()?;
+            elems.push(PlaceElem::Deref);
         }
-        
-        let base = input.parse()?;
-        
-        while !input.is_empty() && input.peek::<Proj>() {
-            let start = input.span();
-            
-            input.parse::<Proj>()?;
-            
-            let lit = input.parse::<IntLiteral>()?;
-            let span = start.to(input.prev_span());
-            
-            projection.push(PlaceElem::Field(lit.int as usize, span));
+
+        let mut place = if let Ok(_) = input.parse::<TLParen>() {
+            let place = input.parse()?;
+
+            input.parse::<TRParen>()?;
+            place
+        } else {
+            Place {
+                base: input.parse()?,
+                elems: Vec::new(),
+            }
+        };
+
+        while !input.is_empty() {
+            if input.peek::<TDot>() && !input.peek::<TDots>() {
+                input.parse::<TDot>()?;
+
+                let n = input.parse::<IntLiteral>()?.int as usize;
+
+                place.elems.push(PlaceElem::Field(n));
+            } else {
+                let fork = input.fork();
+
+                if let Ok(_) = fork.parse::<TLBracket>() {
+                    if fork.parse::<Place>().is_ok() || fork.parse::<IntLiteral>().is_ok() {
+                        if !fork.peek::<TDots>() {
+                            input.parse::<TLBracket>()?;
+
+                            if let Ok(lit) = input.parse::<IntLiteral>() {
+                                place.elems.push(PlaceElem::ConstIndex(lit.int as usize));
+                            } else {
+                                place.elems.push(PlaceElem::Index(input.parse()?));
+                            }
+
+                            input.parse::<TRBracket>()?;
+                        }
+                    }
+                }
+            }
         }
-        
-        Ok(Place {
-            base,
-            projection,
-            span: start.to(input.prev_span())
-        })
+
+        place.elems.append(&mut elems);
+
+        Ok(place)
     }
 }
 
 impl Parse for PlaceBase {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<Pound>() {
-            let start = input.span();
-            let l = input.parse()?;
-            
-            Ok(PlaceBase::Local(l, start.to(input.prev_span())))
+    fn parse(input: ParseStream) -> Result<PlaceBase> {
+        if let Ok(id) = input.parse::<ItemId>() {
+            Ok(PlaceBase::Global(id))
         } else {
-            input.error("invalid place")
+            Ok(PlaceBase::Local(input.parse()?))
         }
     }
 }
 
 impl Parse for Operand {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<Move>() {
-            let start = input.span();
-            
-            input.parse::<Move>()?;
-            
-            Ok(Operand::Move(input.parse()?, start.to(input.prev_span())))
-        } else if input.peek::<Const>() {
-            let start = input.span();
-            
-            Ok(Operand::Constant(input.parse()?, start.to(input.prev_span())))
+    fn parse(input: ParseStream) -> Result<Operand> {
+        if let Ok(place) = input.parse() {
+            Ok(Operand::Place(place))
         } else {
-            let start = input.span();
-            
-            Ok(Operand::Copy(input.parse()?, start.to(input.prev_span())))
+            Ok(Operand::Constant(input.parse()?))
         }
     }
 }
 
-impl Parse for RValue {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<Ref>() {
-            let start = input.span();
-            
-            input.parse::<Ref>()?;
-            
-            Ok(RValue::Ref(input.parse()?, start.to(input.prev_span())))
-        } else if input.fork().parse::<BinOp>().is_ok() {
-            let start = input.span();
-            let op = input.parse()?;
-            
-            input.parse::<LParen>()?;
-            
-            let lhs = input.parse()?;
-            
-            input.parse::<Comma>()?;
-            
-            let rhs = input.parse()?;
-            
-            input.parse::<RParen>()?;
-            
-            Ok(RValue::Binary(op, lhs, rhs, start.to(input.prev_span())))
-        } else if input.fork().parse::<UnOp>().is_ok() {
-            let start = input.span();
-            let op = input.parse()?;
-            
-            input.parse::<LParen>()?;
-            
-            let lhs = input.parse()?;
-            
-            input.parse::<RParen>()?;
-            
-            Ok(RValue::Unary(op, lhs, start.to(input.prev_span())))
-        } else if input.peek::<LParen>() {
-            let start = input.span();
-            
-            input.parse::<LParen>()?;
-            
+impl Parse for Const {
+    fn parse(input: ParseStream) -> Result<Const> {
+        if let Ok(_) = input.parse::<TUnit>() {
+            Ok(Const::Unit)
+        } else if let Ok(lit) = input.parse::<IntLiteral>() {
+            Ok(Const::Scalar(lit.int))
+        } else if let Ok(lit) = input.parse::<StringLiteral>() {
+            Ok(Const::Bytes(lit.text.into_bytes().into_boxed_slice()))
+        } else {
+            Ok(Const::FuncAddr(input.parse()?))
+        }
+    }
+}
+
+impl Parse for Value {
+    fn parse(input: ParseStream) -> Result<Value> {
+        if let Ok(_) = input.parse::<TAnd>() {
+            Ok(Value::Ref(input.parse()?))
+        } else if let Ok(_) = input.parse::<TAdd>() {
+            Ok(Value::BinOp(BinOp::Add, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TSub>() {
+            Ok(Value::BinOp(BinOp::Sub, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TMul>() {
+            Ok(Value::BinOp(BinOp::Mul, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TDiv>() {
+            Ok(Value::BinOp(BinOp::Div, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TRem>() {
+            Ok(Value::BinOp(BinOp::Rem, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TEq>() {
+            Ok(Value::BinOp(BinOp::Eq, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TNe>() {
+            Ok(Value::BinOp(BinOp::Ne, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TLt>() {
+            Ok(Value::BinOp(BinOp::Lt, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TLe>() {
+            Ok(Value::BinOp(BinOp::Le, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TGt>() {
+            Ok(Value::BinOp(BinOp::Gt, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TGe>() {
+            Ok(Value::BinOp(BinOp::Ge, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TBand>() {
+            Ok(Value::BinOp(BinOp::BitAnd, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TBor>() {
+            Ok(Value::BinOp(BinOp::BitOr, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TBxor>() {
+            Ok(Value::BinOp(BinOp::BitXOr, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TShl>() {
+            Ok(Value::BinOp(BinOp::Shl, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TShr>() {
+            Ok(Value::BinOp(BinOp::Shr, input.parse()?, input.parse()?))
+        } else if let Ok(_) = input.parse::<TNeg>() {
+            Ok(Value::UnOp(UnOp::Neg, input.parse()?))
+        } else if let Ok(_) = input.parse::<TNot>() {
+            Ok(Value::UnOp(UnOp::Not, input.parse()?))
+        } else if let Ok(_) = input.parse::<TSizeof>() {
+            Ok(Value::NullOp(NullOp::SizeOf, input.parse()?))
+        } else if let Ok(_) = input.parse::<TAlignof>() {
+            Ok(Value::NullOp(NullOp::AlignOf, input.parse()?))
+        } else if let Ok(ty) = input.parse() {
             let mut ops = Vec::new();
-            
-            while !input.is_empty() && !input.peek::<RParen>() {
+
+            input.parse::<TLBrace>()?;
+
+            while !input.is_empty() && !input.peek::<TRBrace>() {
                 ops.push(input.parse()?);
-                
-                if !input.peek::<RParen>() {
-                    input.parse::<Comma>()?;
+
+                if !input.peek::<TRBrace>() {
+                    input.parse::<TComma>()?;
                 }
             }
-            
-            input.parse::<RParen>()?;
-            
-            if ops.len() == 1 {
-                input.error("tuple expects 0 or 2 or more elements")
-            } else {
-                Ok(RValue::Tuple(ops, start.to(input.prev_span())))
-            }
-        } else if input.peek::<Alloc>() {
-            let start = input.span();
-            
-            input.parse::<Alloc>()?;
-            
-            let v = input.parse()?;
-            
-            input.parse::<Colon>()?;
-            
-            let ty = input.parse()?;
-            
-            Ok(RValue::Alloc(v, ty, start.to(input.prev_span())))
+
+            input.parse::<TRBrace>()?;
+
+            Ok(Value::Init(ty, ops))
         } else {
-            Ok(RValue::Use(input.parse()?))
-        }
-    }
-}
+            let op = input.parse()?;
 
-impl Parse for BinOp {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if let Ok(_) = input.parse::<Add>() { Ok(BinOp::Add) }
-        else if let Ok(_) = input.parse::<Sub>() { Ok(BinOp::Sub) }
-        else if let Ok(_) = input.parse::<Mul>() { Ok(BinOp::Mul) }
-        else if let Ok(_) = input.parse::<Div>() { Ok(BinOp::Div) }
-        else if let Ok(_) = input.parse::<Mod>() { Ok(BinOp::Mod) }
-        else if let Ok(_) = input.parse::<Lt>() { Ok(BinOp::Lt) }
-        else if let Ok(_) = input.parse::<Le>() { Ok(BinOp::Le) }
-        else if let Ok(_) = input.parse::<Gt>() { Ok(BinOp::Gt) }
-        else if let Ok(_) = input.parse::<Ge>() { Ok(BinOp::Ge) }
-        else if let Ok(_) = input.parse::<Eq>() { Ok(BinOp::Eq) }
-        else if let Ok(_) = input.parse::<Ne>() { Ok(BinOp::Ne) }
-        else if let Ok(_) = input.parse::<BitAnd>() { Ok(BinOp::BitAnd) }
-        else if let Ok(_) = input.parse::<BitOr>() { Ok(BinOp::BitOr) }
-        else if let Ok(_) = input.parse::<BitXor>() { Ok(BinOp::BitXor) }
-        else if let Ok(_) = input.parse::<Shl>() { Ok(BinOp::Shl) }
-        else if let Ok(_) = input.parse::<Shr>() { Ok(BinOp::Shr) }
-        else { input.error("invalid binary operation") }
-    }
-}
+            if let Ok(_) = input.parse::<TLBracket>() {
+                let lo = input.parse()?;
 
-impl Parse for UnOp {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if let Ok(_) = input.parse::<Not>() { Ok(UnOp::Not) }
-        else if let Ok(_) = input.parse::<Neg>() { Ok(UnOp::Neg) }
-        else { input.error("invalid unary operation") }
-    }
-}
+                input.parse::<TDots>()?;
 
-impl Parse for Constant {
-    fn parse(input: ParseStream) -> Result<Self> {
-        input.parse::<Const>()?;
-        
-        if input.peek::<IntLiteral>() {
-            let lit = input.parse::<IntLiteral>()?;
-            
-            if input.peek::<I8>() || input.peek::<I16>() ||
-                input.peek::<I32>() || input.peek::<I64>()
-            {
-                Ok(Constant::Int(lit.int as i64, input.parse()?))
+                let hi = input.parse()?;
+
+                input.parse::<TRBracket>()?;
+
+                Ok(Value::Slice(op, lo, hi))
             } else {
-                Ok(Constant::UInt(lit.int, input.parse()?))
+                Ok(Value::Use(op))
             }
-        } else if input.peek::<FloatLiteral>() {
-            let lit = input.parse::<FloatLiteral>()?;
-            
-            Ok(Constant::Float(lit.float, input.parse()?))
-        } else if input.peek::<True>() {
-            input.parse::<True>()?;
-            
-            Ok(Constant::Bool(true))
-        } else if input.peek::<False>() {
-            input.parse::<False>()?;
-            
-            Ok(Constant::Bool(false))
-        } else if input.peek::<Ident>() {
-            Ok(Constant::Item(input.parse()?))
-        } else if input.peek::<LParen>() {
-            input.parse::<LParen>()?;
-            
-            let mut consts = Vec::new();
-            
-            while !input.is_empty() && !input.peek::<RParen>() {
-                consts.push(input.parse()?);
-                
-                if !input.peek::<RParen>() {
-                    input.parse::<Comma>()?;
-                }
-            }
-            
-            input.parse::<RParen>()?;
-            
-            if consts.len() == 1 {
-                Ok(consts.into_iter().next().unwrap())
-            } else {
-                Ok(Constant::Tuple(consts))
-            }
-        } else {
-            input.error("expected a constant")
         }
     }
 }
 
 impl Parse for Type {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<LParen>() {
-            input.parse::<LParen>()?;
-            
-            let mut tys = Vec::new();
-            
-            while !input.is_empty() && !input.peek::<RParen>() {
-                tys.push(input.parse()?);
-                
-                if !input.peek::<RParen>() {
-                    input.parse::<Comma>()?;
-                }
-            }
-            
-            input.parse::<RParen>()?;
-            
-            if tys.is_empty() {
-                Ok(Type::Unit)
-            } else if tys.len() == 1 {
-                Ok(tys.into_iter().next().unwrap())
-            } else {
-                Ok(Type::Tuple(tys))
-            }
-        } else if input.peek::<Ref>() {
-            input.parse::<Ref>()?;
-            
-            Ok(Type::Ptr(Box::new(input.parse()?)))
-        } else if input.peek::<Bool>() {
-            input.parse::<Bool>()?;
-            
+    fn parse(input: ParseStream) -> Result<Type> {
+        if let Ok(_) = input.parse::<TUnit>() {
+            Ok(Type::Unit)
+        } else if let Ok(_) = input.parse::<TBool>() {
             Ok(Type::Bool)
-        } else if input.peek::<I8>() || input.peek::<I16>() ||
-            input.peek::<I32>() || input.peek::<I64>()
-        {
-            Ok(Type::Int(input.parse()?))
-        } else if input.peek::<I8>() || input.peek::<I16>() ||
-            input.peek::<I32>() || input.peek::<I64>()
-        {
-            Ok(Type::UInt(input.parse()?))
-        } else if input.peek::<F32>() || input.peek::<F64>() {
-            Ok(Type::Float(input.parse()?))
+        } else if let Ok(_) = input.parse::<TChar>() {
+            Ok(Type::Char)
+        } else if let Ok(_) = input.parse::<TStr>() {
+            Ok(Type::Str)
+        } else if let Ok(_) = input.parse::<TRatio>() {
+            Ok(Type::Ratio)
+        } else if let Ok(_) = input.parse::<TU8>() {
+            Ok(Type::UInt(IntSize::Bits8))
+        } else if let Ok(_) = input.parse::<TU16>() {
+            Ok(Type::UInt(IntSize::Bits16))
+        } else if let Ok(_) = input.parse::<TU32>() {
+            Ok(Type::UInt(IntSize::Bits32))
+        } else if let Ok(_) = input.parse::<TU64>() {
+            Ok(Type::UInt(IntSize::Bits64))
+        } else if let Ok(_) = input.parse::<TU128>() {
+            Ok(Type::UInt(IntSize::Bits128))
+        } else if let Ok(_) = input.parse::<TUsize>() {
+            Ok(Type::UInt(IntSize::Size))
+        } else if let Ok(_) = input.parse::<TI8>() {
+            Ok(Type::Int(IntSize::Bits8))
+        } else if let Ok(_) = input.parse::<TI16>() {
+            Ok(Type::Int(IntSize::Bits16))
+        } else if let Ok(_) = input.parse::<TI32>() {
+            Ok(Type::Int(IntSize::Bits32))
+        } else if let Ok(_) = input.parse::<TI64>() {
+            Ok(Type::Int(IntSize::Bits64))
+        } else if let Ok(_) = input.parse::<TI128>() {
+            Ok(Type::Int(IntSize::Bits128))
+        } else if let Ok(_) = input.parse::<TIsize>() {
+            Ok(Type::Int(IntSize::Size))
+        } else if let Ok(_) = input.parse::<TF32>() {
+            Ok(Type::Float(FloatSize::Bits32))
+        } else if let Ok(_) = input.parse::<TF64>() {
+            Ok(Type::Float(FloatSize::Bits64))
+        } else if let Ok(_) = input.parse::<TFsize>() {
+            Ok(Type::Float(FloatSize::Size))
+        } else if let Ok(_) = input.parse::<TAnd>() {
+            Ok(Type::Ref(input.parse()?))
         } else {
-            input.error("expected a type")
+            Ok(Type::Proc(input.parse()?))
         }
     }
 }
 
-impl Parse for IntTy {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<I8>() {
-            input.parse::<I8>()?;
-            
-            Ok(IntTy::I8)
-        } else if input.peek::<I16>() {
-            input.parse::<I16>()?;
-            
-            Ok(IntTy::I16)
-        } else if input.peek::<I32>() {
-            input.parse::<I32>()?;
-            
-            Ok(IntTy::I32)
-        } else if input.peek::<I64>() {
-            input.parse::<I64>()?;
-            
-            Ok(IntTy::I64)
-        } else {
-            input.error("expected 'i8', 'i16', 'i32' or 'i64'")
+impl Parse for CallConv {
+    fn parse(input: ParseStream) -> Result<CallConv> {
+        let s = input.parse::<StringLiteral>()?.text;
+
+        match s.as_str() {
+            "C" => Ok(CallConv::C),
+            "Fluix" => Ok(CallConv::Fluix),
+            _ => input.error("invalid call convention"),
         }
     }
 }
 
-impl Parse for UIntTy {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<U8>() {
-            input.parse::<U8>()?;
-            
-            Ok(UIntTy::U8)
-        } else if input.peek::<U16>() {
-            input.parse::<U16>()?;
-            
-            Ok(UIntTy::U16)
-        } else if input.peek::<U32>() {
-            input.parse::<U32>()?;
-            
-            Ok(UIntTy::U32)
-        } else if input.peek::<U64>() {
-            input.parse::<U64>()?;
-            
-            Ok(UIntTy::U64)
-        } else {
-            input.error("expected 'u8', 'u16', 'u32' or 'u64'")
-        }
+impl Parse for ItemId {
+    fn parse(input: ParseStream) -> Result<ItemId> {
+        input.parse::<THash>()?;
+        input.parse::<IntLiteral>()
+            .map(|l| ItemId(l.int as usize))
     }
 }
 
-impl Parse for FloatTy {
-    fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek::<F32>() {
-            input.parse::<F32>()?;
-            
-            Ok(FloatTy::F32)
-        } else if input.peek::<F64>() {
-            input.parse::<F64>()?;
-            
-            Ok(FloatTy::F64)
-        } else {
-            input.error("expected 'f32' or 'f64'")
+impl Parse for LocalId {
+    fn parse(input: ParseStream) -> Result<LocalId> {
+        let name = input.parse::<Ident>()?.name;
+        let num = name.chars().skip(1).collect::<String>();
+        let id = num.parse::<usize>().unwrap();
+
+        Ok(LocalId(id))
+    }
+}
+
+impl Parse for BlockId {
+    fn parse(input: ParseStream) -> Result<BlockId> {
+        input.parse::<TPct>()?;
+        input.parse::<IntLiteral>()
+            .map(|l| BlockId(l.int as usize))
+    }
+}
+
+impl parser::token::Token for LocalId {
+    fn peek(cursor: parser::buffer::Cursor) -> bool {
+        match cursor.ident() {
+            Some((ident, _)) => {
+                ident.name.starts_with('_') &&
+                ident.name.chars().all(|c| matches!(c, '0'..='9'))
+            },
+            None => false,
         }
+    }
+
+    fn display() -> &'static str {
+        "local id"
     }
 }

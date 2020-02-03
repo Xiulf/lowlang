@@ -1,18 +1,17 @@
-use crate::Spanned;
 use crate::parse::{Parse, ParseStream, ToTokens};
 use crate::buffer::{Cursor, TokenBuffer, Entry};
 use crate::token::Token;
 use crate::error::Result;
-use diagnostics::Span;
+use diagnostics::{Span, Spanned};
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Punct {
     pub span: Span,
     pub ch: char,
     pub spacing: Spacing
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Spacing {
     Alone,
     Joint

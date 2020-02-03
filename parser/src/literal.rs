@@ -1,13 +1,11 @@
-use crate::Spanned;
 use crate::parse::{Parse, ParseStream, ToTokens};
 use crate::token::Token;
 use crate::buffer::{Cursor, TokenBuffer, Entry};
 use crate::error::Result;
-use fluix_encode::{Encodable, Decodable};
-use diagnostics::Span;
+use diagnostics::{Span, Spanned};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-#[derive(Clone, Debug, Encodable, Decodable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Literal {
     String(StringLiteral),
     Char(CharLiteral),
@@ -15,33 +13,33 @@ pub enum Literal {
     Float(FloatLiteral),
 }
 
-#[derive(Clone, Debug, Encodable, Decodable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StringLiteral {
     pub span: Span,
     pub text: String
 }
 
-#[derive(Clone, Debug, Encodable, Decodable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CharLiteral {
     pub span: Span,
     pub ch: char
 }
 
-#[derive(Clone, Debug, Encodable, Decodable)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IntLiteral {
     pub span: Span,
-    pub int: u64,
+    pub int: u128,
     pub ty: IntType,
 }
 
-#[derive(Clone, Debug, Encodable, Decodable)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FloatLiteral {
     pub span: Span,
-    pub float: f64,
+    pub float: u64,
     pub ty: FloatType
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Encodable, Decodable)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum IntType {
     U8,
     U16,
@@ -54,49 +52,28 @@ pub enum IntType {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Encodable, Decodable)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum FloatType {
     F32,
     F64,
     Unknown,
 }
 
-impl Parse for Literal {
-    fn parse(input: ParseStream) -> Result<Literal> {
+impl Literal {
+    pub fn string(&self) -> Option<&str> {
+        match self {
+            Literal::String(lit) => Some(&lit.text),
+            _ => None
+        }
+    }
+}
+
+impl<D> Parse<D> for Literal {
+    fn parse(input: ParseStream<D>) -> Result<Literal> {
         input.step(|cursor| if let Some((literal, rest)) = cursor.literal() {
             Ok((literal.clone(), rest))
         } else {
             Err(cursor.error("expected a string, character, integer or float"))
-        })
-    }
-}
-
-impl Parse for IntLiteral {
-    fn parse(input: ParseStream) -> Result<IntLiteral> {
-        input.step(|cursor| if let Some((Literal::Int(literal), rest)) = cursor.literal() {
-            Ok((literal.clone(), rest))
-        } else {
-            Err(cursor.error("expected an integer"))
-        })
-    }
-}
-
-impl Parse for FloatLiteral {
-    fn parse(input: ParseStream) -> Result<FloatLiteral> {
-        input.step(|cursor| if let Some((Literal::Float(literal), rest)) = cursor.literal() {
-            Ok((literal.clone(), rest))
-        } else {
-            Err(cursor.error("expected a float"))
-        })
-    }
-}
-
-impl Parse for StringLiteral {
-    fn parse(input: ParseStream) -> Result<StringLiteral> {
-        input.step(|cursor| if let Some((Literal::String(literal), rest)) = cursor.literal() {
-            Ok((literal.clone(), rest))
-        } else {
-            Err(cursor.error("expected a string"))
         })
     }
 }
@@ -115,48 +92,6 @@ impl Token for Literal {
     }
 }
 
-impl Token for IntLiteral {
-    fn peek(cursor: Cursor) -> bool {
-        if let Some((Literal::Int(_), _)) = cursor.literal() {
-            true
-        } else {
-            false
-        }
-    }
-    
-    fn display() -> &'static str {
-        "integer"
-    }
-}
-
-impl Token for FloatLiteral {
-    fn peek(cursor: Cursor) -> bool {
-        if let Some((Literal::Float(_), _)) = cursor.literal() {
-            true
-        } else {
-            false
-        }
-    }
-    
-    fn display() -> &'static str {
-        "float"
-    }
-}
-
-impl Token for StringLiteral {
-    fn peek(cursor: Cursor) -> bool {
-        if let Some((Literal::String(_), _)) = cursor.literal() {
-            true
-        } else {
-            false
-        }
-    }
-    
-    fn display() -> &'static str {
-        "string"
-    }
-}
-
 impl Spanned for Literal {
     fn span(&self) -> Span {
         match self {
@@ -165,6 +100,30 @@ impl Spanned for Literal {
             Literal::Int(int) => int.span(),
             Literal::Float(float) => float.span(),
         }
+    }
+}
+
+impl<D> Parse<D> for IntLiteral {
+    fn parse(input: ParseStream<D>) -> Result<IntLiteral> {
+        input.step(|cursor| {
+            if let Some((Literal::Int(literal), rest)) = cursor.literal() {
+                Ok((literal.clone(), rest))
+            } else {
+                Err(cursor.error("expected an integer"))
+            }
+        })
+    }
+}
+
+impl<D> Parse<D> for StringLiteral {
+    fn parse(input: ParseStream<D>) -> Result<StringLiteral> {
+        input.step(|cursor| {
+            if let Some((Literal::String(literal), rest)) = cursor.literal() {
+                Ok((literal.clone(), rest))
+            } else {
+                Err(cursor.error("expected a string"))
+            }
+        })
     }
 }
 

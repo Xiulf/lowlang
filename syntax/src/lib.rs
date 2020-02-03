@@ -1,434 +1,169 @@
-mod parsing;
 pub mod builder;
+mod parsing;
+mod printing;
+mod util;
 
-pub use parser::ident::Ident;
 pub use parser::parse;
-use fluix_encode::{Encodable, Decodable};
-use diagnostics::Span;
-use std::fmt;
+use std::collections::BTreeMap;
 
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub struct Program {
-    pub fns: Vec<Function>
+#[derive(Default)]
+pub struct Package {
+    pub name: String,
+    pub externs: BTreeMap<ItemId, Extern>,
+    pub globals: BTreeMap<ItemId, Global>,
+    pub bodies: BTreeMap<ItemId, Body>,
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub struct Function {
-    pub name: Ident,
-    pub params: Vec<(LocalId, Type)>,
-    pub ret: Type,
-    pub bindings: Vec<(LocalId, Type)>,
-    pub blocks: Vec<BasicBlock>,
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ItemId(usize);
+
+pub struct Signature(CallConv, Vec<Type>, Vec<Type>);
+
+pub enum Extern {
+    Proc(String, Signature),
+    Global(String, Type),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BlockId(pub usize);
+pub struct Global {
+    pub export: bool,
+    pub name: String,
+    pub ty: Type,
+    pub init: Option<Box<[u8]>>,
+}
 
-#[derive(Encodable, Decodable, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LocalId(pub usize);
+pub struct Body {
+    pub export: bool,
+    pub name: String,
+    pub conv: CallConv,
+    pub locals: BTreeMap<LocalId, Local>,
+    pub blocks: BTreeMap<BlockId, Block>,
+}
 
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub struct BasicBlock {
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LocalId(usize);
+
+pub struct Local {
+    pub id: LocalId,
+    pub kind: LocalKind,
+    pub ty: Type,
+}
+
+#[derive(PartialEq)]
+pub enum LocalKind {
+    Ret,
+    Arg,
+    Var,
+    Tmp,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BlockId(usize);
+
+pub struct Block {
     pub id: BlockId,
-    pub statements: Vec<Statement>,
-    pub terminator: Terminator,
+    pub stmts: Vec<Stmt>,
+    pub term: Terminator,
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub enum Statement {
-    Assign(Place, RValue),
-    StorageLive(LocalId),
-    StorageDead(LocalId),
-    Free(Place),
+pub enum Stmt {
+    Assign(Place, Value),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
 pub enum Terminator {
-    Goto(BlockId),
-    Resume,
-    Abort,
+    Unset,
     Return,
-    Unreachable,
-    Call(Operand, Vec<Operand>, Option<(Place, BlockId)>, Option<BlockId>),
-    Assert(Operand, bool, BlockId, Option<BlockId>),
+    Jump(BlockId),
+    Call(Vec<Place>, Operand, Vec<Operand>, BlockId),
+    Switch(Operand, Vec<u128>, Vec<BlockId>),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
 pub struct Place {
     pub base: PlaceBase,
-    pub projection: Vec<PlaceElem>,
-    pub span: Span,
+    pub elems: Vec<PlaceElem>,
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
 pub enum PlaceBase {
-    Local(LocalId, Span),
+    Local(LocalId),
+    Global(ItemId),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
 pub enum PlaceElem {
-    Deref(Span),
-    Field(usize, Span),
+    Deref,
+    Field(usize),
+    ConstIndex(usize),
+    Index(Place),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
 pub enum Operand {
-    Copy(Place, Span),
-    Move(Place, Span),
-    Constant(Constant, Span),
+    Place(Place),
+    Constant(Const),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub enum RValue {
-    Use(Operand),
-    Ref(Place, Span),
-    Binary(BinOp, Operand, Operand, Span),
-    Unary(UnOp, Operand, Span),
-    Tuple(Vec<Operand>, Span),
-    Alloc(Operand, Type, Span),
-}
-
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub enum BinOp {
-    Add, Sub, Mul, Div, Mod,
-    Lt, Le, Gt, Ge, Eq, Ne,
-    BitAnd, BitOr, BitXor,
-    Shl, Shr,
-}
-
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub enum UnOp {
-    Not, Neg,
-}
-
-#[derive(Encodable, Decodable, Debug, Clone)]
-pub enum Constant {
-    Int(i64, IntTy),
-    UInt(u64, UIntTy),
-    Float(f64, FloatTy),
-    Bool(bool),
+pub enum Const {
+    Unit,
+    Scalar(u128),
+    FuncAddr(ItemId),
     Bytes(Box<[u8]>),
-    Item(Ident),
-    Tuple(Vec<Constant>),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone, PartialEq)]
+pub enum Value {
+    Use(Operand),
+    Ref(Place),
+    Slice(Operand, Operand, Operand),
+    BinOp(BinOp, Operand, Operand),
+    UnOp(UnOp, Operand),
+    NullOp(NullOp, Type),
+    Init(Type, Vec<Operand>),
+}
+
+pub enum BinOp {
+    Add, Sub, Mul, Div, Rem,
+    Eq, Ne, Lt, Le, Gt, Ge,
+    BitAnd, BitOr, BitXOr, Shl, Shr,
+}
+
+pub enum UnOp {
+    Not,
+    Neg,
+}
+
+pub enum NullOp {
+    SizeOf,
+    AlignOf,
+}
+
 pub enum Type {
     Unit,
     Bool,
-    Tuple(Vec<Type>),
-    Ptr(Box<Type>),
-    Int(IntTy),
-    UInt(UIntTy),
-    Float(FloatTy),
-    Fn(Vec<Type>, Box<Type>),
+    Char,
+    Str,
+    Ratio,
+    Int(IntSize),
+    UInt(IntSize),
+    Float(FloatSize),
+    Ref(Box<Type>),
+    Array(Box<Type>, usize),
+    Slice(Box<Type>),
+    Vector(Box<Type>, usize),
+    Proc(Signature),
 }
 
-#[derive(Encodable, Decodable, Debug, Clone, PartialEq)]
-pub enum IntTy {
-    I8, I16, I32, I64
+pub enum IntSize {
+    Bits8,
+    Bits16,
+    Bits32,
+    Bits64,
+    Bits128,
+    Size,
 }
 
-#[derive(Encodable, Decodable, Debug, Clone, PartialEq)]
-pub enum UIntTy {
-    U8, U16, U32, U64
+pub enum FloatSize {
+    Bits32,
+    Bits64,
+    Size,
 }
 
-#[derive(Encodable, Decodable, Debug, Clone, PartialEq)]
-pub enum FloatTy {
-    F32, F64,
-}
-
-impl Type {
-    pub fn size(&self) -> usize {
-        match self {
-            Type::Unit => 0,
-            Type::Tuple(t) => t.iter().fold(0, |acc, t| acc + t.size()),
-            Type::Ptr(_) => 8,
-            Type::Int(IntTy::I8) => 1,
-            Type::Int(IntTy::I16) => 2,
-            Type::Int(IntTy::I32) => 4,
-            Type::Int(IntTy::I64) => 8,
-            Type::UInt(UIntTy::U8) => 1,
-            Type::UInt(UIntTy::U16) => 2,
-            Type::UInt(UIntTy::U32) => 4,
-            Type::UInt(UIntTy::U64) => 8,
-            Type::Float(FloatTy::F32) => 1,
-            Type::Float(FloatTy::F64) => 1,
-            Type::Bool => 1,
-            Type::Fn(..) => 4,
-        }
-    }
-}
-
-impl RValue {
-    pub fn span(&self) -> Span {
-        match self {
-            RValue::Use(op) => op.span(),
-            RValue::Ref(_, span) => *span,
-            RValue::Tuple(_, span) => *span,
-            RValue::Binary(.., span) => *span,
-            RValue::Unary(.., span) => *span,
-            RValue::Alloc(.., span) => *span,
-        }
-    }
-}
-
-impl Operand {
-    pub fn span(&self) -> Span {
-        match self {
-            Operand::Move(_, span) => *span,
-            Operand::Copy(_, span) => *span,
-            Operand::Constant(_, span) => *span,
-        }
-    }
-}
-
-impl fmt::Display for Program {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for i in 0..self.fns.len() {
-            if i == self.fns.len() - 1 {
-                write!(f, "{}", self.fns[i])?;
-            } else {
-                writeln!(f, "{}\n", self.fns[i])?;
-            }
-        }
-        
-        Ok(())
-    }
-}
-
-impl fmt::Display for Function {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let params = self.params.iter().map(|p| format!("{}: {}", p.0, p.1)).collect::<Vec<_>>().join(", ");
-        
-        writeln!(f, "fn {}({}) -> {} {{", self.name, params, self.ret)?;
-        
-        for binding in &self.bindings {
-            writeln!(f, "    let {}: {};", binding.0, binding.1)?;
-        }
-        
-        writeln!(f)?;
-        
-        fn indent(s: String) -> String {
-            s.lines().map(|l| format!("    {}", l)).collect::<Vec<_>>().join("\n")
-        }
-        
-        for i in 0..self.blocks.len() {
-            if i != self.blocks.len() - 1 {
-                writeln!(f, "{}\n", indent(self.blocks[i].to_string()))?;
-            } else {
-                writeln!(f, "{}", indent(self.blocks[i].to_string()))?;
-            }
-        }
-        
-        write!(f, "}}")
-    }
-}
-
-impl fmt::Display for BlockId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "%{}", self.0)
-    }
-}
-
-impl fmt::Display for LocalId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "${}", self.0)
-    }
-}
-
-impl fmt::Display for BasicBlock {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{}: {{", self.id)?;
-        
-        for stmt in &self.statements {
-            writeln!(f, "    {}", stmt)?;
-        }
-        
-        writeln!(f, "    {}", self.terminator)?;
-        write!(f, "}}")
-    }
-}
-
-impl fmt::Display for Statement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Statement::Assign(l, r) => write!(f, "{} = {};", l, r),
-            Statement::StorageLive(l) => write!(f, "init {};", l),
-            Statement::StorageDead(l) => write!(f, "drop {};", l),
-            Statement::Free(p) => write!(f, "free {};", p),
-        }
-    }
-}
-
-impl fmt::Display for Terminator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Terminator::Goto(i) => write!(f, "goto({})", i),
-            Terminator::Return => write!(f, "return"),
-            Terminator::Resume => write!(f, "resume"),
-            Terminator::Abort => write!(f, "abort"),
-            Terminator::Unreachable => write!(f, "unreachable"),
-            Terminator::Call(func, args, a, b) => {
-                write!(f, "call(")?;
-                
-                if let Some((dest, _)) = a {
-                    write!(f, "{} = ", dest)?;
-                }
-                
-                let args = args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
-                
-                write!(f, "{}({})", func, args)?;
-                
-                if let Some((_, next)) = a {
-                    write!(f, ", goto {}", next)?;
-                }
-                
-                if let Some(fail) = b {
-                    write!(f, ", unwind {}", fail)?;
-                }
-                
-                write!(f, ")")
-            },
-            Terminator::Assert(cond, expected, next, fail) => {
-                write!(f, "assert({}{}, goto {}", if *expected { "" } else { "!" }, cond, next)?;
-                
-                if let Some(fail) = fail {
-                    write!(f, ", unwind {})", fail)
-                } else {
-                    write!(f, ")")
-                }
-            },
-        }
-    }
-}
-
-impl fmt::Display for Operand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Operand::Move(p, _) => write!(f, "move {}", p),
-            Operand::Copy(p, _) => write!(f, "{}", p),
-            Operand::Constant(c, _) => write!(f, "const {}", c),
-        }
-    }
-}
-
-impl fmt::Display for Place {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for elem in self.projection.iter().rev() {
-            match elem {
-                PlaceElem::Deref(_) => write!(f, "(*")?,
-                PlaceElem::Field(_, _) => write!(f, "(")?,
-            }
-        }
-        
-        write!(f, "{}", self.base)?;
-        
-        for elem in self.projection.iter() {
-            match elem {
-                PlaceElem::Deref(_) => write!(f, ")")?,
-                PlaceElem::Field(i, _) => write!(f, ">{})", i)?,
-            }
-        }
-        
-        Ok(())
-    }
-}
-
-impl fmt::Display for PlaceBase {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PlaceBase::Local(l, _) => l.fmt(f),
-        }
-    }
-}
-
-impl fmt::Display for RValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RValue::Use(v) => v.fmt(f),
-            RValue::Ref(v, _) => write!(f, "&{}", v),
-            RValue::Alloc(v, t, _) => write!(f, "alloc {}: {}", v, t),
-            RValue::Binary(o, l, r, _) => write!(f, "{:?}({}, {})", o, l, r),
-            RValue::Unary(o, v, _) => write!(f, "{:?}({})", o, v),
-            RValue::Tuple(t, _) => {
-                let t = t.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
-                
-                write!(f, "({})", t)
-            }
-        }
-    }
-}
-
-impl fmt::Display for Constant {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Constant::Int(i, t) => write!(f, "{}{}", i, t),
-            Constant::UInt(i, t) => write!(f, "{}{}", i, t),
-            Constant::Float(i, t) => write!(f, "{}{}", i, t),
-            Constant::Bool(b) => b.fmt(f),
-            Constant::Bytes(b) => write!(f, "{}", std::str::from_utf8(b).unwrap()),
-            Constant::Item(i) => i.fmt(f),
-            Constant::Tuple(t) => {
-                let t = t.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
-                
-                write!(f, "({})", t)
-            }
-        }
-    }
-}
-
-impl fmt::Display for Type {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Type::Int(i) => i.fmt(f),
-            Type::UInt(i) => i.fmt(f),
-            Type::Float(i) => i.fmt(f),
-            Type::Unit => write!(f, "()"),
-            Type::Bool => write!(f, "bool"),
-            Type::Ptr(t) => write!(f, "&{}", t),
-            Type::Tuple(t) => {
-                let t = t.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
-                
-                write!(f, "({})", t)
-            },
-            Type::Fn(p, r) => {
-                let p = p.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
-                
-                write!(f, "fn ({}) -> {}", p, r)
-            },
-        }
-    }
-}
-
-impl fmt::Display for IntTy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            IntTy::I8 => write!(f, "i8"),
-            IntTy::I16 => write!(f, "i16"),
-            IntTy::I32 => write!(f, "i32"),
-            IntTy::I64 => write!(f, "i64"),
-        }
-    }
-}
-
-impl fmt::Display for UIntTy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            UIntTy::U8 => write!(f, "u8"),
-            UIntTy::U16 => write!(f, "u16"),
-            UIntTy::U32 => write!(f, "u32"),
-            UIntTy::U64 => write!(f, "u64"),
-        }
-    }
-}
-
-impl fmt::Display for FloatTy {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            FloatTy::F32 => write!(f, "f32"),
-            FloatTy::F64 => write!(f, "f64"),
-        }
-    }
+pub enum CallConv {
+    C,
+    Fluix,
 }

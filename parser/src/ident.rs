@@ -1,20 +1,18 @@
-use crate::Spanned;
 use crate::parse::{Parse, ParseStream, ToTokens};
 use crate::token::Token;
 use crate::buffer::{Cursor, TokenBuffer, Entry};
 use crate::error::Result;
-use fluix_encode::{Encodable, Decodable};
-use diagnostics::Span;
+use diagnostics::{Span, Spanned};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-#[derive(Clone, Debug, PartialEq, Encodable, Decodable)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ident {
     pub span: Span,
-    pub text: String
+    pub name: String
 }
 
-impl Parse for Ident {
-    fn parse(input: ParseStream) -> Result<Ident> {
+impl<D> Parse<D> for Ident {
+    fn parse(input: ParseStream<D>) -> Result<Ident> {
         input.step(|cursor| match cursor.ident() {
             Some((ident, rest)) => Ok((ident, rest)),
             None => Err(cursor.error("expected an identifier"))
@@ -51,6 +49,6 @@ impl ToTokens for Ident {
 
 impl Display for Ident {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        self.text.fmt(f)
+        self.name.fmt(f)
     }
 }
