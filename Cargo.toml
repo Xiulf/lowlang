@@ -8,3 +8,4 @@ edition = "2018"
 intern = { path = "intern" }
 diagnostics = { path = "diagnostics" }
 syntax = { path = "syntax" }
+codegen = { path = "codegen" }

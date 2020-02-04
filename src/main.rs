@@ -3,6 +3,7 @@ use intern::Intern;
 pub fn main() {
     let mut args = std::env::args();
     let arg = args.nth(1).unwrap();
+    let arg2 = args.next().unwrap();
     let source = std::fs::read_to_string(&arg).unwrap();
     let reporter = diagnostics::Reporter::default();
     let file_id = diagnostics::FileInfo {
@@ -15,4 +16,6 @@ pub fn main() {
     reporter.report(true);
 
     println!("{}", module);
+
+    codegen::compile_object(&module, arg2.into());
 }

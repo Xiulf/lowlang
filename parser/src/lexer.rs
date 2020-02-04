@@ -207,32 +207,7 @@ impl<'a> Lexer<'a> {
             count += 1;
         }
         
-        let mut float = false;
-        
-        if self.peek() == '.' && self.peek_n(1) != '.' {
-            self.advance();
-            float = true;
-            
-            while !self.eof() {
-                match self.peek() {
-                    '_' if self.peek_n(1) >= '0' && self.peek_n(1) <= '9' => self.advance(),
-                    '0'..='9' => self.advance(),
-                    _ => break,
-                }
-            }
-            
-            if self.peek() == 'e' && (self.peek_n(1) == '+' || self.peek_n(1) == '-') {
-                self.advance();
-                self.advance();
-                
-                while !self.eof() {
-                    match self.peek() {
-                        '0'..='9' => self.advance(),
-                        _ => break,
-                    }
-                }
-            }
-        } else if self.peek() == 'x' && count == 0 {
+        if self.peek() == 'x' && count == 0 {
             self.advance();
             
             while !self.eof() {
@@ -252,100 +227,23 @@ impl<'a> Lexer<'a> {
             }
         }
         
-        let mut ty = String::new();
-        
-        while !self.eof() {
-            match self.peek() {
-                c @ 'a'..='z' | c @ '0'..='9' => {
-                    ty.push(c);
-                    self.advance();
-                }
-                _ => break,
-            }
-        }
-
-        if float || ty == "f32" || ty == "f64" {
-            let val: f64 = self.source[self.start.offset..self.pos.offset - ty.len()]
-                .parse()
-                .map_err(|_| {
-                    Diagnostic::new(
-                        Severity::Error,
-                        None,
-                        "Invalid floating point literal",
-                    ).label(Severity::Error, self.span(), None::<String>)
-                })?;
-            Ok(Entry::Literal(Literal::Float(FloatLiteral {
-                span: self.span(),
-                float: val.to_bits(),
-                ty: match ty.as_str() {
-                    "f32" => FloatType::F32,
-                    "f64" => FloatType::F64,
-                    "" => FloatType::Unknown,
-                    _ => {
-                        let span = self.span();
-                        let span = Span {
-                            start: Position {
-                                line: span.end.line,
-                                col: span.end.col - ty.len(),
-                                offset: span.end.offset - ty.len(),
-                            },
-                            .. span
-                        };
-                        
-                        return Err(Diagnostic::new(
-                            Severity::Error,
-                            None,
-                            "Invalid number type",
-                        ).label(Severity::Error, span, None::<String>))
-                    }
-                },
-            })))
+        let text = &self.source[self.start.offset..self.pos.offset];
+        let val = if text.contains('x') && text.find('x') == Some(1) {
+            u128::from_str_radix(&text[2..], 16)
+        } else if text.contains('b') && text.find('b') == Some(1) {
+            u128::from_str_radix(&text[2..], 2)
         } else {
-            let text = &self.source[self.start.offset..self.pos.offset - ty.len()];
-            let val = if text.contains('x') && text.find('x') == Some(1) {
-                u128::from_str_radix(&text[2..], 16)
-            } else if text.contains('b') && text.find('b') == Some(1) {
-                u128::from_str_radix(&text[2..], 2)
-            } else {
-                u128::from_str_radix(&text, 10)
-            }.map_err(|_| {
-                Diagnostic::new(Severity::Error, None, "Invalid integer literal")
-                    .label(Severity::Error, self.span(), None::<String>)
-            })?;
-            
-            Ok(Entry::Literal(Literal::Int(IntLiteral {
-                span: self.span(),
-                int: val,
-                ty: match ty.as_str() {
-                    "u8" => IntType::U8,
-                    "u16" => IntType::U16,
-                    "u32" => IntType::U32,
-                    "u64" => IntType::U64,
-                    "i8" => IntType::I8,
-                    "i16" => IntType::I16,
-                    "i32" => IntType::I32,
-                    "i64" => IntType::I64,
-                    "" => IntType::Unknown,
-                    _ => {
-                        let span = self.span();
-                        let span = Span {
-                            start: Position {
-                                line: span.end.line,
-                                col: span.end.col - ty.len(),
-                                offset: span.end.offset - ty.len(),
-                            },
-                            .. span
-                        };
-                        
-                        return Err(Diagnostic::new(
-                            Severity::Error,
-                            None,
-                            "Invalid number type",
-                        ).label(Severity::Error, span, None::<String>));
-                    }
-                },
-            })))
-        }
+            u128::from_str_radix(&text, 10)
+        }.map_err(|_| {
+            Diagnostic::new(Severity::Error, None, "Invalid integer literal")
+                .label(Severity::Error, self.span(), None::<String>)
+        })?;
+        
+        Ok(Entry::Literal(Literal::Int(IntLiteral {
+            span: self.span(),
+            int: val,
+            ty: IntType::Unknown,
+        })))
     }
     
     fn escape(&mut self) -> Result<char> {

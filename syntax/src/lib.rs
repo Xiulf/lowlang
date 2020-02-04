@@ -1,4 +1,5 @@
 pub mod builder;
+pub mod layout;
 mod parsing;
 mod printing;
 mod util;
@@ -17,7 +18,8 @@ pub struct Package {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemId(usize);
 
-pub struct Signature(CallConv, Vec<Type>, Vec<Type>);
+#[derive(Default, Clone)]
+pub struct Signature(CallConv, pub Vec<Type>, pub Vec<Type>);
 
 pub enum Extern {
     Proc(String, Signature),
@@ -40,7 +42,7 @@ pub struct Body {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LocalId(usize);
+pub struct LocalId(pub usize);
 
 pub struct Local {
     pub id: LocalId,
@@ -101,7 +103,7 @@ pub enum Operand {
 
 pub enum Const {
     Unit,
-    Scalar(u128),
+    Scalar(u128, Type),
     FuncAddr(ItemId),
     Bytes(Box<[u8]>),
 }
@@ -132,6 +134,7 @@ pub enum NullOp {
     AlignOf,
 }
 
+#[derive(Clone)]
 pub enum Type {
     Unit,
     Bool,
@@ -148,6 +151,7 @@ pub enum Type {
     Proc(Signature),
 }
 
+#[derive(Clone, Copy)]
 pub enum IntSize {
     Bits8,
     Bits16,
@@ -157,13 +161,21 @@ pub enum IntSize {
     Size,
 }
 
+#[derive(Clone, Copy)]
 pub enum FloatSize {
     Bits32,
     Bits64,
     Size,
 }
 
+#[derive(Clone, Copy)]
 pub enum CallConv {
     C,
     Fluix,
+}
+
+impl Default for CallConv {
+    fn default() -> CallConv {
+        CallConv::Fluix
+    }
 }

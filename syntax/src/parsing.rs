@@ -69,6 +69,7 @@ parser::token![punct ":" TColon/1];
 parser::token![punct ";" TSemi/1];
 parser::token![punct "=" TEquals/1];
 parser::token![punct "#" THash/1];
+parser::token![punct "!" TBang/1];
 parser::token![punct "%" TPct/1];
 parser::token![punct "&" TAnd/1];
 parser::token![punct "*" TStar/1];
@@ -152,6 +153,7 @@ impl Parse for Signature {
         }
 
         input.parse::<TRParen>()?;
+        input.parse::<TArrow>()?;
 
         let mut rets = Vec::new();
 
@@ -450,9 +452,13 @@ impl Parse for Place {
                             }
 
                             input.parse::<TRBracket>()?;
+
+                            continue;
                         }
                     }
                 }
+
+                break;
             }
         }
 
@@ -464,7 +470,10 @@ impl Parse for Place {
 
 impl Parse for PlaceBase {
     fn parse(input: ParseStream) -> Result<PlaceBase> {
-        if let Ok(id) = input.parse::<ItemId>() {
+        if input.peek::<THash>() && input.peek2::<TBang>() {
+            let id = input.parse::<IntLiteral>()
+                .map(|l| ItemId(l.int as usize))?;
+
             Ok(PlaceBase::Global(id))
         } else {
             Ok(PlaceBase::Local(input.parse()?))
@@ -474,10 +483,10 @@ impl Parse for PlaceBase {
 
 impl Parse for Operand {
     fn parse(input: ParseStream) -> Result<Operand> {
-        if let Ok(place) = input.parse() {
-            Ok(Operand::Place(place))
+        if let Ok(c) = input.parse() {
+            Ok(Operand::Constant(c))
         } else {
-            Ok(Operand::Constant(input.parse()?))
+            Ok(Operand::Place(input.parse()?))
         }
     }
 }
@@ -487,7 +496,7 @@ impl Parse for Const {
         if let Ok(_) = input.parse::<TUnit>() {
             Ok(Const::Unit)
         } else if let Ok(lit) = input.parse::<IntLiteral>() {
-            Ok(Const::Scalar(lit.int))
+            Ok(Const::Scalar(lit.int, input.parse()?))
         } else if let Ok(lit) = input.parse::<StringLiteral>() {
             Ok(Const::Bytes(lit.text.into_bytes().into_boxed_slice()))
         } else {
@@ -669,7 +678,7 @@ impl parser::token::Token for LocalId {
         match cursor.ident() {
             Some((ident, _)) => {
                 ident.name.starts_with('_') &&
-                ident.name.chars().all(|c| matches!(c, '0'..='9'))
+                ident.name.chars().skip(1).all(|c| matches!(c, '0'..='9'))
             },
             None => false,
         }

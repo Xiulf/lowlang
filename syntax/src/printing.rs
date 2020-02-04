@@ -192,7 +192,7 @@ impl Display for Const {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Const::Unit => write!(f, "unit"),
-            Const::Scalar(value) => <u128 as std::fmt::UpperHex>::fmt(value, f),
+            Const::Scalar(value, ty) => write!(f, "{:X}{}", value, ty),
             Const::Bytes(bytes) => <str as Display>::fmt(std::str::from_utf8(&bytes).unwrap(), f),
             Const::FuncAddr(id) => <ItemId as Display>::fmt(id, f),
         }
