@@ -204,7 +204,7 @@ impl<'a> BodyBuilder<'a> {
         self.block().stmts.push(Stmt::Assign(place, Value::Ref(to)));
     }
 
-    pub fn slice(&mut self, place: Place, arr: Operand, lo: Operand, hi: Operand) {
+    pub fn slice(&mut self, place: Place, arr: Place, lo: Operand, hi: Operand) {
         self.block().stmts.push(Stmt::Assign(place, Value::Slice(arr, lo, hi)));
     }
 

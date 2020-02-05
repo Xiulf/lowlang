@@ -1,28 +1,28 @@
 pub use crate::Type;
 use intern::Intern;
 
-const UNIT: Layout = Layout(0);
-const BOOL: Layout = Layout(1);
-const CHAR: Layout = Layout(2);
-const STR: Layout = Layout(3);
-const RATIO: Layout = Layout(4);
-const U8: Layout = Layout(5);
-const U16: Layout = Layout(6);
-const U32: Layout = Layout(7);
-const U64: Layout = Layout(8);
-const U128: Layout = Layout(9);
-const USIZE: Layout = Layout(10);
-const I8: Layout = Layout(11);
-const I16: Layout = Layout(12);
-const I32: Layout = Layout(13);
-const I64: Layout = Layout(14);
-const I128: Layout = Layout(15);
-const ISIZE: Layout = Layout(16);
-const F32: Layout = Layout(17);
-const F64: Layout = Layout(18);
-const FSIZE: Layout = Layout(19);
-const FN: Layout = Layout(20);
-const PTR_U8: Layout = Layout(21);
+pub const UNIT: Layout = Layout(0);
+pub const BOOL: Layout = Layout(1);
+pub const CHAR: Layout = Layout(2);
+pub const STR: Layout = Layout(3);
+pub const RATIO: Layout = Layout(4);
+pub const U8: Layout = Layout(5);
+pub const U16: Layout = Layout(6);
+pub const U32: Layout = Layout(7);
+pub const U64: Layout = Layout(8);
+pub const U128: Layout = Layout(9);
+pub const USIZE: Layout = Layout(10);
+pub const I8: Layout = Layout(11);
+pub const I16: Layout = Layout(12);
+pub const I32: Layout = Layout(13);
+pub const I64: Layout = Layout(14);
+pub const I128: Layout = Layout(15);
+pub const ISIZE: Layout = Layout(16);
+pub const F32: Layout = Layout(17);
+pub const F64: Layout = Layout(18);
+pub const FSIZE: Layout = Layout(19);
+pub const FN: Layout = Layout(20);
+pub const PTR_U8: Layout = Layout(21);
 
 /// # Important
 /// This should be called before any layouts are created!
@@ -35,7 +35,7 @@ pub fn init(triple: &target_lexicon::Triple) {
     LayoutInterner::set(UNIT, Details { ty: Type::Unit, .. Default::default() });
     LayoutInterner::set(BOOL, Details { ty: Type::Bool, size: 1, .. Default::default() });
     LayoutInterner::set(CHAR, Details { ty: Type::Char, size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(STR, Details { ty: Type::Str, size: ptr_size * 2, align: ptr_size * 2, fields: Box::new([(0, PTR_U8), (ptr_size, USIZE)]), ..Default::default() });
+    LayoutInterner::set(STR, Details { ty: Type::Str, size: ptr_size * 2, align: ptr_size * 2, idx: Some(U8), fields: Box::new([(0, PTR_U8), (ptr_size, USIZE)]), ..Default::default() });
     LayoutInterner::set(RATIO, Details { ty: Type::Ratio, size: ptr_size * 2, align: ptr_size * 2, fields: Box::new([(0, ISIZE), (ptr_size, ISIZE)]), ..Default::default() });
     LayoutInterner::set(U8, Details { ty: Type::UInt(IntSize::Bits8), size: 1, ..Default::default() });
     LayoutInterner::set(U16, Details { ty: Type::UInt(IntSize::Bits16), size: 2, align: 2, ..Default::default() });
@@ -95,7 +95,7 @@ impl Default for Details {
 }
 
 impl Details {
-    fn sign(&self) -> bool {
+    pub fn sign(&self) -> bool {
         match &self.ty {
             Type::Int(_) => true,
             _ => false,
@@ -173,8 +173,84 @@ impl Type {
                 }.intern()
             },
             Type::Proc(_) => FN,
+            Type::Tuple(packed, types) => {
+                let mut size = 0;
+                let mut fields = Vec::new();
+
+                for ty in types {
+                    let layout = ty.layout();
+
+                    if !*packed {
+                        let align = layout.details().align;
+
+                        while size % align != 0 {
+                            size += 1;
+                        }
+                    }
+
+                    fields.push((size, layout));
+                    size += layout.details().size;
+                }
+
+                while !pow2(size) {
+                    size += 1;
+                }
+
+                Details {
+                    ty: self.clone(),
+                    size,
+                    align: alignment(size),
+                    fields: fields.into_boxed_slice(),
+                    ..Default::default()
+                }.intern()
+            },
+            Type::Union(tagged, types) => {
+                let mut fields = Vec::new();
+                let mut size = 0;
+
+                for ty in types {
+                    let s = ty.layout().details().size;
+
+                    size = usize::max(size, s);
+                }
+
+                if *tagged {
+                    let layout = Details {
+                        ty: Type::Union(false, types.clone()),
+                        size,
+                        align: alignment(size),
+                        ..Default::default()
+                    }.intern();
+
+                    fields.push((0, USIZE));
+                    fields.push((USIZE.details().size, layout));
+                    size += USIZE.details().size;
+
+                    Details {
+                        ty: self.clone(),
+                        size,
+                        align: alignment(size),
+                        fields: fields.into_boxed_slice(),
+                        ..Default::default()
+                    }.intern()
+                } else {
+                    Details {
+                        ty: self.clone(),
+                        size,
+                        align: alignment(size),
+                        ..Default::default()
+                    }.intern()
+                }
+            },
+            Type::Tagged(_tag, _ty) => {
+                unimplemented!();
+            },
         }
     }
+}
+
+fn pow2(x: usize) -> bool {
+    (x & (x - 1)) == 0
 }
 
 fn alignment(size: usize) -> usize {

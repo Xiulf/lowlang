@@ -12,7 +12,7 @@ use cranelift_codegen::ir::{self, types};
 use cranelift_codegen::settings;
 use std::collections::BTreeMap;
 
-pub fn compile_object(package: &syntax::Package, out_file: std::path::PathBuf) {
+pub fn compile(package: &syntax::Package, out_file: std::path::PathBuf) {
     use settings::Configurable as _;
     let mut flags_builder = settings::builder();
 
@@ -35,21 +35,21 @@ pub fn compile_object(package: &syntax::Package, out_file: std::path::PathBuf) {
     let mut tmp_name = out_file.clone();
         tmp_name.set_extension("tmp");
 
-    assemble_object(product, tmp_name.as_ref());
-    link_object(tmp_name.as_ref(), out_file.as_ref());
+    assemble(product, tmp_name.as_ref());
+    link(tmp_name.as_ref(), out_file.as_ref());
 
     std::fs::remove_file(tmp_name).unwrap();
 }
 
-pub fn assemble_object(product: cranelift_object::ObjectProduct, out_file: &std::path::Path) {
+pub fn assemble(product: cranelift_object::ObjectProduct, out_file: &std::path::Path) {
     use std::io::Write;
     let bytes = product.emit().unwrap();
 
     std::fs::File::create(out_file).unwrap().write_all(&bytes).unwrap();
 }
 
-pub fn link_object(obj_file: &std::path::Path, out_file: &std::path::Path) {
-    let status = std::process::Command::new("cc")
+pub fn link(obj_file: &std::path::Path, out_file: &std::path::Path) {
+    let _status = std::process::Command::new("cc")
         .args(&[obj_file, std::path::Path::new("-o"), out_file])
         .status()
         .unwrap();
@@ -78,7 +78,7 @@ pub fn clif_type(module: &Module<impl Backend>, layout: Layout) -> Option<types:
 
     match &layout.details().ty {
         Type::Unit => None,
-        Type::Bool => Some(types::B8),
+        Type::Bool => Some(types::I8),
         Type::Char => Some(types::I32),
         Type::Int(size) | Type::UInt(size) => match size {
             IntSize::Bits8 => Some(types::I8),

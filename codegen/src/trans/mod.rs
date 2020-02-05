@@ -2,6 +2,8 @@ mod place;
 mod stmt;
 mod term;
 mod operand;
+mod value;
+mod cast;
 
 use crate::FunctionCtx;
 use syntax::layout::Layout;
@@ -201,6 +203,7 @@ fn trans_body(
 
     fx.builder.seal_all_blocks();
     fx.builder.finalize();
+
     module.define_function(*func, &mut ctx).unwrap();
     module.clear_context(&mut ctx);
 }

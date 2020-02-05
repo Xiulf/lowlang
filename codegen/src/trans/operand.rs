@@ -1,6 +1,6 @@
 use crate::{FunctionCtx, Backend};
 use crate::value::Value;
-use syntax::layout::Layout;
+use crate::place::Place;
 use cranelift_codegen::ir::InstBuilder;
 
 impl<'a, B: Backend> FunctionCtx<'a, B> {
@@ -28,8 +28,31 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
 
                     Value::new_val(value, syntax::Type::Proc(Default::default()).layout())
                 },
-                _ => unimplemented!(),
+                syntax::Const::Bytes(bytes) => {
+                    let place = Place::new_stack(self, syntax::layout::STR);
+
+                    self.trans_bytes(place, bytes)
+                },
             },
         }
+    }
+
+    pub fn trans_bytes(&mut self, place: Place, bytes: &Box<[u8]>) -> Value {
+        use cranelift_module::Linkage;
+        let data_id = self.module.declare_data(&format!("__bytes_{}", self.bytes_count), Linkage::Local, false, Some(1)).unwrap();
+        let mut data_ctx = cranelift_module::DataContext::new();
+
+        *self.bytes_count += 1;
+        data_ctx.define(bytes.clone());
+        self.module.define_data(data_id, &data_ctx).unwrap();
+
+        let global = self.module.declare_data_in_func(data_id, self.builder.func);
+        let value = self.builder.ins().global_value(self.pointer_type, global);
+        let len = self.builder.ins().iconst(self.pointer_type, bytes.len() as i64);
+
+        place.field(self, 0).store(self, Value::new_val(value, syntax::layout::PTR_U8));
+        place.field(self, 1).store(self, Value::new_val(len, syntax::layout::USIZE));
+
+        place.to_value(self)
     }
 }

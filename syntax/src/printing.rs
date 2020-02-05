@@ -29,7 +29,7 @@ impl Display for ItemId {
 
 impl Display for Signature {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "fn {} ({}) -> ({})", self.0, list(&self.1), list(&self.2))
+        write!(f, "fn {} ({}) -> ({})", self.0, list(&self.1, ", "), list(&self.2, ", "))
     }
 }
 
@@ -58,7 +58,7 @@ impl Display for Body {
             write!(f, "export ")?;
         }
         
-        writeln!(f, "fn {} {} ({}) -> ({}) {{", self.name, self.conv, list(self.args()), list(self.rets()))?;
+        writeln!(f, "fn {} {} ({}) -> ({}) {{", self.name, self.conv, list(self.args(), ", "), list(self.rets(), ", "))?;
         
         let mut printed = 0;
         
@@ -130,7 +130,11 @@ impl Display for Terminator {
             Terminator::Return => write!(f, "return"),
             Terminator::Jump(target) => write!(f, "jump {}", target),
             Terminator::Call(places, proc, args, target) => {
-                write!(f, "call {} = {}({}), {}", list(places), proc, list(args), target)
+                if places.is_empty() {
+                    write!(f, "call {}({}), {}", proc, list(args, ", "), target)
+                } else {
+                    write!(f, "call {} = {}({}), {}", list(places, ", "), proc, list(args, ", "), target)
+                }
             },
             Terminator::Switch(pred, values, targets) => {
                 write!(f, "switch {} [", pred)?;
@@ -139,11 +143,12 @@ impl Display for Terminator {
                 let mut targets = targets.iter();
 
                 loop {
-                    match (values.next(), targets.next()) {
-                        (Some(value), Some(target)) => {
-                            write!(f, "{:X}: {}, ", value, target)?;
-                        },
-                        _ => break,
+                    if let Some(value) = values.next() {
+                        let target = targets.next().unwrap();
+
+                        write!(f, "{:X}: {}, ", value, target)?;
+                    } else {
+                        break;
                     }
                 }
 
@@ -192,7 +197,7 @@ impl Display for Const {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Const::Unit => write!(f, "unit"),
-            Const::Scalar(value, ty) => write!(f, "{:X}{}", value, ty),
+            Const::Scalar(value, ty) => write!(f, "{} {}", value, ty),
             Const::Bytes(bytes) => <str as Display>::fmt(std::str::from_utf8(&bytes).unwrap(), f),
             Const::FuncAddr(id) => <ItemId as Display>::fmt(id, f),
         }
@@ -205,10 +210,11 @@ impl Display for Value {
             Value::Use(op) => <Operand as Display>::fmt(op, f),
             Value::Ref(place) => write!(f, "&{}", place),
             Value::Slice(arr, lo, hi) => write!(f, "{}[{}..{}]", arr, lo, hi),
+            Value::Cast(ty, op) => write!(f, "cast {}, {}", ty, op),
             Value::BinOp(op, lhs, rhs) => write!(f, "{} {} {}", op, lhs, rhs),
             Value::UnOp(op, val) => write!(f, "{} {}", op, val),
             Value::NullOp(op, ty) => write!(f, "{} {}", op, ty),
-            Value::Init(ty, ops) => write!(f, "{} {{ {} }}", ty, list(ops)),
+            Value::Init(ty, ops) => write!(f, "{} {{ {} }}", ty, list(ops, ", ")),
         }
     }
 }
@@ -288,6 +294,17 @@ impl Display for Type {
             Type::Slice(of) => write!(f, "[{}]", of),
             Type::Vector(of, len) => write!(f, "{{{}; {}}}", of, len),
             Type::Proc(sig) => <Signature as Display>::fmt(sig, f),
+            Type::Tuple(packed, types) => if *packed {
+                write!(f, "<{}>", list(types, ", "))
+            } else {
+                write!(f, "({})", list(types, ", "))
+            },
+            Type::Union(tagged, types) => if *tagged {
+                write!(f, "{}", list(types, " / "))
+            } else {
+                write!(f, "{}", list(types, " | "))
+            },
+            Type::Tagged(idx, ty) => write!(f, "/{} {}", idx, ty),
         }
     }
 }
@@ -301,8 +318,8 @@ impl Display for CallConv {
     }
 }
 
-fn list<T: Display, I: IntoIterator<Item=T>>(i: I) -> String {
-    i.into_iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ")
+fn list<T: Display, I: IntoIterator<Item=T>>(i: I, sep: &str) -> String {
+    i.into_iter().map(|t| t.to_string()).collect::<Vec<_>>().join(sep)
 }
 
 fn indent(s: String) -> String {

@@ -16,6 +16,7 @@ parser::token![ident "jump" TJump];
 parser::token![ident "call" TCall];
 parser::token![ident "switch" TSwitch];
 parser::token![ident "otherwise" TOtherwise];
+parser::token![ident "cast" TCast];
 parser::token![ident "unit" TUnit];
 parser::token![ident "add" TAdd];
 parser::token![ident "sub" TSub];
@@ -70,6 +71,10 @@ parser::token![punct ";" TSemi/1];
 parser::token![punct "=" TEquals/1];
 parser::token![punct "#" THash/1];
 parser::token![punct "!" TBang/1];
+parser::token![punct "|" TBar/1];
+parser::token![punct "/" TSlash/1];
+parser::token![punct "<" TLeft/1];
+parser::token![punct ">" TRight/1];
 parser::token![punct "%" TPct/1];
 parser::token![punct "&" TAnd/1];
 parser::token![punct "*" TStar/1];
@@ -356,14 +361,20 @@ impl Parse for Terminator {
         } else if let Ok(_) = input.parse::<TJump>() {
             Ok(Terminator::Jump(input.parse()?))
         } else if let Ok(_) = input.parse::<TCall>() {
-            let mut places = vec![input.parse()?];
+            let mut places = Vec::new();
+
+            if { let fork = input.fork(); fork.parse::<Place>().is_ok() && !fork.peek::<TLParen>() } {
+                places.push(input.parse()?);
+            }
 
             while !input.is_empty() && input.peek::<TComma>() {
                 input.parse::<TComma>()?;
                 places.push(input.parse()?);
             }
 
-            input.parse::<TEquals>()?;
+            if !places.is_empty() {
+                input.parse::<TEquals>()?;
+            }
 
             let proc = input.parse()?;
             let mut args = Vec::new();
@@ -442,7 +453,7 @@ impl Parse for Place {
 
                 if let Ok(_) = fork.parse::<TLBracket>() {
                     if fork.parse::<Place>().is_ok() || fork.parse::<IntLiteral>().is_ok() {
-                        if !fork.peek::<TDots>() {
+                        if !fork.peek::<TDots>() && !fork.peek::<TColon>() {
                             input.parse::<TLBracket>()?;
 
                             if let Ok(lit) = input.parse::<IntLiteral>() {
@@ -549,6 +560,16 @@ impl Parse for Value {
             Ok(Value::NullOp(NullOp::SizeOf, input.parse()?))
         } else if let Ok(_) = input.parse::<TAlignof>() {
             Ok(Value::NullOp(NullOp::AlignOf, input.parse()?))
+        } else if let Ok(_) = input.parse::<TUnit>() {
+            Ok(Value::Use(Operand::Constant(Const::Unit)))
+        } else if let Ok(_) = input.parse::<TCast>() {
+            let ty = input.parse()?;
+
+            input.parse::<TComma>()?;
+
+            let op = input.parse()?;
+
+            Ok(Value::Cast(ty, op))
         } else if let Ok(ty) = input.parse() {
             let mut ops = Vec::new();
 
@@ -566,18 +587,22 @@ impl Parse for Value {
 
             Ok(Value::Init(ty, ops))
         } else {
-            let op = input.parse()?;
+            let op = input.parse::<Operand>()?;
 
-            if let Ok(_) = input.parse::<TLBracket>() {
-                let lo = input.parse()?;
+            if let Operand::Place(arr) = op {
+                if let Ok(_) = input.parse::<TLBracket>() {
+                    let lo = input.parse()?;
 
-                input.parse::<TDots>()?;
+                    input.parse::<TDots>()?;
 
-                let hi = input.parse()?;
+                    let hi = input.parse()?;
 
-                input.parse::<TRBracket>()?;
+                    input.parse::<TRBracket>()?;
 
-                Ok(Value::Slice(op, lo, hi))
+                    Ok(Value::Slice(arr, lo, hi))
+                } else {
+                    Ok(Value::Use(Operand::Place(arr)))
+                }
             } else {
                 Ok(Value::Use(op))
             }
@@ -587,6 +612,37 @@ impl Parse for Value {
 
 impl Parse for Type {
     fn parse(input: ParseStream) -> Result<Type> {
+        let mut types = vec![input.call(Type::parse_base)?];
+        let mut tagged = false;
+
+        while !input.is_empty() && (input.peek::<TBar>() || input.peek::<TSlash>()) {
+            let tag = input.peek::<TSlash>();
+
+            if types.len() == 1 {
+                tagged = tag;
+            } else {
+                if tagged != tag {
+                    return input.error("all tags must be equal");
+                }
+            }
+
+            if !input.parse::<TSlash>().is_ok() {
+                input.parse::<TBar>()?;
+            }
+
+            types.push(input.call(Type::parse_base)?);
+        }
+
+        if types.len() == 1 {
+            Ok(types.into_iter().next().unwrap())
+        } else {
+            Ok(Type::Union(tagged, types))
+        }
+    }
+}
+
+impl Type {
+    fn parse_base(input: ParseStream) -> Result<Type> {
         if let Ok(_) = input.parse::<TUnit>() {
             Ok(Type::Unit)
         } else if let Ok(_) = input.parse::<TBool>() {
@@ -629,6 +685,54 @@ impl Parse for Type {
             Ok(Type::Float(FloatSize::Size))
         } else if let Ok(_) = input.parse::<TAnd>() {
             Ok(Type::Ref(input.parse()?))
+        } else if let Ok(_) = input.parse::<TSlash>() {
+            let tag = input.parse::<IntLiteral>()?.int as usize;
+            let ty = input.parse()?;
+
+            Ok(Type::Tagged(tag, ty))
+        } else if let Ok(_) = input.parse::<TLBracket>() {
+            let of = input.parse()?;
+            let kind = if let Ok(_) = input.parse::<TSemi>() {
+                let len = input.parse::<IntLiteral>()?.int as usize;
+
+                Type::Array(of, len)
+            } else {
+                Type::Slice(of)
+            };
+
+            input.parse::<TRBracket>()?;
+
+            Ok(kind)
+        } else if let Ok(_) = input.parse::<TLParen>() {
+            let mut types = vec![input.parse()?];
+
+            while !input.is_empty() && input.peek::<TComma>() {
+                input.parse::<TComma>()?;
+                types.push(input.parse()?);
+            }
+
+            input.parse::<TRParen>()?;
+
+            if types.len() == 1 {
+                Ok(types.into_iter().next().unwrap())
+            } else {
+                Ok(Type::Tuple(false, types))
+            }
+        } else if let Ok(_) = input.parse::<TLeft>() {
+            let mut types = vec![input.parse()?];
+
+            while !input.is_empty() && input.peek::<TComma>() {
+                input.parse::<TComma>()?;
+                types.push(input.parse()?);
+            }
+
+            input.parse::<TRight>()?;
+
+            if types.len() == 1 {
+                Ok(types.into_iter().next().unwrap())
+            } else {
+                Ok(Type::Tuple(true, types))
+            }
         } else {
             Ok(Type::Proc(input.parse()?))
         }

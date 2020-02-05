@@ -15,7 +15,5 @@ pub fn main() {
 
     reporter.report(true);
 
-    println!("{}", module);
-
-    codegen::compile_object(&module, arg2.into());
+    codegen::compile(&module, arg2.into());
 }

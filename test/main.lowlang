@@ -1,17 +1,151 @@
 package test
 
 #1:
-extern puts: fn "C"(&u8) -> (i32);
+extern write: fn "C"(i32, &u8, usize) -> (isize);
 
 #0:
-export fn main "Fluix"(_0: usize, _1: &&u8) -> (_2: isize) {
-    _3: unit
+export fn main "Fluix"(_0: i32, _1: &&u8) -> (_2: i32) {
+    _3: usize
 
     %0 {
-        call _3 = #1(*_1), %1
+        call _3 = #7(15isize, 20isize), %1
     }
 
     %1 {
+        call #5(_3), %2
+    }
+
+    %2 {
+        call #4(10u8), %3
+    }
+
+    %3 {
+        return
+    }
+}
+
+#6:
+fn __insintric_gcd "Fluix"(_0: isize, _1: isize) -> (_2: isize) {
+    _3: bool
+    _4: isize
+
+    %0 {
+        _3 = eq _1 0isize
+        switch _3 [0: %2, otherwise %1]
+    }
+
+    %1 {
+        _2 = _0
+        return
+    }
+
+    %2 {
+        _4 = rem _0 _1
+        call _2 = #6(_1, _4), %3
+    }
+
+    %3 {
+        return
+    }
+}
+
+#7:
+fn __insintric_lcm "Fluix"(_0: isize, _1: isize) -> (_2: isize) {
+    _3: isize
+    _4: isize
+
+    %0 {
+        _3 = mul _0 _1
+        call _4 = #6(_0, _1), %1
+    }
+
+    %1 {
+        _2 = div _3 _4
+        return
+    }
+}
+
+#2:
+fn sum "Fluix"(_0: [usize; 8]) -> (_1: usize) {
+    _2: usize
+    _3: bool
+
+    %0 {
+        _3 = lt _2 8usize
+
+        switch _3 [0: %2, otherwise %1]
+    }
+
+    %1 {
+        _1 = add _1 _0[_2]
+        _2 = add _2 1usize
+
+        jump %0
+    }
+
+    %2 {
+        return
+    }
+}
+
+#3:
+fn print "Fluix"(_0: str) -> () {
+    _1: isize
+
+    %0 {
+        call _1 = #1(1i32, _0.0, _0.1), %1
+    }
+
+    %1 {
+        return
+    }
+}
+
+#4:
+fn print_char "Fluix"(_0: u8) -> () {
+    _1: &u8
+    _2: isize
+    
+    %0 {
+        _1 = &_0
+
+        call _2 = #1(1i32, _1, 1usize), %1
+    }
+
+    %1 {
+        return
+    }
+}
+
+#5:
+fn print_usize "Fluix"(_0: usize) -> () {
+    _1: bool
+    _2: usize
+    _3: usize
+    _4: u8
+    _5: u8
+
+    %0 {
+        _1 = ge _0 10usize
+
+        switch _1 [0: %2, otherwise %1]
+    }
+
+    %1 {
+        _2 = div _0 10usize
+
+        call #5(_2), %2
+    }
+
+    %2 {
+        _3 = rem _0 10usize
+        _4 = cast u8, _3
+        _5 = add _4 48u8
+
+        call #4(_5), %3
+    }
+
+    %3 {
         return
     }
 }

@@ -111,7 +111,8 @@ pub enum Const {
 pub enum Value {
     Use(Operand),
     Ref(Place),
-    Slice(Operand, Operand, Operand),
+    Slice(Place, Operand, Operand),
+    Cast(Type, Operand),
     BinOp(BinOp, Operand, Operand),
     UnOp(UnOp, Operand),
     NullOp(NullOp, Type),
@@ -149,6 +150,9 @@ pub enum Type {
     Slice(Box<Type>),
     Vector(Box<Type>, usize),
     Proc(Signature),
+    Tuple(bool, Vec<Type>),
+    Union(bool, Vec<Type>),
+    Tagged(usize, Box<Type>),
 }
 
 #[derive(Clone, Copy)]

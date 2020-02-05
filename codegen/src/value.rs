@@ -71,4 +71,16 @@ impl Value {
             layout,
         }
     }
+
+    pub fn field(self, fx: &mut FunctionCtx<impl Backend>, idx: usize) -> Value {
+        match self.kind {
+            ValueKind::Val(_val) => unimplemented!(),
+            ValueKind::Ref(ptr) => {
+                let (offset, layout) = self.layout.details().fields[idx];
+                let new_ptr = ptr.offset_i64(fx, offset as i64);
+
+                Value::new_ref(new_ptr, layout)
+            },
+        }
+    }
 }
