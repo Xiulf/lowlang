@@ -76,6 +76,7 @@ parser::token![punct "/" TSlash/1];
 parser::token![punct "<" TLeft/1];
 parser::token![punct ">" TRight/1];
 parser::token![punct "%" TPct/1];
+parser::token![punct "@" TAt/1];
 parser::token![punct "&" TAnd/1];
 parser::token![punct "*" TStar/1];
 parser::token![punct "->" TArrow/2];
@@ -106,27 +107,32 @@ impl Parse for Package {
                         }
                     },
                 }
-            } else if input.peek::<TGlobal>() || (input.peek::<TExport>() && input.peek2::<TGlobal>()) {
-                match input.parse() {
-                    Ok(v) => { globals.insert(id, v); },
-                    Err(e) => {
-                        input.reporter.add(e);
-                                                
-                        while !input.is_empty() && !input.peek::<THash>() {
-                            input.bump();
-                        }
-                    },
-                }
             } else {
-                match input.parse() {
-                    Ok(v) => { bodies.insert(id, v); },
-                    Err(e) => {
-                        input.reporter.add(e);
-                        
-                        while !input.is_empty() && !input.peek::<THash>() {
-                            input.bump();
-                        }
-                    },
+                let fork = input.fork();
+                let _ = fork.parse::<Attributes>();
+
+                if fork.peek::<TGlobal>() || (fork.peek::<TExport>() && fork.peek2::<TGlobal>()) {
+                    match input.parse() {
+                        Ok(v) => { globals.insert(id, v); },
+                        Err(e) => {
+                            input.reporter.add(e);
+                                                    
+                            while !input.is_empty() && !input.peek::<THash>() {
+                                input.bump();
+                            }
+                        },
+                    }
+                } else {
+                    match input.parse() {
+                        Ok(v) => { bodies.insert(id, v); },
+                        Err(e) => {
+                            input.reporter.add(e);
+                            
+                            while !input.is_empty() && !input.peek::<THash>() {
+                                input.bump();
+                            }
+                        },
+                    }
                 }
             }
         }
@@ -200,6 +206,7 @@ impl Parse for Extern {
 
 impl Parse for Global {
     fn parse(input: ParseStream) -> Result<Global> {
+        let attributes = input.parse()?;
         let export = input.parse::<TExport>().is_ok();
         
         input.parse::<TGlobal>()?;
@@ -213,6 +220,7 @@ impl Parse for Global {
         input.parse::<TSemi>()?;
 
         Ok(Global {
+            attributes,
             export,
             name,
             ty,
@@ -223,6 +231,7 @@ impl Parse for Global {
 
 impl Parse for Body {
     fn parse(input: ParseStream) -> Result<Body> {
+        let attributes = input.parse()?;
         let export = input.parse::<TExport>().is_ok();
         
         input.parse::<TFn>()?;
@@ -302,12 +311,32 @@ impl Parse for Body {
         input.parse::<TRBrace>()?;
 
         Ok(Body {
+            attributes,
             export,
             name,
             conv,
             locals,
             blocks,
         })
+    }
+}
+
+impl Parse for Attributes {
+    fn parse(input: ParseStream) -> Result<Attributes> {
+        let mut attributes = Attributes::default();
+
+        while !input.is_empty() && input.peek::<TAt>() {
+            input.parse::<TAt>()?;
+
+            let text = input.parse::<Ident>()?.name;
+
+            match text.as_str() {
+                "lang" => attributes.lang = true,
+                _ => return input.error(format!("Unknown attribute '{}'", text)),
+            }
+        }
+
+        Ok(attributes)
     }
 }
 

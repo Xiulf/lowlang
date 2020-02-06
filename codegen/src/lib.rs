@@ -59,6 +59,7 @@ pub struct FunctionCtx<'a, B: Backend> {
     pub module: &'a mut Module<B>,
     pub builder: FunctionBuilder<'a>,
     pub pointer_type: types::Type,
+    pub package: *const syntax::Package,
     pub body: &'a syntax::Body,
     pub func_ids: &'a BTreeMap<syntax::ItemId, (FuncId, ir::Signature, Vec<Layout>)>,
     pub data_ids: &'a BTreeMap<syntax::ItemId, (DataId, Layout)>,
@@ -70,6 +71,10 @@ pub struct FunctionCtx<'a, B: Backend> {
 impl<'a, B: Backend> FunctionCtx<'a, B> {
     pub fn clif_type(&self, layout: Layout) -> Option<types::Type> {
         self::clif_type(self.module, layout)
+    }
+
+    pub unsafe fn package(&self) -> &syntax::Package {
+        &*self.package
     }
 }
 

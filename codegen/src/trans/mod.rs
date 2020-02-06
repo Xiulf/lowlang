@@ -82,7 +82,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
     let mut bytes_count = 0;
 
     for (body_id, body) in &package.bodies {
-        trans_body(&mut module, &func_ids, &data_ids, body_id, body, &mut bytes_count);
+        trans_body(&mut module, package, &func_ids, &data_ids, body_id, body, &mut bytes_count);
     }
 
     module.finalize_definitions();
@@ -91,6 +91,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
 
 fn trans_body(
     module: &mut Module<impl Backend>,
+    package: *const syntax::Package,
     func_ids: &BTreeMap<syntax::ItemId, (FuncId, Signature, Vec<Layout>)>,
     data_ids: &BTreeMap<syntax::ItemId, (DataId, Layout)>,
     body_id: &syntax::ItemId,
@@ -112,6 +113,7 @@ fn trans_body(
     let blocks = body.blocks.iter().map(|(id, _)| (*id, builder.create_ebb())).collect();
     let mut fx = FunctionCtx {
         pointer_type: module.target_config().pointer_type(),
+        package,
         module,
         builder,
         body,

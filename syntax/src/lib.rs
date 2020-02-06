@@ -27,6 +27,7 @@ pub enum Extern {
 }
 
 pub struct Global {
+    pub attributes: Attributes,
     pub export: bool,
     pub name: String,
     pub ty: Type,
@@ -34,11 +35,17 @@ pub struct Global {
 }
 
 pub struct Body {
+    pub attributes: Attributes,
     pub export: bool,
     pub name: String,
     pub conv: CallConv,
     pub locals: BTreeMap<LocalId, Local>,
     pub blocks: BTreeMap<BlockId, Block>,
+}
+
+#[derive(Default)]
+pub struct Attributes {
+    lang: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

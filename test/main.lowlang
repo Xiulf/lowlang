@@ -6,9 +6,17 @@ extern write: fn "C"(i32, &u8, usize) -> (isize);
 #0:
 export fn main "Fluix"(_0: i32, _1: &&u8) -> (_2: i32) {
     _3: usize
+    _4: ratio
+    _5: ratio
+    _6: ratio
 
     %0 {
-        call _3 = #7(15isize, 20isize), %1
+        // call _3 = #6(15isize, 20isize), %1
+        _4 = ratio { 1isize, 2isize }
+        _5 = ratio { 3isize, 5isize }
+        _6 = add _4 _5
+        _3 = add _6.0 _6.1
+        jump %1
     }
 
     %1 {
@@ -25,6 +33,7 @@ export fn main "Fluix"(_0: i32, _1: &&u8) -> (_2: i32) {
 }
 
 #6:
+@lang
 fn __insintric_gcd "Fluix"(_0: isize, _1: isize) -> (_2: isize) {
     _3: bool
     _4: isize
@@ -50,6 +59,7 @@ fn __insintric_gcd "Fluix"(_0: isize, _1: isize) -> (_2: isize) {
 }
 
 #7:
+@lang
 fn __insintric_lcm "Fluix"(_0: isize, _1: isize) -> (_2: isize) {
     _3: isize
     _4: isize

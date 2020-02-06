@@ -31,10 +31,11 @@ impl Package {
         id
     }
 
-    pub fn declare_global(&mut self, export: bool, name: String, ty: Type) -> ItemId {
+    pub fn declare_global(&mut self, attributes: Attributes, export: bool, name: String, ty: Type) -> ItemId {
         let id = self.next_id();
 
         self.globals.insert(id, Global {
+            attributes,
             export,
             name,
             ty,
@@ -48,7 +49,7 @@ impl Package {
         self.globals.get_mut(&id).unwrap().init = Some(value);
     }
 
-    pub fn declare_body(&mut self, export: bool, name: String, sig: Signature) -> ItemId {
+    pub fn declare_body(&mut self, attributes: Attributes, export: bool, name: String, sig: Signature) -> ItemId {
         let id = self.next_id();
         let mut locals = BTreeMap::new();
 
@@ -73,6 +74,7 @@ impl Package {
         }
 
         self.bodies.insert(id, Body {
+            attributes,
             name,
             export,
             conv: sig.0,
