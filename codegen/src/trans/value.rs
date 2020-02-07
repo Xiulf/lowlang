@@ -262,6 +262,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 let rhs_den = rhs.field(self, 1).load_scalar(self);
                 let cmp = self.builder.ins().icmp(IntCC::Equal, lhs_den, rhs_den);
                 let rest = self.builder.create_ebb();
+                let exit = self.builder.create_ebb();
 
                 self.builder.ins().brz(cmp, rest, &[]);
 
@@ -270,6 +271,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 place.field(self, 0).store(self, Value::new_val(num, syntax::layout::ISIZE));
                 place.field(self, 1).store(self, Value::new_val(lhs_den, syntax::layout::ISIZE));
 
+                self.builder.ins().jump(exit, &[]);
                 self.builder.switch_to_block(rest);
 
                 let lcm = self.trans_lcm(lhs_den, rhs_den);
@@ -287,6 +289,9 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
 
                 place.field(self, 0).store(self, Value::new_val(num, syntax::layout::ISIZE));
                 place.field(self, 1).store(self, Value::new_val(lcm, syntax::layout::ISIZE));
+
+                self.builder.ins().jump(exit, &[]);
+                self.builder.switch_to_block(exit);
             },
             _ => unimplemented!(),
         }
