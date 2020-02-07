@@ -5,4 +5,4 @@ authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
 edition = "2018"
 
 [dependencies]
-diagnostics = { path = "../../fluix/diagnostics" }
+diagnostics = { git = "https://github.com/Cyberduc-k/fluix.git", branch = "redesign" }
