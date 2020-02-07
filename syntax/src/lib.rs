@@ -19,7 +19,7 @@ pub struct Package {
 pub struct ItemId(usize);
 
 #[derive(Default, Clone)]
-pub struct Signature(CallConv, pub Vec<Type>, pub Vec<Type>);
+pub struct Signature(pub CallConv, pub Vec<Type>, pub Vec<Type>);
 
 pub enum Extern {
     Proc(String, Signature),
