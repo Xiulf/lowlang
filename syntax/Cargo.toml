@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 parser = { path = "../parser" }
-intern = { path = "../intern" }
+intern = { path = "../../fluix/intern" }
 lazy_static = "1.4.0"
 target-lexicon = "0.10.0"
