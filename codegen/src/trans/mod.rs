@@ -4,15 +4,16 @@ mod term;
 mod operand;
 mod value;
 mod cast;
+mod ratio;
 
-use crate::FunctionCtx;
+use crate::{FunctionCtx, Error};
 use syntax::layout::Layout;
 use cranelift_module::{Backend, Module, Linkage, FuncId, DataId};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_codegen::ir::{AbiParam, Signature, ExternalName, InstBuilder};
 use std::collections::BTreeMap;
 
-pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -> B::Product {
+pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -> Result<B::Product, Error> {
     let mut func_ids = BTreeMap::new();
     let mut data_ids = BTreeMap::new();
 
@@ -35,7 +36,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
             if glob.export { Linkage::Export } else { Linkage::Local },
             true,
             Some(glob.ty.layout().details().align as u8)
-        ).unwrap();
+        )?;
 
         let mut data_ctx = cranelift_module::DataContext::new();
 
@@ -45,7 +46,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
             data_ctx.define_zeroinit(glob.ty.layout().details().size);
         }
 
-        module.define_data(data_id, &data_ctx).unwrap();
+        module.define_data(data_id, &data_ctx)?;
         data_ids.insert(*glob_id, (data_id, glob.ty.layout()));
     }
 
@@ -72,7 +73,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
             &body.name,
             if body.export { Linkage::Export } else { Linkage::Local },
             &sig,
-        ).unwrap();
+        )?;
 
         let rets = body.rets().into_iter().map(|r| r.ty.layout()).collect();
 
@@ -82,11 +83,12 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
     let mut bytes_count = 0;
 
     for (body_id, body) in &package.bodies {
-        trans_body(&mut module, package, &func_ids, &data_ids, body_id, body, &mut bytes_count);
+        trans_body(&mut module, package, &func_ids, &data_ids, body_id, body, &mut bytes_count)?;
     }
 
     module.finalize_definitions();
-    module.finish()
+
+    Ok(module.finish())
 }
 
 fn trans_body(
@@ -97,7 +99,7 @@ fn trans_body(
     body_id: &syntax::ItemId,
     body: &syntax::Body,
     bytes_count: &mut usize,
-) {
+) -> Result<(), Error> {
     let (func, sig, _) = &func_ids[body_id];
     let mut ctx = module.make_context();
     let mut func_ctx = FunctionBuilderContext::new();
@@ -202,10 +204,12 @@ fn trans_body(
         
         fx.trans_term(&block.term);
     }
-
+    
     fx.builder.seal_all_blocks();
     fx.builder.finalize();
 
-    module.define_function(*func, &mut ctx).unwrap();
+    module.define_function(*func, &mut ctx)?;
     module.clear_context(&mut ctx);
+
+    Ok(())
 }

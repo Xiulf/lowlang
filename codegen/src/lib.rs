@@ -4,7 +4,9 @@ pub mod value;
 pub mod analyze;
 pub mod pass;
 pub mod trans;
+pub mod error;
 
+use error::Error;
 use syntax::layout::Layout;
 pub use cranelift_module::{Backend, Module, FuncId, DataId};
 use cranelift_frontend::FunctionBuilder;
@@ -12,7 +14,7 @@ use cranelift_codegen::ir::{self, types};
 use cranelift_codegen::settings;
 use std::collections::BTreeMap;
 
-pub fn compile(package: &syntax::Package, out_file: std::path::PathBuf) {
+pub fn compile(package: &syntax::Package, out_file: std::path::PathBuf) -> Result<(), Error> {
     use settings::Configurable as _;
     let mut flags_builder = settings::builder();
 
@@ -31,14 +33,14 @@ pub fn compile(package: &syntax::Package, out_file: std::path::PathBuf) {
     ).unwrap();
 
     let module = Module::<cranelift_object::ObjectBackend>::new(builder);
-    let product = trans::translate(module, package);
+    let product = trans::translate(module, package)?;
     let mut tmp_name = out_file.clone();
-        tmp_name.set_extension("tmp");
+        tmp_name.set_extension("o");
 
     assemble(product, tmp_name.as_ref());
     link(tmp_name.as_ref(), out_file.as_ref());
 
-    std::fs::remove_file(tmp_name).unwrap();
+    Ok(())
 }
 
 pub fn assemble(product: cranelift_object::ObjectProduct, out_file: &std::path::Path) {

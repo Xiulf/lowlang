@@ -60,7 +60,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 if let syntax::Type::Ratio = ty {
                     let rhs = self.trans_op(rhs);
                     
-                    return self.trans_binop_ratio(place, op, lhs, rhs);
+                    return self.trans_binop_ratio_ratio(place, op, lhs, rhs);
                 }
 
                 let lhs = lhs.load_scalar(self);
@@ -147,8 +147,31 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
 
                 place.store(self, Value::new_val(value, place.layout));
             },
-            syntax::Value::UnOp(_op, _operand) => {
+            syntax::Value::UnOp(op, operand) => {
+                match op {
+                    syntax::UnOp::Not => {
+                        let operand = self.trans_op(operand);
+                        let val = operand.load_scalar(self);
+                        let res = self.builder.ins().bnot(val);
 
+                        place.store(self, Value::new_val(res, place.layout));
+                    },
+                    syntax::UnOp::Neg => {
+                        let operand = self.trans_op(operand);
+                        let val = operand.load_scalar(self);
+                        let res = match &operand.layout.details().ty {
+                            syntax::Type::Int(_) => {
+                                self.builder.ins().irsub_imm(val, 0)
+                            },
+                            syntax::Type::Float(_) => {
+                                self.builder.ins().fneg(val)
+                            },
+                            _ => unreachable!(),
+                        };
+
+                        place.store(self, Value::new_val(res, place.layout));
+                    },
+                }
             },
             syntax::Value::NullOp(op, ty) => {
                 match op {
@@ -220,80 +243,6 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     },
                 }
             },
-        }
-    }
-
-    fn _trans_gcd(&mut self, lhs: ir::Value, rhs: ir::Value) -> ir::Value {
-        let mut sig = self.module.make_signature();
-
-        sig.params.push(ir::AbiParam::new(self.pointer_type));
-        sig.params.push(ir::AbiParam::new(self.pointer_type));
-        sig.returns.push(ir::AbiParam::new(self.pointer_type));
-
-        let gcd = unsafe { self.package().insintric_gcd() };
-        let func = self.func_ids[&gcd].0;
-        let func = self.module.declare_func_in_func(func, self.builder.func);
-        let call = self.builder.ins().call(func, &[lhs, rhs]);
-
-        self.builder.inst_results(call)[0]
-    }
-
-    fn trans_lcm(&mut self, lhs: ir::Value, rhs: ir::Value) -> ir::Value {
-        let mut sig = self.module.make_signature();
-
-        sig.params.push(ir::AbiParam::new(self.pointer_type));
-        sig.params.push(ir::AbiParam::new(self.pointer_type));
-        sig.returns.push(ir::AbiParam::new(self.pointer_type));
-
-        let lcm = unsafe { self.package().insintric_gcd() };
-        let func = self.func_ids[&lcm].0;
-        let func = self.module.declare_func_in_func(func, self.builder.func);
-        let call = self.builder.ins().call(func, &[lhs, rhs]);
-
-        self.builder.inst_results(call)[0]
-    }
-
-    fn trans_binop_ratio(&mut self, place: Place, op: &syntax::BinOp, lhs: Value, rhs: Value) {
-        match op {
-            syntax::BinOp::Add => {
-                let lhs_num = lhs.field(self, 0).load_scalar(self);
-                let lhs_den = lhs.field(self, 1).load_scalar(self);
-                let rhs_num = rhs.field(self, 0).load_scalar(self);
-                let rhs_den = rhs.field(self, 1).load_scalar(self);
-                let cmp = self.builder.ins().icmp(IntCC::Equal, lhs_den, rhs_den);
-                let rest = self.builder.create_ebb();
-                let exit = self.builder.create_ebb();
-
-                self.builder.ins().brz(cmp, rest, &[]);
-
-                let num = self.builder.ins().iadd(lhs_num, rhs_num);
-
-                place.field(self, 0).store(self, Value::new_val(num, syntax::layout::ISIZE));
-                place.field(self, 1).store(self, Value::new_val(lhs_den, syntax::layout::ISIZE));
-
-                self.builder.ins().jump(exit, &[]);
-                self.builder.switch_to_block(rest);
-
-                let lcm = self.trans_lcm(lhs_den, rhs_den);
-                let lhs_num = {
-                    let a = self.builder.ins().sdiv(lcm, lhs_den);
-                    self.builder.ins().imul(lhs_num, a)
-                };
-
-                let rhs_num = {
-                    let a = self.builder.ins().sdiv(lcm, rhs_den);
-                    self.builder.ins().imul(rhs_num, a)
-                };
-
-                let num = self.builder.ins().iadd(lhs_num, rhs_num);
-
-                place.field(self, 0).store(self, Value::new_val(num, syntax::layout::ISIZE));
-                place.field(self, 1).store(self, Value::new_val(lcm, syntax::layout::ISIZE));
-
-                self.builder.ins().jump(exit, &[]);
-                self.builder.switch_to_block(exit);
-            },
-            _ => unimplemented!(),
         }
     }
 }

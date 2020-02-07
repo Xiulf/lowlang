@@ -5,7 +5,7 @@ extern write: fn "C"(i32, &u8, usize) -> (isize);
 
 #0:
 export fn main "Fluix"(_0: i32, _1: &&u8) -> (_2: i32) {
-    _3: usize
+    _3: isize
     _4: ratio
     _5: ratio
     _6: ratio
@@ -14,13 +14,13 @@ export fn main "Fluix"(_0: i32, _1: &&u8) -> (_2: i32) {
         // call _3 = #6(15isize, 20isize), %1
         _4 = ratio { 1isize, 2isize }
         _5 = ratio { 3isize, 5isize }
-        _6 = add _4 _5
+        _6 = sub _4 _5
         _3 = add _6.0 _6.1
         jump %1
     }
 
     %1 {
-        call #5(_3), %2
+        call #8(_3), %2
     }
 
     %2 {
@@ -156,6 +156,36 @@ fn print_usize "Fluix"(_0: usize) -> () {
     }
 
     %3 {
+        return
+    }
+}
+
+#8:
+fn print_isize "Fluix"(_0: isize) -> () {
+    _1: bool
+    _2: isize
+
+    %0 {
+        _1 = lt _0 0isize
+
+        switch _1 [0: %1, otherwise %2]
+    }
+
+    %1 {
+        call #5(_0), %4
+    }
+
+    %2 {
+        call #4(45u8), %3
+    }
+
+    %3 {
+        _2 = neg _0
+
+        call #5(_2), %4
+    }
+
+    %4 {
         return
     }
 }

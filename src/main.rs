@@ -15,5 +15,8 @@ pub fn main() {
 
     reporter.report(true);
 
-    codegen::compile(&module, arg2.into());
+    match codegen::compile(&module, arg2.into()) {
+        Ok(_) => {},
+        Err(err) => eprintln!("{}", err),
+    }
 }
