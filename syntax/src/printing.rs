@@ -260,6 +260,14 @@ impl Display for NullOp {
     }
 }
 
+impl Display for Ty {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        use intern::Intern;
+
+        <Type as Display>::fmt(&*Type::untern(*self), f)
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {

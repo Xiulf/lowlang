@@ -639,9 +639,10 @@ impl Parse for Value {
     }
 }
 
-impl Parse for Type {
-    fn parse(input: ParseStream) -> Result<Type> {
-        let mut types = vec![input.call(Type::parse_base)?];
+impl Parse for Ty {
+    fn parse(input: ParseStream) -> Result<Ty> {
+        use intern::Intern;
+        let mut types = vec![input.call(Ty::parse_base)?];
         let mut tagged = false;
 
         while !input.is_empty() && (input.peek::<TBar>() || input.peek::<TSlash>()) {
@@ -659,66 +660,68 @@ impl Parse for Type {
                 input.parse::<TBar>()?;
             }
 
-            types.push(input.call(Type::parse_base)?);
+            types.push(input.call(Ty::parse_base)?);
         }
 
         if types.len() == 1 {
             Ok(types.into_iter().next().unwrap())
         } else {
-            Ok(Type::Union(tagged, types))
+            Ok(Type::Union(tagged, types).intern())
         }
     }
 }
 
-impl Type {
-    fn parse_base(input: ParseStream) -> Result<Type> {
+impl Ty {
+    fn parse_base(input: ParseStream) -> Result<Ty> {
+        use intern::Intern;
+
         if let Ok(_) = input.parse::<TUnit>() {
-            Ok(Type::Unit)
+            Ok(Type::Unit.intern())
         } else if let Ok(_) = input.parse::<TBool>() {
-            Ok(Type::Bool)
+            Ok(Type::Bool.intern())
         } else if let Ok(_) = input.parse::<TChar>() {
-            Ok(Type::Char)
+            Ok(Type::Char.intern())
         } else if let Ok(_) = input.parse::<TStr>() {
-            Ok(Type::Str)
+            Ok(Type::Str.intern())
         } else if let Ok(_) = input.parse::<TRatio>() {
-            Ok(Type::Ratio)
+            Ok(Type::Ratio.intern())
         } else if let Ok(_) = input.parse::<TU8>() {
-            Ok(Type::UInt(IntSize::Bits8))
+            Ok(Type::UInt(IntSize::Bits8).intern())
         } else if let Ok(_) = input.parse::<TU16>() {
-            Ok(Type::UInt(IntSize::Bits16))
+            Ok(Type::UInt(IntSize::Bits16).intern())
         } else if let Ok(_) = input.parse::<TU32>() {
-            Ok(Type::UInt(IntSize::Bits32))
+            Ok(Type::UInt(IntSize::Bits32).intern())
         } else if let Ok(_) = input.parse::<TU64>() {
-            Ok(Type::UInt(IntSize::Bits64))
+            Ok(Type::UInt(IntSize::Bits64).intern())
         } else if let Ok(_) = input.parse::<TU128>() {
-            Ok(Type::UInt(IntSize::Bits128))
+            Ok(Type::UInt(IntSize::Bits128).intern())
         } else if let Ok(_) = input.parse::<TUsize>() {
-            Ok(Type::UInt(IntSize::Size))
+            Ok(Type::UInt(IntSize::Size).intern())
         } else if let Ok(_) = input.parse::<TI8>() {
-            Ok(Type::Int(IntSize::Bits8))
+            Ok(Type::Int(IntSize::Bits8).intern())
         } else if let Ok(_) = input.parse::<TI16>() {
-            Ok(Type::Int(IntSize::Bits16))
+            Ok(Type::Int(IntSize::Bits16).intern())
         } else if let Ok(_) = input.parse::<TI32>() {
-            Ok(Type::Int(IntSize::Bits32))
+            Ok(Type::Int(IntSize::Bits32).intern())
         } else if let Ok(_) = input.parse::<TI64>() {
-            Ok(Type::Int(IntSize::Bits64))
+            Ok(Type::Int(IntSize::Bits64).intern())
         } else if let Ok(_) = input.parse::<TI128>() {
-            Ok(Type::Int(IntSize::Bits128))
+            Ok(Type::Int(IntSize::Bits128).intern())
         } else if let Ok(_) = input.parse::<TIsize>() {
-            Ok(Type::Int(IntSize::Size))
+            Ok(Type::Int(IntSize::Size).intern())
         } else if let Ok(_) = input.parse::<TF32>() {
-            Ok(Type::Float(FloatSize::Bits32))
+            Ok(Type::Float(FloatSize::Bits32).intern())
         } else if let Ok(_) = input.parse::<TF64>() {
-            Ok(Type::Float(FloatSize::Bits64))
+            Ok(Type::Float(FloatSize::Bits64).intern())
         } else if let Ok(_) = input.parse::<TFsize>() {
-            Ok(Type::Float(FloatSize::Size))
+            Ok(Type::Float(FloatSize::Size).intern())
         } else if let Ok(_) = input.parse::<TAnd>() {
-            Ok(Type::Ref(input.parse()?))
+            Ok(Type::Ref(input.parse()?).intern())
         } else if let Ok(_) = input.parse::<TSlash>() {
             let tag = input.parse::<IntLiteral>()?.int as usize;
             let ty = input.parse()?;
 
-            Ok(Type::Tagged(tag, ty))
+            Ok(Type::Tagged(tag, ty).intern())
         } else if let Ok(_) = input.parse::<TLBracket>() {
             let of = input.parse()?;
             let kind = if let Ok(_) = input.parse::<TSemi>() {
@@ -731,7 +734,7 @@ impl Type {
 
             input.parse::<TRBracket>()?;
 
-            Ok(kind)
+            Ok(kind.intern())
         } else if let Ok(_) = input.parse::<TLParen>() {
             let mut types = vec![input.parse()?];
 
@@ -745,7 +748,7 @@ impl Type {
             if types.len() == 1 {
                 Ok(types.into_iter().next().unwrap())
             } else {
-                Ok(Type::Tuple(false, types))
+                Ok(Type::Tuple(false, types).intern())
             }
         } else if let Ok(_) = input.parse::<TLeft>() {
             let mut types = vec![input.parse()?];
@@ -760,10 +763,10 @@ impl Type {
             if types.len() == 1 {
                 Ok(types.into_iter().next().unwrap())
             } else {
-                Ok(Type::Tuple(true, types))
+                Ok(Type::Tuple(true, types).intern())
             }
         } else {
-            Ok(Type::Proc(input.parse()?))
+            Ok(Type::Proc(input.parse()?).intern())
         }
     }
 }

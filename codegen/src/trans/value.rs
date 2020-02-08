@@ -1,6 +1,7 @@
 use crate::{FunctionCtx, Backend};
 use crate::place::Place;
 use crate::value::Value;
+use intern::Intern;
 use cranelift_codegen::ir::{self, InstBuilder};
 use cranelift_codegen::ir::condcodes::{IntCC, FloatCC};
 
@@ -57,7 +58,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 let lhs = self.trans_op(lhs);
                 let ty = lhs.layout.details().ty.clone();
 
-                if let syntax::Type::Ratio = ty {
+                if let syntax::Type::Ratio = &*syntax::Type::untern(ty) {
                     let rhs = self.trans_op(rhs);
                     
                     return self.trans_binop_ratio_ratio(place, op, lhs, rhs);
@@ -66,60 +67,60 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 let lhs = lhs.load_scalar(self);
                 let rhs = self.trans_op(rhs).load_scalar(self);
                 let mut value = match op {
-                    syntax::BinOp::Add => match ty {
+                    syntax::BinOp::Add => match &*syntax::Type::untern(ty) {
                         syntax::Type::Float(_) => self.builder.ins().fadd(lhs, rhs),
                         _ => self.builder.ins().iadd(lhs, rhs),
                     },
-                    syntax::BinOp::Sub => match ty {
+                    syntax::BinOp::Sub => match &*syntax::Type::untern(ty) {
                         syntax::Type::Float(_) => self.builder.ins().fsub(lhs, rhs),
                         _ => self.builder.ins().isub(lhs, rhs),
                     },
-                    syntax::BinOp::Mul => match ty {
+                    syntax::BinOp::Mul => match &*syntax::Type::untern(ty) {
                         syntax::Type::Float(_) => self.builder.ins().fmul(lhs, rhs),
                         _ => self.builder.ins().imul(lhs, rhs),
                     },
-                    syntax::BinOp::Div => match ty {
+                    syntax::BinOp::Div => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().sdiv(lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().udiv(lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fdiv(lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Rem => match ty {
+                    syntax::BinOp::Rem => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().srem(lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().urem(lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Eq => match ty {
+                    syntax::BinOp::Eq => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::Equal, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Ne => match ty {
+                    syntax::BinOp::Ne => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Lt => match ty {
+                    syntax::BinOp::Lt => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::LessThan, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Le => match ty {
+                    syntax::BinOp::Le => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Gt => match ty {
+                    syntax::BinOp::Gt => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::UnsignedGreaterThan, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Ge => match ty {
+                    syntax::BinOp::Ge => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs),
@@ -129,7 +130,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     syntax::BinOp::BitOr => self.builder.ins().bor(lhs, rhs),
                     syntax::BinOp::BitXOr => self.builder.ins().bxor(lhs, rhs),
                     syntax::BinOp::Shl => self.builder.ins().ishl(lhs, rhs),
-                    syntax::BinOp::Shr => match ty {
+                    syntax::BinOp::Shr => match &*syntax::Type::untern(ty) {
                         syntax::Type::Int(_) => self.builder.ins().sshr(lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().ushr(lhs, rhs),
                         _ => unreachable!(),
@@ -159,7 +160,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     syntax::UnOp::Neg => {
                         let operand = self.trans_op(operand);
                         let val = operand.load_scalar(self);
-                        let res = match &operand.layout.details().ty {
+                        let res = match &*syntax::Type::untern(operand.layout.details().ty) {
                             syntax::Type::Int(_) => {
                                 self.builder.ins().irsub_imm(val, 0)
                             },
@@ -192,7 +193,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 }
             },
             syntax::Value::Init(ty, ops) => {
-                match ty {
+                match &*syntax::Type::untern(*ty) {
                     syntax::Type::Str |
                     syntax::Type::Ratio |
                     syntax::Type::Slice(_) => {

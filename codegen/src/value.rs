@@ -39,7 +39,7 @@ impl Value {
     }
 
     pub fn new_unit() -> Value {
-        Value::new_val(ir::Value::with_number(0).unwrap(), syntax::Type::Unit.layout())
+        Value::new_val(ir::Value::with_number(0).unwrap(), syntax::layout::UNIT)
     }
 
     pub fn on_stack(self, fx: &mut FunctionCtx<impl Backend>) -> Pointer {

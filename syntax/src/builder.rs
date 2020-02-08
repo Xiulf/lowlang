@@ -23,7 +23,7 @@ impl Package {
         id
     }
 
-    pub fn declare_extern_global(&mut self, name: String, ty: Type) -> ItemId {
+    pub fn declare_extern_global(&mut self, name: String, ty: Ty) -> ItemId {
         let id = self.next_id();
 
         self.externs.insert(id, Extern::Global(name, ty));
@@ -31,7 +31,7 @@ impl Package {
         id
     }
 
-    pub fn declare_global(&mut self, attributes: Attributes, export: bool, name: String, ty: Type) -> ItemId {
+    pub fn declare_global(&mut self, attributes: Attributes, export: bool, name: String, ty: Ty) -> ItemId {
         let id = self.next_id();
 
         self.globals.insert(id, Global {
@@ -105,12 +105,12 @@ impl Signature {
         self
     }
 
-    pub fn arg(mut self, ty: Type) -> Signature {
+    pub fn arg(mut self, ty: Ty) -> Signature {
         self.1.push(ty);
         self
     }
 
-    pub fn ret(mut self, ty: Type) -> Signature {
+    pub fn ret(mut self, ty: Ty) -> Signature {
         self.2.push(ty);
         self
     }
@@ -162,7 +162,7 @@ impl<'a> BodyBuilder<'a> {
         self.body.blocks.get_mut(self.current_block.as_ref().unwrap()).unwrap()
     }
 
-    pub fn create_var(&mut self, ty: Type) -> LocalId {
+    pub fn create_var(&mut self, ty: Ty) -> LocalId {
         let id = LocalId(self.body.locals.len());
 
         self.body.locals.insert(id, Local {
@@ -174,7 +174,7 @@ impl<'a> BodyBuilder<'a> {
         id
     }
 
-    pub fn create_tmp(&mut self, ty: Type) -> LocalId {
+    pub fn create_tmp(&mut self, ty: Ty) -> LocalId {
         let id = LocalId(self.body.locals.len());
 
         self.body.locals.insert(id, Local {
@@ -210,6 +210,10 @@ impl<'a> BodyBuilder<'a> {
         self.block().stmts.push(Stmt::Assign(place, Value::Slice(arr, lo, hi)));
     }
 
+    pub fn cast(&mut self, place: Place, ty: Ty, op: Operand) {
+        self.block().stmts.push(Stmt::Assign(place, Value::Cast(ty, op)));
+    }
+
     pub fn binary(&mut self, place: Place, op: BinOp, lhs: Operand, rhs: Operand) {
         self.block().stmts.push(Stmt::Assign(place, Value::BinOp(op, lhs, rhs)));
     }
@@ -218,11 +222,11 @@ impl<'a> BodyBuilder<'a> {
         self.block().stmts.push(Stmt::Assign(place, Value::UnOp(op, val)));
     }
 
-    pub fn nullary(&mut self, place: Place, op: NullOp, ty: Type) {
+    pub fn nullary(&mut self, place: Place, op: NullOp, ty: Ty) {
         self.block().stmts.push(Stmt::Assign(place, Value::NullOp(op, ty)));
     }
 
-    pub fn init(&mut self, place: Place, ty: Type, ops: Vec<Operand>) {
+    pub fn init(&mut self, place: Place, ty: Ty, ops: Vec<Operand>) {
         self.block().stmts.push(Stmt::Assign(place, Value::Init(ty, ops)));
     }
 

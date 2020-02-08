@@ -1,4 +1,5 @@
 use crate::{FunctionCtx, Backend};
+use intern::Intern;
 use cranelift_codegen::ir::InstBuilder;
 
 impl<'a, B: Backend> FunctionCtx<'a, B> {
@@ -44,7 +45,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     },
                     syntax::Operand::Place(place) => {
                         let place = self.trans_place(place);
-                        let rets = match &place.layout.details().ty {
+                        let rets = match &*syntax::Type::untern(place.layout.details().ty) {
                             syntax::Type::Proc(sig) => sig.2.clone(),
                             _ => unreachable!(),
                         }.iter().map(|ty| ty.layout()).collect();
@@ -74,7 +75,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     },
                     syntax::Operand::Place(_) => {
                         let place = func_place.unwrap();
-                        let place_sig = match &place.layout.details().ty {
+                        let place_sig = match &*syntax::Type::untern(place.layout.details().ty) {
                             syntax::Type::Proc(sig) => sig.clone(),
                             _ => unreachable!(),
                         };

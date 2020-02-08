@@ -6,6 +6,7 @@ pub mod pass;
 pub mod trans;
 pub mod error;
 
+use intern::Intern;
 use error::Error;
 use syntax::layout::Layout;
 pub use cranelift_module::{Backend, Module, FuncId, DataId};
@@ -83,7 +84,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
 pub fn clif_type(module: &Module<impl Backend>, layout: Layout) -> Option<types::Type> {
     use syntax::{Type, IntSize, FloatSize};
 
-    match &layout.details().ty {
+    match &*Type::untern(layout.details().ty) {
         Type::Unit => None,
         Type::Bool => Some(types::I8),
         Type::Char => Some(types::I32),

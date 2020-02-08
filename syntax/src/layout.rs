@@ -1,4 +1,4 @@
-pub use crate::Type;
+pub use crate::{Type, Ty};
 use intern::Intern;
 
 pub const UNIT: Layout = Layout(0);
@@ -32,40 +32,40 @@ pub fn init(triple: &target_lexicon::Triple) {
 
     let ptr_size = triple.pointer_width().map(target_lexicon::PointerWidth::bytes).unwrap_or(4) as usize;
 
-    LayoutInterner::set(UNIT, Details { ty: Type::Unit, .. Default::default() });
-    LayoutInterner::set(BOOL, Details { ty: Type::Bool, size: 1, .. Default::default() });
-    LayoutInterner::set(CHAR, Details { ty: Type::Char, size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(STR, Details { ty: Type::Str, size: ptr_size * 2, align: ptr_size * 2, idx: Some(U8), fields: Box::new([(0, PTR_U8), (ptr_size, USIZE)]), ..Default::default() });
-    LayoutInterner::set(RATIO, Details { ty: Type::Ratio, size: ptr_size * 2, align: ptr_size * 2, fields: Box::new([(0, ISIZE), (ptr_size, ISIZE)]), ..Default::default() });
-    LayoutInterner::set(U8, Details { ty: Type::UInt(IntSize::Bits8), size: 1, ..Default::default() });
-    LayoutInterner::set(U16, Details { ty: Type::UInt(IntSize::Bits16), size: 2, align: 2, ..Default::default() });
-    LayoutInterner::set(U32, Details { ty: Type::UInt(IntSize::Bits32), size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(U64, Details { ty: Type::UInt(IntSize::Bits64), size: 8, align: 8, ..Default::default() });
-    LayoutInterner::set(U128, Details { ty: Type::UInt(IntSize::Bits128), size: 16, align: 16, ..Default::default() });
+    LayoutInterner::set(UNIT, Details { ty: Type::Unit.intern(), size: 0, align: 1, pointee: None, idx: None, fields: Box::new([]) });
+    LayoutInterner::set(BOOL, Details { ty: Type::Bool.intern(), size: 1, .. Default::default() });
+    LayoutInterner::set(CHAR, Details { ty: Type::Char.intern(), size: 4, align: 4, ..Default::default() });
+    LayoutInterner::set(STR, Details { ty: Type::Str.intern(), size: ptr_size * 2, align: ptr_size * 2, idx: Some(U8), fields: Box::new([(0, PTR_U8), (ptr_size, USIZE)]), ..Default::default() });
+    LayoutInterner::set(RATIO, Details { ty: Type::Ratio.intern(), size: ptr_size * 2, align: ptr_size * 2, fields: Box::new([(0, ISIZE), (ptr_size, ISIZE)]), ..Default::default() });
+    LayoutInterner::set(U8, Details { ty: Type::UInt(IntSize::Bits8).intern(), size: 1, ..Default::default() });
+    LayoutInterner::set(U16, Details { ty: Type::UInt(IntSize::Bits16).intern(), size: 2, align: 2, ..Default::default() });
+    LayoutInterner::set(U32, Details { ty: Type::UInt(IntSize::Bits32).intern(), size: 4, align: 4, ..Default::default() });
+    LayoutInterner::set(U64, Details { ty: Type::UInt(IntSize::Bits64).intern(), size: 8, align: 8, ..Default::default() });
+    LayoutInterner::set(U128, Details { ty: Type::UInt(IntSize::Bits128).intern(), size: 16, align: 16, ..Default::default() });
     LayoutInterner::set(USIZE, match triple.pointer_width().unwrap_or(target_lexicon::PointerWidth::U32) {
-        target_lexicon::PointerWidth::U16 => Details { ty: Type::UInt(IntSize::Bits16), size: 2, align: 2, ..Default::default() },
-        target_lexicon::PointerWidth::U32 => Details { ty: Type::UInt(IntSize::Bits32), size: 4, align: 4, ..Default::default() },
-        target_lexicon::PointerWidth::U64 => Details { ty: Type::UInt(IntSize::Bits64), size: 8, align: 8, ..Default::default() },
+        target_lexicon::PointerWidth::U16 => Details { ty: Type::UInt(IntSize::Bits16).intern(), size: 2, align: 2, ..Default::default() },
+        target_lexicon::PointerWidth::U32 => Details { ty: Type::UInt(IntSize::Bits32).intern(), size: 4, align: 4, ..Default::default() },
+        target_lexicon::PointerWidth::U64 => Details { ty: Type::UInt(IntSize::Bits64).intern(), size: 8, align: 8, ..Default::default() },
     });
-    LayoutInterner::set(I8, Details { ty: Type::Int(IntSize::Bits8), size: 1, ..Default::default() });
-    LayoutInterner::set(I16, Details { ty: Type::Int(IntSize::Bits16), size: 2, align: 2, ..Default::default() });
-    LayoutInterner::set(I32, Details { ty: Type::Int(IntSize::Bits32), size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(I64, Details { ty: Type::Int(IntSize::Bits64), size: 8, align: 8, ..Default::default() });
-    LayoutInterner::set(I128, Details { ty: Type::Int(IntSize::Bits128), size: 16, align: 16, ..Default::default() });
+    LayoutInterner::set(I8, Details { ty: Type::Int(IntSize::Bits8).intern(), size: 1, ..Default::default() });
+    LayoutInterner::set(I16, Details { ty: Type::Int(IntSize::Bits16).intern(), size: 2, align: 2, ..Default::default() });
+    LayoutInterner::set(I32, Details { ty: Type::Int(IntSize::Bits32).intern(), size: 4, align: 4, ..Default::default() });
+    LayoutInterner::set(I64, Details { ty: Type::Int(IntSize::Bits64).intern(), size: 8, align: 8, ..Default::default() });
+    LayoutInterner::set(I128, Details { ty: Type::Int(IntSize::Bits128).intern(), size: 16, align: 16, ..Default::default() });
     LayoutInterner::set(ISIZE, match triple.pointer_width().unwrap_or(target_lexicon::PointerWidth::U32) {
-        target_lexicon::PointerWidth::U16 => Details { ty: Type::Int(IntSize::Bits16), size: 2, align: 2, ..Default::default() },
-        target_lexicon::PointerWidth::U32 => Details { ty: Type::Int(IntSize::Bits32), size: 4, align: 4, ..Default::default() },
-        target_lexicon::PointerWidth::U64 => Details { ty: Type::Int(IntSize::Bits64), size: 8, align: 8, ..Default::default() },
+        target_lexicon::PointerWidth::U16 => Details { ty: Type::Int(IntSize::Bits16).intern(), size: 2, align: 2, ..Default::default() },
+        target_lexicon::PointerWidth::U32 => Details { ty: Type::Int(IntSize::Bits32).intern(), size: 4, align: 4, ..Default::default() },
+        target_lexicon::PointerWidth::U64 => Details { ty: Type::Int(IntSize::Bits64).intern(), size: 8, align: 8, ..Default::default() },
     });
-    LayoutInterner::set(F32, Details { ty: Type::Float(FloatSize::Bits32), size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(F64, Details { ty: Type::Float(FloatSize::Bits64), size: 8, align: 8, ..Default::default() });
+    LayoutInterner::set(F32, Details { ty: Type::Float(FloatSize::Bits32).intern(), size: 4, align: 4, ..Default::default() });
+    LayoutInterner::set(F64, Details { ty: Type::Float(FloatSize::Bits64).intern(), size: 8, align: 8, ..Default::default() });
     LayoutInterner::set(FSIZE, match triple.pointer_width().unwrap_or(target_lexicon::PointerWidth::U32) {
-        target_lexicon::PointerWidth::U16 => Details { ty: Type::Float(FloatSize::Bits32), size: 4, align: 4, ..Default::default() },
-        target_lexicon::PointerWidth::U32 => Details { ty: Type::Float(FloatSize::Bits32), size: 4, align: 4, ..Default::default() },
-        target_lexicon::PointerWidth::U64 => Details { ty: Type::Float(FloatSize::Bits64), size: 8, align: 8, ..Default::default() },
+        target_lexicon::PointerWidth::U16 => Details { ty: Type::Float(FloatSize::Bits32).intern(), size: 4, align: 4, ..Default::default() },
+        target_lexicon::PointerWidth::U32 => Details { ty: Type::Float(FloatSize::Bits32).intern(), size: 4, align: 4, ..Default::default() },
+        target_lexicon::PointerWidth::U64 => Details { ty: Type::Float(FloatSize::Bits64).intern(), size: 8, align: 8, ..Default::default() },
     });
-    LayoutInterner::set(FN, Details { ty: Type::Proc(Default::default()), size: ptr_size, align: ptr_size, ..Default::default() });
-    LayoutInterner::set(PTR_U8, Details { ty: Type::Ref(Box::new(Type::UInt(IntSize::Bits8))), size: ptr_size, align: ptr_size, pointee: Some(U8), ..Default::default() });
+    LayoutInterner::set(FN, Details { ty: Type::Proc(crate::Signature::default()).intern(), size: ptr_size, align: ptr_size, ..Default::default() });
+    LayoutInterner::set(PTR_U8, Details { ty: Type::Ref(U8.details().ty).intern(), size: ptr_size, align: ptr_size, pointee: Some(U8), ..Default::default() });
 }
 
 #[derive(Clone, Copy)]
@@ -73,7 +73,7 @@ pub struct Layout(usize);
 
 #[derive(Clone)]
 pub struct Details {
-    pub ty: Type,
+    pub ty: Ty,
     pub size: usize,
     pub align: usize,
     pub pointee: Option<Layout>,
@@ -84,7 +84,7 @@ pub struct Details {
 impl Default for Details {
     fn default() -> Details {
         Details {
-            ty: Type::Unit,
+            ty: UNIT.details().ty,
             size: 0,
             align: 1,
             pointee: None,
@@ -96,18 +96,18 @@ impl Default for Details {
 
 impl Details {
     pub fn sign(&self) -> bool {
-        match &self.ty {
+        match &*Type::untern(self.ty) {
             Type::Int(_) => true,
             _ => false,
         }
     }
 }
 
-impl Type {
-    pub fn layout(&self) -> Layout {
+impl Ty {
+    pub fn layout(self) -> Layout {
         use crate::{IntSize, FloatSize};
 
-        match self {
+        match &*Type::untern(self) {
             Type::Unit => UNIT,
             Type::Bool => BOOL,
             Type::Char => CHAR,
@@ -129,7 +129,7 @@ impl Type {
             Type::Float(FloatSize::Bits64) => F64,
             Type::Float(FloatSize::Size) => FSIZE,
             Type::Ref(to) => Details {
-                ty: self.clone(),
+                ty: self,
                 size: PTR_U8.details().size,
                 align: PTR_U8.details().align,
                 pointee: Some(to.layout()),
@@ -139,7 +139,7 @@ impl Type {
                 let of_layout= of.layout();
 
                 Details {
-                    ty: self.clone(),
+                    ty: self,
                     size: of_layout.details().size * len,
                     align: alignment(of_layout.details().size * len),
                     idx: Some(of_layout),
@@ -155,7 +155,7 @@ impl Type {
                     align: PTR_U8.details().align * 2,
                     idx: Some(of_layout),
                     fields: Box::new([
-                        (0, Details { ty: Type::Ref(of.clone()), size: PTR_U8.details().size, align: PTR_U8.details().align, pointee: Some(of_layout), .. Default::default() }.intern()),
+                        (0, Details { ty: Type::Ref(*of).intern(), size: PTR_U8.details().size, align: PTR_U8.details().align, pointee: Some(of_layout), .. Default::default() }.intern()),
                         (PTR_U8.details().size, USIZE),
                     ]),
                     ..Default::default()
@@ -216,7 +216,7 @@ impl Type {
 
                 if *tagged {
                     let layout = Details {
-                        ty: Type::Union(false, types.clone()),
+                        ty: Type::Union(false, types.clone()).intern(),
                         size,
                         align: alignment(size),
                         ..Default::default()

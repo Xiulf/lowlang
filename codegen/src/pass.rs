@@ -2,6 +2,7 @@ use crate::{FunctionCtx, Backend};
 use crate::ptr::Pointer;
 use crate::value::Value;
 use syntax::layout::Layout;
+use intern::Intern;
 use cranelift_codegen::ir;
 use cranelift_module::Module;
 
@@ -12,7 +13,7 @@ pub enum PassMode {
 }
 
 pub fn pass_mode(module: &Module<impl Backend>, layout: Layout) -> PassMode {
-    match layout.details().ty.clone() {
+    match &*syntax::Type::untern(layout.details().ty) {
         syntax::Type::Bool |
         syntax::Type::Char |
         syntax::Type::Int(_) |

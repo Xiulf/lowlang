@@ -2,6 +2,7 @@ use crate::{FunctionCtx, Backend};
 use crate::ptr::Pointer;
 use crate::value::{Value, ValueKind};
 use syntax::layout::Layout;
+use intern::Intern;
 use cranelift_frontend::Variable;
 use cranelift_codegen::ir::{self, InstBuilder};
 
@@ -96,7 +97,7 @@ impl Place {
         let layout = self.layout.details().idx.unwrap();
         let new_idx = fx.builder.ins().imul_imm(idx, layout.details().size as i64);
 
-        match &self.layout.details().ty {
+        match &*syntax::Type::untern(self.layout.details().ty) {
             syntax::Type::Array(..) => {
                 let ptr = self.as_ptr(fx);
                 let new_ptr = ptr.offset_value(fx, new_idx);
@@ -125,7 +126,7 @@ impl Place {
         let layout = self.layout.details().idx.unwrap();
         let new_idx = idx * layout.details().size;
 
-        match &self.layout.details().ty {
+        match &*syntax::Type::untern(self.layout.details().ty) {
             syntax::Type::Array(..) => {
                 let ptr = self.as_ptr(fx);
                 let new_ptr = ptr.offset_i64(fx, new_idx as i64);

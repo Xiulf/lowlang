@@ -1,10 +1,12 @@
 pub mod builder;
+pub mod ty;
 pub mod layout;
 mod parsing;
 mod printing;
 mod util;
 
 pub use parser::parse;
+pub use ty::*;
 use std::collections::BTreeMap;
 
 #[derive(Default)]
@@ -19,18 +21,18 @@ pub struct Package {
 pub struct ItemId(usize);
 
 #[derive(Default, Clone)]
-pub struct Signature(pub CallConv, pub Vec<Type>, pub Vec<Type>);
+pub struct Signature(pub CallConv, pub Vec<Ty>, pub Vec<Ty>);
 
 pub enum Extern {
     Proc(String, Signature),
-    Global(String, Type),
+    Global(String, Ty),
 }
 
 pub struct Global {
     pub attributes: Attributes,
     pub export: bool,
     pub name: String,
-    pub ty: Type,
+    pub ty: Ty,
     pub init: Option<Box<[u8]>>,
 }
 
@@ -54,7 +56,7 @@ pub struct LocalId(pub usize);
 pub struct Local {
     pub id: LocalId,
     pub kind: LocalKind,
-    pub ty: Type,
+    pub ty: Ty,
 }
 
 #[derive(PartialEq)]
@@ -110,7 +112,7 @@ pub enum Operand {
 
 pub enum Const {
     Unit,
-    Scalar(u128, Type),
+    Scalar(u128, Ty),
     FuncAddr(ItemId),
     Bytes(Box<[u8]>),
 }
@@ -119,11 +121,11 @@ pub enum Value {
     Use(Operand),
     Ref(Place),
     Slice(Place, Operand, Operand),
-    Cast(Type, Operand),
+    Cast(Ty, Operand),
     BinOp(BinOp, Operand, Operand),
     UnOp(UnOp, Operand),
-    NullOp(NullOp, Type),
-    Init(Type, Vec<Operand>),
+    NullOp(NullOp, Ty),
+    Init(Ty, Vec<Operand>),
 }
 
 pub enum BinOp {
@@ -140,43 +142,6 @@ pub enum UnOp {
 pub enum NullOp {
     SizeOf,
     AlignOf,
-}
-
-#[derive(Clone)]
-pub enum Type {
-    Unit,
-    Bool,
-    Char,
-    Str,
-    Ratio,
-    Int(IntSize),
-    UInt(IntSize),
-    Float(FloatSize),
-    Ref(Box<Type>),
-    Array(Box<Type>, usize),
-    Slice(Box<Type>),
-    Vector(Box<Type>, usize),
-    Proc(Signature),
-    Tuple(bool, Vec<Type>),
-    Union(bool, Vec<Type>),
-    Tagged(usize, Box<Type>),
-}
-
-#[derive(Clone, Copy)]
-pub enum IntSize {
-    Bits8,
-    Bits16,
-    Bits32,
-    Bits64,
-    Bits128,
-    Size,
-}
-
-#[derive(Clone, Copy)]
-pub enum FloatSize {
-    Bits32,
-    Bits64,
-    Size,
 }
 
 #[derive(Clone, Copy)]
