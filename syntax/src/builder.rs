@@ -1,8 +1,8 @@
 use crate::*;
 use std::collections::BTreeMap;
 
-impl Package {
-    pub fn new(name: String) -> Package {
+impl<'t> Package<'t> {
+    pub fn new(name: String) -> Package<'t> {
         Package {
             name,
             externs: BTreeMap::new(),
@@ -95,22 +95,22 @@ impl Package {
     }
 }
 
-impl Signature {
-    pub fn new() -> Signature {
+impl<'t> Signature<'t> {
+    pub fn new() -> Signature<'t> {
         Signature(CallConv::Fluix, Vec::new(), Vec::new())
     }
 
-    pub fn call_conv(mut self, conv: CallConv) -> Signature {
+    pub fn call_conv(mut self, conv: CallConv) -> Signature<'t> {
         self.0 = conv;
         self
     }
 
-    pub fn arg(mut self, ty: Ty) -> Signature {
+    pub fn arg(mut self, ty: Ty<'t>) -> Signature<'t> {
         self.1.push(ty);
         self
     }
 
-    pub fn ret(mut self, ty: Ty) -> Signature {
+    pub fn ret(mut self, ty: Ty<'t>) -> Signature<'t> {
         self.2.push(ty);
         self
     }
@@ -153,7 +153,7 @@ impl Place {
 }
 
 pub struct BodyBuilder<'a> {
-    body: &'a mut Body,
+    pub body: &'a mut Body<'a>,
     current_block: Option<BlockId>,
 }
 
@@ -196,6 +196,10 @@ impl<'a> BodyBuilder<'a> {
         });
 
         id
+    }
+    
+    pub fn use_block(&mut self, block: BlockId) {
+        self.current_block = Some(block);
     }
 
     pub fn use_(&mut self, place: Place, op: Operand) {

@@ -1,7 +1,7 @@
 use crate::*;
 use std::fmt::{Display, Formatter, Result};
 
-impl Display for Package {
+impl<'t> Display for Package<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         writeln!(f, "package {}", self.name)?;
 
@@ -27,13 +27,13 @@ impl Display for ItemId {
     }
 }
 
-impl Display for Signature {
+impl<'t> Display for Signature<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "fn {} ({}) -> ({})", self.0, list(&self.1, ", "), list(&self.2, ", "))
     }
 }
 
-impl Display for Extern {
+impl<'t> Display for Extern<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Extern::Proc(name, sig) => write!(f, "extern {}: {};", name, sig),
@@ -42,7 +42,7 @@ impl Display for Extern {
     }
 }
 
-impl Display for Global {
+impl<'t> Display for Global<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         if self.export {
             write!(f, "export ")?;
@@ -52,7 +52,7 @@ impl Display for Global {
     }
 }
 
-impl Display for Body {
+impl<'t> Display for Body<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         if self.export {
             write!(f, "export ")?;
@@ -90,7 +90,7 @@ impl Display for LocalId {
     }
 }
 
-impl Display for Local {
+impl<'t> Display for Local<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "{}: {}", self.id, self.ty)
     }
@@ -102,7 +102,7 @@ impl Display for BlockId {
     }
 }
 
-impl Display for Block {
+impl<'t> Display for Block<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         writeln!(f, "{} {{", self.id)?;
 
@@ -115,7 +115,7 @@ impl Display for Block {
     }
 }
 
-impl Display for Stmt {
+impl<'t> Display for Stmt<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Stmt::Assign(place, value) => write!(f, "{} = {}", place, value)
@@ -123,7 +123,7 @@ impl Display for Stmt {
     }
 }
 
-impl Display for Terminator {
+impl<'t> Display for Terminator<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Terminator::Unset => write!(f, ""),
@@ -168,7 +168,7 @@ impl Display for Place {
 
         match &self.base {
             PlaceBase::Local(id) => <LocalId as Display>::fmt(id, f)?,
-            PlaceBase::Global(id) => <ItemId as Display>::fmt(id, f)?,
+            PlaceBase::Global(id) => write!(f, "#!{}", id.0)?,
         }
 
         for elem in &self.elems {
@@ -184,7 +184,7 @@ impl Display for Place {
     }
 }
 
-impl Display for Operand {
+impl<'t> Display for Operand<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Operand::Place(place) => <Place as Display>::fmt(place, f),
@@ -193,7 +193,7 @@ impl Display for Operand {
     }
 }
 
-impl Display for Const {
+impl<'t> Display for Const<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Const::Unit => write!(f, "unit"),
@@ -204,7 +204,7 @@ impl Display for Const {
     }
 }
 
-impl Display for Value {
+impl<'t> Display for Value<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Value::Use(op) => <Operand as Display>::fmt(op, f),
@@ -260,15 +260,13 @@ impl Display for NullOp {
     }
 }
 
-impl Display for Ty {
+impl<'t> Display for Ty<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        use intern::Intern;
-
-        <Type as Display>::fmt(&*Type::untern(*self), f)
+        <Type as Display>::fmt(&*self, f)
     }
 }
 
-impl Display for Type {
+impl<'t> Display for Type<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Type::Unit => write!(f, "unit"),

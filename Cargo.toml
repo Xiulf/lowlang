@@ -9,7 +9,8 @@ name = "lowlang"
 path = "src/main.rs"
 
 [dependencies]
-intern = { git = "https://github.com/Cyberduc-k/fluix.git", branch = "redesign" }
-diagnostics = { git = "https://github.com/Cyberduc-k/fluix.git", branch = "redesign" }
+intern = { path = "../fluix/intern" }
+diagnostics = { path = "../fluix/diagnostics" }
 syntax = { path = "syntax" }
 codegen = { path = "codegen" }
+target-lexicon = "0.10.0"

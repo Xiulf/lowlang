@@ -15,13 +15,16 @@ use cranelift_codegen::ir::{self, types};
 use cranelift_codegen::settings;
 use std::collections::BTreeMap;
 
-pub fn compile(package: &syntax::Package, out_file: std::path::PathBuf) -> Result<(), Error> {
+pub fn compile(package: &syntax::Package, target: &str, optimize: bool, out_file: std::path::PathBuf) -> Result<(), Error> {
     use settings::Configurable as _;
+    use std::str::FromStr as _;
     let mut flags_builder = settings::builder();
 
-    flags_builder.set("opt_level", "speed").unwrap();
+    if optimize {
+        flags_builder.set("opt_level", "speed").unwrap();
+    }
 
-    let isa = cranelift_codegen::isa::lookup(target_lexicon::HOST).unwrap()
+    let isa = cranelift_codegen::isa::lookup(target_lexicon::triple!(target)).unwrap()
         .finish(settings::Flags::new(flags_builder));
 
     syntax::layout::init(isa.triple());

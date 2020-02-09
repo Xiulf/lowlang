@@ -6,6 +6,8 @@ use parser::literal::IntLiteral;
 use parser::error::Result;
 use std::collections::BTreeMap;
 
+type TI<'a> = &'a crate::ty::TypeInterner;
+
 parser::token![ident "package" TPackage];
 parser::token![ident "extern" TExtern];
 parser::token![ident "global" TGlobal];
@@ -82,8 +84,8 @@ parser::token![punct "*" TStar/1];
 parser::token![punct "->" TArrow/2];
 parser::token![punct ".." TDots/2];
 
-impl Parse for Package {
-    fn parse(input: ParseStream) -> Result<Package> {
+impl<'t> Parse<TI<'t>> for Package<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Package<'t>> {
         input.parse::<TPackage>()?;
 
         let name = input.parse::<Ident>()?.name;
@@ -146,8 +148,8 @@ impl Parse for Package {
     }
 }
 
-impl Parse for Signature {
-    fn parse(input: ParseStream) -> Result<Signature> {
+impl<'t> Parse<TI<'t>> for Signature<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Signature<'t>> {
         input.parse::<TFn>()?;
 
         let conv = input.parse()?;
@@ -184,8 +186,8 @@ impl Parse for Signature {
     }
 }
 
-impl Parse for Extern {
-    fn parse(input: ParseStream) -> Result<Extern> {
+impl<'t> Parse<TI<'t>> for Extern<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Extern<'t>> {
         input.parse::<TExtern>()?;
 
         let name = input.parse::<Ident>()?.name;
@@ -204,8 +206,8 @@ impl Parse for Extern {
     }
 }
 
-impl Parse for Global {
-    fn parse(input: ParseStream) -> Result<Global> {
+impl<'t> Parse<TI<'t>> for Global<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Global<'t>> {
         let attributes = input.parse()?;
         let export = input.parse::<TExport>().is_ok();
         
@@ -229,8 +231,8 @@ impl Parse for Global {
     }
 }
 
-impl Parse for Body {
-    fn parse(input: ParseStream) -> Result<Body> {
+impl<'t> Parse<TI<'t>> for Body<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Body<'t>> {
         let attributes = input.parse()?;
         let export = input.parse::<TExport>().is_ok();
         
@@ -321,8 +323,8 @@ impl Parse for Body {
     }
 }
 
-impl Parse for Attributes {
-    fn parse(input: ParseStream) -> Result<Attributes> {
+impl<D> Parse<D> for Attributes {
+    fn parse(input: ParseStream<D>) -> Result<Attributes> {
         let mut attributes = Attributes::default();
 
         while !input.is_empty() && input.peek::<TAt>() {
@@ -340,8 +342,8 @@ impl Parse for Attributes {
     }
 }
 
-impl Block {
-    fn parse(input: ParseStream, id: BlockId) -> Result<Block> {
+impl<'t> Block<'t> {
+    fn parse(input: ParseStream<TI<'t>>, id: BlockId) -> Result<Block<'t>> {
         let mut stmts = Vec::new();
         let mut term = Terminator::Unset;
 
@@ -371,8 +373,8 @@ impl Block {
     }
 }
 
-impl Parse for Stmt {
-    fn parse(input: ParseStream) -> Result<Stmt> {
+impl<'t> Parse<TI<'t>> for Stmt<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Stmt<'t>> {
         let place = input.parse()?;
 
         input.parse::<TEquals>()?;
@@ -383,8 +385,8 @@ impl Parse for Stmt {
     }
 }
 
-impl Parse for Terminator {
-    fn parse(input: ParseStream) -> Result<Terminator> {
+impl<'t> Parse<TI<'t>> for Terminator<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Terminator<'t>> {
         if let Ok(_) = input.parse::<TReturn>() {
             Ok(Terminator::Return)
         } else if let Ok(_) = input.parse::<TJump>() {
@@ -449,8 +451,8 @@ impl Parse for Terminator {
     }
 }
 
-impl Parse for Place {
-    fn parse(input: ParseStream) -> Result<Place> {
+impl<D> Parse<D> for Place {
+    fn parse(input: ParseStream<D>) -> Result<Place> {
         let mut elems = Vec::new();
 
         while !input.is_empty() && input.peek::<TStar>() {
@@ -508,8 +510,8 @@ impl Parse for Place {
     }
 }
 
-impl Parse for PlaceBase {
-    fn parse(input: ParseStream) -> Result<PlaceBase> {
+impl<D> Parse<D> for PlaceBase {
+    fn parse(input: ParseStream<D>) -> Result<PlaceBase> {
         if input.peek::<THash>() && input.peek2::<TBang>() {
             let id = input.parse::<IntLiteral>()
                 .map(|l| ItemId(l.int as usize))?;
@@ -521,8 +523,8 @@ impl Parse for PlaceBase {
     }
 }
 
-impl Parse for Operand {
-    fn parse(input: ParseStream) -> Result<Operand> {
+impl<'t> Parse<TI<'t>> for Operand<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Operand<'t>> {
         if let Ok(c) = input.parse() {
             Ok(Operand::Constant(c))
         } else {
@@ -531,8 +533,8 @@ impl Parse for Operand {
     }
 }
 
-impl Parse for Const {
-    fn parse(input: ParseStream) -> Result<Const> {
+impl<'t> Parse<TI<'t>> for Const<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Const<'t>> {
         if let Ok(_) = input.parse::<TUnit>() {
             Ok(Const::Unit)
         } else if let Ok(lit) = input.parse::<IntLiteral>() {
@@ -545,8 +547,8 @@ impl Parse for Const {
     }
 }
 
-impl Parse for Value {
-    fn parse(input: ParseStream) -> Result<Value> {
+impl<'t> Parse<TI<'t>> for Value<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Value<'t>> {
         if let Ok(_) = input.parse::<TAnd>() {
             Ok(Value::Ref(input.parse()?))
         } else if let Ok(_) = input.parse::<TAdd>() {
@@ -639,8 +641,8 @@ impl Parse for Value {
     }
 }
 
-impl Parse for Ty {
-    fn parse(input: ParseStream) -> Result<Ty> {
+impl<'t> Parse<TI<'t>> for Ty<'t> {
+    fn parse(input: ParseStream<TI<'t>>) -> Result<Ty<'t>> {
         use intern::Intern;
         let mut types = vec![input.call(Ty::parse_base)?];
         let mut tagged = false;
@@ -671,8 +673,8 @@ impl Parse for Ty {
     }
 }
 
-impl Ty {
-    fn parse_base(input: ParseStream) -> Result<Ty> {
+impl<'t> Ty<'t> {
+    fn parse_base(input: ParseStream<TI<'t>>) -> Result<Ty<'t>> {
         use intern::Intern;
 
         if let Ok(_) = input.parse::<TUnit>() {
@@ -771,8 +773,8 @@ impl Ty {
     }
 }
 
-impl Parse for CallConv {
-    fn parse(input: ParseStream) -> Result<CallConv> {
+impl<D> Parse<D> for CallConv {
+    fn parse(input: ParseStream<D>) -> Result<CallConv> {
         let s = input.parse::<StringLiteral>()?.text;
 
         match s.as_str() {
@@ -783,16 +785,16 @@ impl Parse for CallConv {
     }
 }
 
-impl Parse for ItemId {
-    fn parse(input: ParseStream) -> Result<ItemId> {
+impl<D> Parse<D> for ItemId {
+    fn parse(input: ParseStream<D>) -> Result<ItemId> {
         input.parse::<THash>()?;
         input.parse::<IntLiteral>()
             .map(|l| ItemId(l.int as usize))
     }
 }
 
-impl Parse for LocalId {
-    fn parse(input: ParseStream) -> Result<LocalId> {
+impl<D> Parse<D> for LocalId {
+    fn parse(input: ParseStream<D>) -> Result<LocalId> {
         let name = input.parse::<Ident>()?.name;
         let num = name.chars().skip(1).collect::<String>();
         let id = num.parse::<usize>().unwrap();
@@ -801,8 +803,8 @@ impl Parse for LocalId {
     }
 }
 
-impl Parse for BlockId {
-    fn parse(input: ParseStream) -> Result<BlockId> {
+impl<D> Parse<D> for BlockId {
+    fn parse(input: ParseStream<D>) -> Result<BlockId> {
         input.parse::<TPct>()?;
         input.parse::<IntLiteral>()
             .map(|l| BlockId(l.int as usize))

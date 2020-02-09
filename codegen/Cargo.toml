@@ -5,7 +5,7 @@ authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
 edition = "2018"
 
 [dependencies]
-intern = { git = "https://github.com/Cyberduc-k/fluix.git", branch = "redesign" }
+intern = { path = "../../fluix/intern" }
 syntax = { path = "../syntax" }
 cranelift-module = "0.56.0"
 cranelift-frontend = "0.56.0"

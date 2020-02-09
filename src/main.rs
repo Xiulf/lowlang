@@ -15,7 +15,7 @@ pub fn main() {
 
     reporter.report(true);
 
-    match codegen::compile(&module, arg2.into()) {
+    match codegen::compile(&module, &target_lexicon::HOST.to_string(), true, arg2.into()) {
         Ok(_) => {},
         Err(err) => eprintln!("{}", err),
     }

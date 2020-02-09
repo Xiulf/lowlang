@@ -1,10 +1,7 @@
 use crate::Signature;
 
-#[derive(Clone, Copy)]
-pub struct Ty(usize);
-
 #[derive(Clone)]
-pub enum Type {
+pub enum Type<'t> {
     Unit,
     Bool,
     Char,
@@ -13,14 +10,14 @@ pub enum Type {
     Int(IntSize),
     UInt(IntSize),
     Float(FloatSize),
-    Ref(Ty),
-    Array(Ty, usize),
-    Slice(Ty),
-    Vector(Ty, usize),
-    Proc(Signature),
-    Tuple(bool, Vec<Ty>),
-    Union(bool, Vec<Ty>),
-    Tagged(usize, Ty),
+    Ref(Ty<'t>),
+    Array(Ty<'t>, usize),
+    Slice(Ty<'t>),
+    Vector(Ty<'t>, usize),
+    Proc(Signature<'t>),
+    Tuple(bool, Vec<Ty<'t>>),
+    Union(bool, Vec<Ty<'t>>),
+    Tagged(usize, Ty<'t>),
 }
 
 #[derive(Clone, Copy)]
@@ -40,14 +37,4 @@ pub enum FloatSize {
     Size,
 }
 
-impl intern::InternKey for Ty {
-    fn from_usize(src: usize) -> Ty {
-        Ty(src)
-    }
-
-    fn into_usize(self) -> usize {
-        self.0
-    }
-}
-
-intern::interner!(TypeInterner, TYPE_INTERNER, Type, Ty);
+intern::interner!(TypeInterner, Type<'t>, Ty<'t>);

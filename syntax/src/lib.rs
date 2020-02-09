@@ -10,39 +10,39 @@ pub use ty::*;
 use std::collections::BTreeMap;
 
 #[derive(Default)]
-pub struct Package {
+pub struct Package<'t> {
     pub name: String,
-    pub externs: BTreeMap<ItemId, Extern>,
-    pub globals: BTreeMap<ItemId, Global>,
-    pub bodies: BTreeMap<ItemId, Body>,
+    pub externs: BTreeMap<ItemId, Extern<'t>>,
+    pub globals: BTreeMap<ItemId, Global<'t>>,
+    pub bodies: BTreeMap<ItemId, Body<'t>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemId(usize);
 
 #[derive(Default, Clone)]
-pub struct Signature(pub CallConv, pub Vec<Ty>, pub Vec<Ty>);
+pub struct Signature<'t>(pub CallConv, pub Vec<Ty<'t>>, pub Vec<Ty<'t>>);
 
-pub enum Extern {
-    Proc(String, Signature),
-    Global(String, Ty),
+pub enum Extern<'t> {
+    Proc(String, Signature<'t>),
+    Global(String, Ty<'t>),
 }
 
-pub struct Global {
+pub struct Global<'t> {
     pub attributes: Attributes,
     pub export: bool,
     pub name: String,
-    pub ty: Ty,
+    pub ty: Ty<'t>,
     pub init: Option<Box<[u8]>>,
 }
 
-pub struct Body {
+pub struct Body<'t> {
     pub attributes: Attributes,
     pub export: bool,
     pub name: String,
     pub conv: CallConv,
-    pub locals: BTreeMap<LocalId, Local>,
-    pub blocks: BTreeMap<BlockId, Block>,
+    pub locals: BTreeMap<LocalId, Local<'t>>,
+    pub blocks: BTreeMap<BlockId, Block<'t>>,
 }
 
 #[derive(Default)]
@@ -53,13 +53,14 @@ pub struct Attributes {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LocalId(pub usize);
 
-pub struct Local {
+#[derive(Clone, Copy)]
+pub struct Local<'t> {
     pub id: LocalId,
     pub kind: LocalKind,
-    pub ty: Ty,
+    pub ty: Ty<'t>,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum LocalKind {
     Ret,
     Arg,
@@ -70,34 +71,37 @@ pub enum LocalKind {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockId(usize);
 
-pub struct Block {
+pub struct Block<'t> {
     pub id: BlockId,
-    pub stmts: Vec<Stmt>,
-    pub term: Terminator,
+    pub stmts: Vec<Stmt<'t>>,
+    pub term: Terminator<'t>,
 }
 
-pub enum Stmt {
-    Assign(Place, Value),
+pub enum Stmt<'t> {
+    Assign(Place, Value<'t>),
 }
 
-pub enum Terminator {
+pub enum Terminator<'t> {
     Unset,
     Return,
     Jump(BlockId),
-    Call(Vec<Place>, Operand, Vec<Operand>, BlockId),
-    Switch(Operand, Vec<u128>, Vec<BlockId>),
+    Call(Vec<Place>, Operand<'t>, Vec<Operand<'t>>, BlockId),
+    Switch(Operand<'t>, Vec<u128>, Vec<BlockId>),
 }
 
+#[derive(Clone)]
 pub struct Place {
     pub base: PlaceBase,
     pub elems: Vec<PlaceElem>,
 }
 
+#[derive(Clone)]
 pub enum PlaceBase {
     Local(LocalId),
     Global(ItemId),
 }
 
+#[derive(Clone)]
 pub enum PlaceElem {
     Deref,
     Field(usize),
@@ -105,27 +109,29 @@ pub enum PlaceElem {
     Index(Place),
 }
 
-pub enum Operand {
+#[derive(Clone)]
+pub enum Operand<'t> {
     Place(Place),
-    Constant(Const),
+    Constant(Const<'t>),
 }
 
-pub enum Const {
+#[derive(Clone)]
+pub enum Const<'t> {
     Unit,
-    Scalar(u128, Ty),
+    Scalar(u128, Ty<'t>),
     FuncAddr(ItemId),
     Bytes(Box<[u8]>),
 }
 
-pub enum Value {
-    Use(Operand),
+pub enum Value<'t> {
+    Use(Operand<'t>),
     Ref(Place),
-    Slice(Place, Operand, Operand),
-    Cast(Ty, Operand),
-    BinOp(BinOp, Operand, Operand),
-    UnOp(UnOp, Operand),
-    NullOp(NullOp, Ty),
-    Init(Ty, Vec<Operand>),
+    Slice(Place, Operand<'t>, Operand<'t>),
+    Cast(Ty<'t>, Operand<'t>),
+    BinOp(BinOp, Operand<'t>, Operand<'t>),
+    UnOp(UnOp, Operand<'t>),
+    NullOp(NullOp, Ty<'t>),
+    Init(Ty<'t>, Vec<Operand<'t>>),
 }
 
 pub enum BinOp {
