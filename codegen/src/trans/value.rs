@@ -1,12 +1,11 @@
 use crate::{FunctionCtx, Backend};
 use crate::place::Place;
 use crate::value::Value;
-use intern::Intern;
 use cranelift_codegen::ir::{self, InstBuilder};
 use cranelift_codegen::ir::condcodes::{IntCC, FloatCC};
 
-impl<'a, B: Backend> FunctionCtx<'a, B> {
-    pub fn trans_value(&mut self, place: Place, value: &syntax::Value) {
+impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
+    pub fn trans_value(&mut self, place: Place<'t, 'l>, value: &syntax::Value<'t>) {
         match value {
             syntax::Value::Use(op) => match op {
                 syntax::Operand::Constant(syntax::Const::Unit) => {},
@@ -29,10 +28,10 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 let arr = self.trans_place(arr).as_ptr(self);
                 let lo = self.trans_op(lo).load_scalar(self);
                 let arr = arr.offset_value(self, lo);
-                let arr = Value::new_val(arr.get_addr(self), place.layout.details().fields[0].1);
+                let arr = Value::new_val(arr.get_addr(self), place.layout.details.fields[0].1);
                 let hi = self.trans_op(hi).load_scalar(self);
                 let len = self.builder.ins().isub(hi, lo);
-                let len_field = place.layout.details().fields[1];
+                let len_field = place.layout.details.fields[1];
 
                 place.field(self, 0).store(self, arr);
                 place.field(self, 1).store(self, Value::new_val(len, len_field.1));
@@ -40,10 +39,10 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
             syntax::Value::Cast(ty, op) => {
                 let op = self.trans_op(op);
 
-                match (self.clif_type(op.layout), self.clif_type(ty.layout())) {
+                match (self.clif_type(op.layout), self.clif_type(ty.layout(self.layouts))) {
                     (Some(_), Some(to_ty)) => {
                         let from = op.load_scalar(self);
-                        let value = self.trans_cast(from, op.layout.details().sign(), to_ty, ty.layout().details().sign());
+                        let value = self.trans_cast(from, op.layout.sign(), to_ty, ty.layout(self.layouts).sign());
 
                         place.store(self, Value::new_val(value, place.layout));
 
@@ -52,13 +51,13 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     _ => {},
                 }
 
-                place.store(self, op.cast(ty.layout()));
+                place.store(self, op.cast(ty.layout(self.layouts)));
             },
             syntax::Value::BinOp(op, lhs, rhs) => {
                 let lhs = self.trans_op(lhs);
-                let ty = lhs.layout.details().ty.clone();
+                let ty = lhs.layout.ty;
 
-                if let syntax::Type::Ratio = &*syntax::Type::untern(ty) {
+                if let syntax::Type::Ratio = &*ty {
                     let rhs = self.trans_op(rhs);
                     
                     return self.trans_binop_ratio_ratio(place, op, lhs, rhs);
@@ -67,60 +66,60 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 let lhs = lhs.load_scalar(self);
                 let rhs = self.trans_op(rhs).load_scalar(self);
                 let mut value = match op {
-                    syntax::BinOp::Add => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Add => match &*ty {
                         syntax::Type::Float(_) => self.builder.ins().fadd(lhs, rhs),
                         _ => self.builder.ins().iadd(lhs, rhs),
                     },
-                    syntax::BinOp::Sub => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Sub => match &*ty {
                         syntax::Type::Float(_) => self.builder.ins().fsub(lhs, rhs),
                         _ => self.builder.ins().isub(lhs, rhs),
                     },
-                    syntax::BinOp::Mul => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Mul => match &*ty {
                         syntax::Type::Float(_) => self.builder.ins().fmul(lhs, rhs),
                         _ => self.builder.ins().imul(lhs, rhs),
                     },
-                    syntax::BinOp::Div => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Div => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().sdiv(lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().udiv(lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fdiv(lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Rem => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Rem => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().srem(lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().urem(lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Eq => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Eq => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::Equal, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Ne => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Ne => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Lt => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Lt => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::UnsignedLessThan, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::LessThan, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Le => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Le => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::UnsignedLessThanOrEqual, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Gt => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Gt => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::UnsignedGreaterThan, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs),
                         _ => unreachable!(),
                     },
-                    syntax::BinOp::Ge => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Ge => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs),
@@ -130,7 +129,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     syntax::BinOp::BitOr => self.builder.ins().bor(lhs, rhs),
                     syntax::BinOp::BitXOr => self.builder.ins().bxor(lhs, rhs),
                     syntax::BinOp::Shl => self.builder.ins().ishl(lhs, rhs),
-                    syntax::BinOp::Shr => match &*syntax::Type::untern(ty) {
+                    syntax::BinOp::Shr => match &*ty {
                         syntax::Type::Int(_) => self.builder.ins().sshr(lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().ushr(lhs, rhs),
                         _ => unreachable!(),
@@ -160,7 +159,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     syntax::UnOp::Neg => {
                         let operand = self.trans_op(operand);
                         let val = operand.load_scalar(self);
-                        let res = match &*syntax::Type::untern(operand.layout.details().ty) {
+                        let res = match &*operand.layout.ty {
                             syntax::Type::Int(_) => {
                                 self.builder.ins().irsub_imm(val, 0)
                             },
@@ -177,15 +176,15 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
             syntax::Value::NullOp(op, ty) => {
                 match op {
                     syntax::NullOp::SizeOf => {
-                        let size = ty.layout().details().size;
-                        let ty = self.clif_type(ty.layout()).unwrap();
+                        let size = ty.layout(self.layouts).details.size;
+                        let ty = self.clif_type(ty.layout(self.layouts)).unwrap();
                         let value = self.builder.ins().iconst(ty, size as i64);
                         
                         place.store(self, Value::new_val(value, place.layout))
                     },
                     syntax::NullOp::AlignOf => {
-                        let align = ty.layout().details().align;
-                        let ty = self.clif_type(ty.layout()).unwrap();
+                        let align = ty.layout(self.layouts).details.align;
+                        let ty = self.clif_type(ty.layout(self.layouts)).unwrap();
                         let value = self.builder.ins().iconst(ty, align as i64);
                         
                         place.store(self, Value::new_val(value, place.layout))
@@ -193,7 +192,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                 }
             },
             syntax::Value::Init(ty, ops) => {
-                match &*syntax::Type::untern(*ty) {
+                match &**ty {
                     syntax::Type::Str |
                     syntax::Type::Ratio |
                     syntax::Type::Slice(_) => {
@@ -229,7 +228,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     syntax::Type::Tagged(tag, _) => {
                         assert!(ops.len() == 1);
 
-                        let tag = Value::new_const(self, *tag as u128, syntax::layout::USIZE);
+                        let tag = Value::new_const(self, *tag as u128, self.layouts.defaults.usize);
                         let op = self.trans_op(&ops[0]);
 
                         place.field(self, 0).store(self, tag);

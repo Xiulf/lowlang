@@ -1,95 +1,137 @@
 pub use crate::{Type, Ty};
 use intern::Intern;
 
-pub struct LayoutCtx<'l> {
-    pub default_layouts: DefaultLayouts<'l>,
-    interner: LayoutInterner,
-    types: &'l crate::ty::TypeInterner,
+pub struct LayoutCtx<'t, 'l> {
+    pub defaults: DefaultLayouts<'t, 'l>,
+    interner: &'l LayoutInterner<'t, 'l>,
+    types: &'t crate::ty::TyCtx<'t>,
 }
 
-pub struct DefaultLayouts<'l> {
-    pub unit: TyLayout<'l>,
-    pub bool: TyLayout<'l>,
-    pub char: TyLayout<'l>,
-    pub str: TyLayout<'l>,
-    pub ratio: TyLayout<'l>,
-    pub u8: TyLayout<'l>,
-    pub u16: TyLayout<'l>,
-    pub u32: TyLayout<'l>,
-    pub u64: TyLayout<'l>,
-    pub u128: TyLayout<'l>,
-    pub usize: TyLayout<'l>,
-    pub i8: TyLayout<'l>,
-    pub i16: TyLayout<'l>,
-    pub i32: TyLayout<'l>,
-    pub i64: TyLayout<'l>,
-    pub i128: TyLayout<'l>,
-    pub isize: TyLayout<'l>,
-    pub f32: TyLayout<'l>,
-    pub f64: TyLayout<'l>,
-    pub fsize: TyLayout<'l>,
-    pub proc: TyLayout<'l>,
-    pub ptr_u8: TyLayout<'l>,
+pub struct DefaultLayouts<'t, 'l> {
+    pub unit: TyLayout<'t, 'l>,
+    pub bool: TyLayout<'t, 'l>,
+    pub char: TyLayout<'t, 'l>,
+    pub str: TyLayout<'t, 'l>,
+    pub ratio: TyLayout<'t, 'l>,
+    pub u8: TyLayout<'t, 'l>,
+    pub u16: TyLayout<'t, 'l>,
+    pub u32: TyLayout<'t, 'l>,
+    pub u64: TyLayout<'t, 'l>,
+    pub u128: TyLayout<'t, 'l>,
+    pub usize: TyLayout<'t, 'l>,
+    pub i8: TyLayout<'t, 'l>,
+    pub i16: TyLayout<'t, 'l>,
+    pub i32: TyLayout<'t, 'l>,
+    pub i64: TyLayout<'t, 'l>,
+    pub i128: TyLayout<'t, 'l>,
+    pub isize: TyLayout<'t, 'l>,
+    pub f32: TyLayout<'t, 'l>,
+    pub f64: TyLayout<'t, 'l>,
+    pub fsize: TyLayout<'t, 'l>,
+    pub proc: TyLayout<'t, 'l>,
+    pub ptr_u8: TyLayout<'t, 'l>,
 }
 
-/// # Important
-/// This should be called before any layouts are created!
-pub fn init(triple: &target_lexicon::Triple) {
-    use crate::{IntSize, FloatSize};
-
-    let ptr_size = triple.pointer_width().map(target_lexicon::PointerWidth::bytes).unwrap_or(4) as usize;
-
-    LayoutInterner::set(UNIT, Details { ty: Type::Unit.intern(), size: 0, align: 1, pointee: None, idx: None, fields: Box::new([]) });
-    LayoutInterner::set(BOOL, Details { ty: Type::Bool.intern(), size: 1, .. Default::default() });
-    LayoutInterner::set(CHAR, Details { ty: Type::Char.intern(), size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(STR, Details { ty: Type::Str.intern(), size: ptr_size * 2, align: ptr_size * 2, idx: Some(U8), fields: Box::new([(0, PTR_U8), (ptr_size, USIZE)]), ..Default::default() });
-    LayoutInterner::set(RATIO, Details { ty: Type::Ratio.intern(), size: ptr_size * 2, align: ptr_size * 2, fields: Box::new([(0, ISIZE), (ptr_size, ISIZE)]), ..Default::default() });
-    LayoutInterner::set(U8, Details { ty: Type::UInt(IntSize::Bits8).intern(), size: 1, ..Default::default() });
-    LayoutInterner::set(U16, Details { ty: Type::UInt(IntSize::Bits16).intern(), size: 2, align: 2, ..Default::default() });
-    LayoutInterner::set(U32, Details { ty: Type::UInt(IntSize::Bits32).intern(), size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(U64, Details { ty: Type::UInt(IntSize::Bits64).intern(), size: 8, align: 8, ..Default::default() });
-    LayoutInterner::set(U128, Details { ty: Type::UInt(IntSize::Bits128).intern(), size: 16, align: 16, ..Default::default() });
-    LayoutInterner::set(USIZE, match triple.pointer_width().unwrap_or(target_lexicon::PointerWidth::U32) {
-        target_lexicon::PointerWidth::U16 => Details { ty: Type::UInt(IntSize::Bits16).intern(), size: 2, align: 2, ..Default::default() },
-        target_lexicon::PointerWidth::U32 => Details { ty: Type::UInt(IntSize::Bits32).intern(), size: 4, align: 4, ..Default::default() },
-        target_lexicon::PointerWidth::U64 => Details { ty: Type::UInt(IntSize::Bits64).intern(), size: 8, align: 8, ..Default::default() },
-    });
-    LayoutInterner::set(I8, Details { ty: Type::Int(IntSize::Bits8).intern(), size: 1, ..Default::default() });
-    LayoutInterner::set(I16, Details { ty: Type::Int(IntSize::Bits16).intern(), size: 2, align: 2, ..Default::default() });
-    LayoutInterner::set(I32, Details { ty: Type::Int(IntSize::Bits32).intern(), size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(I64, Details { ty: Type::Int(IntSize::Bits64).intern(), size: 8, align: 8, ..Default::default() });
-    LayoutInterner::set(I128, Details { ty: Type::Int(IntSize::Bits128).intern(), size: 16, align: 16, ..Default::default() });
-    LayoutInterner::set(ISIZE, match triple.pointer_width().unwrap_or(target_lexicon::PointerWidth::U32) {
-        target_lexicon::PointerWidth::U16 => Details { ty: Type::Int(IntSize::Bits16).intern(), size: 2, align: 2, ..Default::default() },
-        target_lexicon::PointerWidth::U32 => Details { ty: Type::Int(IntSize::Bits32).intern(), size: 4, align: 4, ..Default::default() },
-        target_lexicon::PointerWidth::U64 => Details { ty: Type::Int(IntSize::Bits64).intern(), size: 8, align: 8, ..Default::default() },
-    });
-    LayoutInterner::set(F32, Details { ty: Type::Float(FloatSize::Bits32).intern(), size: 4, align: 4, ..Default::default() });
-    LayoutInterner::set(F64, Details { ty: Type::Float(FloatSize::Bits64).intern(), size: 8, align: 8, ..Default::default() });
-    LayoutInterner::set(FSIZE, match triple.pointer_width().unwrap_or(target_lexicon::PointerWidth::U32) {
-        target_lexicon::PointerWidth::U16 => Details { ty: Type::Float(FloatSize::Bits32).intern(), size: 4, align: 4, ..Default::default() },
-        target_lexicon::PointerWidth::U32 => Details { ty: Type::Float(FloatSize::Bits32).intern(), size: 4, align: 4, ..Default::default() },
-        target_lexicon::PointerWidth::U64 => Details { ty: Type::Float(FloatSize::Bits64).intern(), size: 8, align: 8, ..Default::default() },
-    });
-    LayoutInterner::set(FN, Details { ty: Type::Proc(crate::Signature::default()).intern(), size: ptr_size, align: ptr_size, ..Default::default() });
-    LayoutInterner::set(PTR_U8, Details { ty: Type::Ref(U8.details().ty).intern(), size: ptr_size, align: ptr_size, pointee: Some(U8), ..Default::default() });
+impl<'t, 'l> LayoutCtx<'t, 'l> {
+    pub fn new(types: &'t crate::ty::TyCtx<'t>, interner: &'l LayoutInterner<'t, 'l>, triple: &target_lexicon::Triple) -> LayoutCtx<'t, 'l> {
+        use target_lexicon::PointerWidth;
+        let ptr_width = triple.pointer_width().unwrap_or(PointerWidth::U32);
+        let ptr_size = ptr_width.bytes() as usize;
+        
+        let u8 = TyLayout { ty: types.defaults.u8, details: Details { size: 1, align: 1, ..Details::default() }.intern(interner) };
+        let u16 = TyLayout { ty: types.defaults.u16, details: Details { size: 2, align: 2, ..Details::default() }.intern(interner) };
+        let u32 = TyLayout { ty: types.defaults.u32, details: Details { size: 4, align: 4, ..Details::default() }.intern(interner) };
+        let u64 = TyLayout { ty: types.defaults.u64, details: Details { size: 8, align: 8, ..Details::default() }.intern(interner) };
+        let usize = match ptr_width {
+            PointerWidth::U16 => u16,
+            PointerWidth::U32 => u32,
+            PointerWidth::U64 => u64,
+        };
+        
+        let i16 = TyLayout { ty: types.defaults.i16, details: Details { size: 2, align: 2, ..Details::default() }.intern(interner) };
+        let i32 = TyLayout { ty: types.defaults.i32, details: Details { size: 4, align: 4, ..Details::default() }.intern(interner) };
+        let i64 = TyLayout { ty: types.defaults.i64, details: Details { size: 8, align: 8, ..Details::default() }.intern(interner) };
+        let isize = match ptr_width {
+            PointerWidth::U16 => i16,
+            PointerWidth::U32 => i32,
+            PointerWidth::U64 => i64,
+        };
+        
+        let f32 = TyLayout { ty: types.defaults.f32, details: Details { size: 4, align: 4, ..Details::default() }.intern(interner) };
+        let f64 = TyLayout { ty: types.defaults.f64, details: Details { size: 8, align: 8, ..Details::default() }.intern(interner) };
+        
+        let ptr_u8 = TyLayout { ty: types.defaults.ptr_u8, details: Details {
+            size: ptr_size,
+            align: alignment(ptr_size),
+            pointee: Some(u8),
+            ..Details::default()
+        }.intern(interner) };
+        
+        LayoutCtx {
+            defaults: DefaultLayouts {
+                unit: TyLayout { ty: types.defaults.unit, details: Details::default().intern(interner) },
+                bool: TyLayout { ty: types.defaults.bool, details: Details { size: 1, align: 1, ..Details::default() }.intern(interner) },
+                char: TyLayout { ty: types.defaults.char, details: Details { size: 4, align: 4, ..Details::default() }.intern(interner) },
+                str: TyLayout { ty: types.defaults.str, details: Details {
+                    size: 2 * ptr_size,
+                    align: alignment(2 * ptr_size),
+                    idx: Some(u8),
+                    fields: Box::new([
+                        (0, ptr_u8),
+                        (ptr_size, usize),
+                    ]),
+                    ..Details::default()
+                }.intern(interner) },
+                ratio: TyLayout { ty: types.defaults.ratio, details: Details {
+                    size: 2 * isize.details.size,
+                    align: 2 * isize.details.align,
+                    fields: Box::new([
+                        (0, isize),
+                        (isize.details.size, isize),
+                    ]),
+                    ..Details::default()
+                }.intern(interner) },
+                u8, u16, u32, u64,
+                u128: TyLayout { ty: types.defaults.u128, details: Details::default().intern(interner) },
+                usize,
+                i8: TyLayout { ty: types.defaults.i8, details: Details::default().intern(interner) },
+                i16, i32, i64,
+                i128: TyLayout { ty: types.defaults.i128, details: Details::default().intern(interner) },
+                isize, f32, f64,
+                fsize: match ptr_width {
+                    PointerWidth::U16 => f32,
+                    PointerWidth::U32 => f32,
+                    PointerWidth::U64 => f64,
+                },
+                proc: TyLayout { ty: Type::Proc(Default::default()).intern(types), details: Details {
+                    size: ptr_size,
+                    align: alignment(ptr_size),
+                    ..Details::default()
+                }.intern(interner) },
+                ptr_u8,
+            },
+            interner,
+            types,
+        }
+    }
 }
 
-pub struct TyLayout<'t> {
+#[derive(Clone, Copy)]
+pub struct TyLayout<'t, 'l> {
     pub ty: Ty<'t>,
-    pub layout: Layout<'t>,
+    pub details: Layout<'t, 'l>,
 }
 
-pub struct Details<'l> {
+pub struct Details<'t, 'l> {
     pub size: usize,
     pub align: usize,
-    pub pointee: Option<TyLayout<'l>>,
-    pub idx: Option<TyLayout<'l>>,
-    pub fields: Box<[(usize, TyLayout<'l>)]>,
+    pub pointee: Option<TyLayout<'t, 'l>>,
+    pub idx: Option<TyLayout<'t, 'l>>,
+    pub fields: Box<[(usize, TyLayout<'t, 'l>)]>,
 }
 
-impl<'l> Default for Details<'l> {
-    fn default() -> Details<'l> {
+impl<'t, 'l> Default for Details<'t, 'l> {
+    fn default() -> Details<'t, 'l> {
         Details {
             size: 0,
             align: 1,
@@ -100,7 +142,7 @@ impl<'l> Default for Details<'l> {
     }
 }
 
-impl<'l> TyLayout<'l> {
+impl<'t, 'l> TyLayout<'t, 'l> {
     pub fn sign(&self) -> bool {
         match &*self.ty {
             Type::Int(_) => true,
@@ -109,82 +151,82 @@ impl<'l> TyLayout<'l> {
     }
 }
 
-impl<'t> Ty<'t> {
-    pub fn layout(self, ctx: &'t LayoutCtx<'t>) -> TyLayout<'t> {
+impl<'t, 'l> Ty<'t> {
+    pub fn layout(self, ctx: &LayoutCtx<'t, 'l>) -> TyLayout<'t, 'l> {
         use crate::{IntSize, FloatSize};
 
         TyLayout {
             ty: self,
-            layout: match &*self {
-                Type::Unit => ctx.default_layouts.unit.layout,
-                Type::Bool => ctx.default_layouts.bool.layout,
-                Type::Char => ctx.default_layouts.char.layout,
-                Type::Str => ctx.default_layouts.str.layout,
-                Type::Ratio => ctx.default_layouts.ratio.layout,
-                Type::Int(IntSize::Bits8) => ctx.default_layouts.i8.layout,
-                Type::Int(IntSize::Bits16) => ctx.default_layouts.i16.layout,
-                Type::Int(IntSize::Bits32) => ctx.default_layouts.i32.layout,
-                Type::Int(IntSize::Bits64) => ctx.default_layouts.i64.layout,
-                Type::Int(IntSize::Bits128) => ctx.default_layouts.i128.layout,
-                Type::Int(IntSize::Size) => ctx.default_layouts.isize.layout,
-                Type::UInt(IntSize::Bits8) => ctx.default_layouts.u8.layout,
-                Type::UInt(IntSize::Bits16) => ctx.default_layouts.u16.layout,
-                Type::UInt(IntSize::Bits32) => ctx.default_layouts.u32.layout,
-                Type::UInt(IntSize::Bits64) => ctx.default_layouts.u64.layout,
-                Type::UInt(IntSize::Bits128) => ctx.default_layouts.u128.layout,
-                Type::UInt(IntSize::Size) => ctx.default_layouts.usize.layout,
-                Type::Float(FloatSize::Bits32) => ctx.default_layouts.f32.layout,
-                Type::Float(FloatSize::Bits64) => ctx.default_layouts.f64.layout,
-                Type::Float(FloatSize::Size) => ctx.default_layouts.fsize.layout,
+            details: match &*self {
+                Type::Unit => ctx.defaults.unit.details,
+                Type::Bool => ctx.defaults.bool.details,
+                Type::Char => ctx.defaults.char.details,
+                Type::Str => ctx.defaults.str.details,
+                Type::Ratio => ctx.defaults.ratio.details,
+                Type::Int(IntSize::Bits8) => ctx.defaults.i8.details,
+                Type::Int(IntSize::Bits16) => ctx.defaults.i16.details,
+                Type::Int(IntSize::Bits32) => ctx.defaults.i32.details,
+                Type::Int(IntSize::Bits64) => ctx.defaults.i64.details,
+                Type::Int(IntSize::Bits128) => ctx.defaults.i128.details,
+                Type::Int(IntSize::Size) => ctx.defaults.isize.details,
+                Type::UInt(IntSize::Bits8) => ctx.defaults.u8.details,
+                Type::UInt(IntSize::Bits16) => ctx.defaults.u16.details,
+                Type::UInt(IntSize::Bits32) => ctx.defaults.u32.details,
+                Type::UInt(IntSize::Bits64) => ctx.defaults.u64.details,
+                Type::UInt(IntSize::Bits128) => ctx.defaults.u128.details,
+                Type::UInt(IntSize::Size) => ctx.defaults.usize.details,
+                Type::Float(FloatSize::Bits32) => ctx.defaults.f32.details,
+                Type::Float(FloatSize::Bits64) => ctx.defaults.f64.details,
+                Type::Float(FloatSize::Size) => ctx.defaults.fsize.details,
                 Type::Ref(to) => Details {
-                    size: ctx.default_layouts.ptr_u8.layout.size,
-                    align: ctx.default_layouts.ptr_u8.layout.align,
+                    size: ctx.defaults.ptr_u8.details.size,
+                    align: ctx.defaults.ptr_u8.details.align,
                     pointee: Some(to.layout(ctx)),
                     ..Default::default()
-                }.intern(&ctx.interner),
+                }.intern(ctx.interner),
                 Type::Array(of, len) => {
                     let of_layout= of.layout(ctx);
 
                     Details {
-                        size: of_layout.layout.size * len,
-                        align: alignment(of_layout.layout.size * len),
+                        size: of_layout.details.size * len,
+                        align: alignment(of_layout.details.size * len),
                         idx: Some(of_layout),
                         ..Default::default()
-                    }.intern(&ctx.interner)
+                    }.intern(ctx.interner)
                 },
                 Type::Slice(of) => {
                     let of_layout = of.layout(ctx);
 
                     Details {
-                        size: ctx.default_layouts.ptr_u8.layout.size * 2,
-                        align: ctx.default_layouts.ptr_u8.layout.align * 2,
+                        size: ctx.defaults.ptr_u8.details.size * 2,
+                        align: ctx.defaults.ptr_u8.details.align * 2,
                         idx: Some(of_layout),
                         fields: Box::new([
                             (0, TyLayout {
                                 ty: Type::Ref(*of).intern(ctx.types),
-                                layout: Details {
-                                    size: ctx.default_layouts.ptr_u8.layout.size,
-                                    align: ctx.default_layouts.ptr_u8.layout.align,
+                                details: Details {
+                                    size: ctx.defaults.ptr_u8.details.size,
+                                    align: ctx.defaults.ptr_u8.details.align,
                                     pointee: Some(of_layout),
                                     .. Default::default()
-                                }.intern(&ctx.interner)
+                                }.intern(ctx.interner)
                             }),
-                            (ctx.default_layouts.ptr_u8.layout.size, ctx.default_layouts.usize),
+                            (ctx.defaults.ptr_u8.details.size, ctx.defaults.usize),
                         ]),
                         ..Default::default()
-                    }.intern(&ctx.interner)
+                    }.intern(ctx.interner)
                 },
                 Type::Vector(of, len) => {
                     let of_layout= of.layout(ctx);
 
                     Details {
-                        size: of_layout.layout.size * len,
-                        align: alignment(of_layout.layout.size * len),
+                        size: of_layout.details.size * len,
+                        align: alignment(of_layout.details.size * len),
                         idx: Some(of_layout),
                         ..Default::default()
-                    }.intern(&ctx.interner)
+                    }.intern(ctx.interner)
                 },
-                Type::Proc(_) => ctx.default_layouts.proc.layout,
+                Type::Proc(_) => ctx.defaults.proc.details,
                 Type::Tuple(packed, types) => {
                     let mut size = 0;
                     let mut fields = Vec::new();
@@ -193,7 +235,7 @@ impl<'t> Ty<'t> {
                         let layout = ty.layout(ctx);
 
                         if !*packed {
-                            let align = layout.layout.align;
+                            let align = layout.details.align;
 
                             while size % align != 0 {
                                 size += 1;
@@ -201,7 +243,7 @@ impl<'t> Ty<'t> {
                         }
 
                         fields.push((size, layout));
-                        size += layout.layout.size;
+                        size += layout.details.size;
                     }
 
                     while !pow2(size) {
@@ -213,14 +255,14 @@ impl<'t> Ty<'t> {
                         align: alignment(size),
                         fields: fields.into_boxed_slice(),
                         ..Default::default()
-                    }.intern(&ctx.interner)
+                    }.intern(ctx.interner)
                 },
                 Type::Union(tagged, types) => {
                     let mut fields = Vec::new();
                     let mut size = 0;
 
                     for ty in types {
-                        let s = ty.layout(ctx).layout.size;
+                        let s = ty.layout(ctx).details.size;
 
                         size = usize::max(size, s);
                     }
@@ -228,29 +270,29 @@ impl<'t> Ty<'t> {
                     if *tagged {
                         let layout = TyLayout {
                             ty: Type::Union(false, types.clone()).intern(ctx.types),
-                            layout: Details {
+                            details: Details {
                                 size,
                                 align: alignment(size),
                                 ..Default::default()
-                            }.intern(&ctx.interner)
+                            }.intern(ctx.interner)
                         };
 
-                        fields.push((0, ctx.default_layouts.usize));
-                        fields.push((ctx.default_layouts.usize.layout.size, layout));
-                        size += ctx.default_layouts.usize.layout.size;
+                        fields.push((0, ctx.defaults.usize));
+                        fields.push((ctx.defaults.usize.details.size, layout));
+                        size += ctx.defaults.usize.details.size;
 
                         Details {
                             size,
                             align: alignment(size),
                             fields: fields.into_boxed_slice(),
                             ..Default::default()
-                        }.intern(&ctx.interner)
+                        }.intern(ctx.interner)
                     } else {
                         Details {
                             size,
                             align: alignment(size),
                             ..Default::default()
-                        }.intern(&ctx.interner)
+                        }.intern(ctx.interner)
                     }
                 },
                 Type::Tagged(_tag, _ty) => {
@@ -284,4 +326,51 @@ fn alignment(size: usize) -> usize {
     bytes
 }
 
-intern::interner!(LayoutInterner, Details<'l>, Layout<'l>);
+pub struct LayoutInterner<'t, 'l> {
+    storage: intern::typed_arena::Arena<Details<'t, 'l>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Layout<'t, 'l>(*mut Details<'t, 'l>, ::std::marker::PhantomData<&'l mut Details<'t, 'l>>);
+
+impl<'t, 'l> LayoutInterner<'t, 'l> {
+    pub fn new() -> LayoutInterner<'t, 'l> {
+        LayoutInterner {
+            storage: intern::typed_arena::Arena::new(),
+        }
+    }
+}
+
+impl<'t, 'l> intern::Intern<'l> for Details<'t, 'l> {
+    type Key = Layout<'t, 'l>;
+    
+    fn intern<I: intern::Interner<'l, Self> + 'l>(self, i: &I) -> Layout<'t, 'l> {
+        i.intern(self)
+    }
+}
+
+impl<'t, 'l> intern::Interner<'l, Details<'t, 'l>> for LayoutInterner<'t, 'l> {
+    fn intern(&self, value: Details<'t, 'l>) -> Layout<'t, 'l> {
+        Layout(self.storage.alloc(value), ::std::marker::PhantomData)
+    }
+}
+
+impl<'t, 'l> ::std::default::Default for Layout<'t, 'l> {
+    fn default() -> Layout<'t, 'l> {
+        Layout(::std::ptr::null_mut(), ::std::marker::PhantomData)
+    }
+}
+
+impl<'t, 'l> ::std::ops::Deref for Layout<'t, 'l> {
+    type Target = Details<'t, 'l>;
+    
+    fn deref(&self) -> &Details<'t, 'l> {
+        unsafe { &*self.0 }
+    }
+}
+
+impl<'t, 'l> ::std::ops::DerefMut for Layout<'t, 'l> {
+    fn deref_mut(&mut self) -> &mut Details<'t, 'l> {
+        unsafe { &mut *self.0 }
+    }
+}

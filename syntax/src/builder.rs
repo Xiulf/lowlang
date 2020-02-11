@@ -15,7 +15,7 @@ impl<'t> Package<'t> {
         ItemId(self.externs.len() + self.globals.len() + self.bodies.len())
     }
 
-    pub fn declare_extern_proc(&mut self, name: String, sig: Signature) -> ItemId {
+    pub fn declare_extern_proc(&mut self, name: String, sig: Signature<'t>) -> ItemId {
         let id = self.next_id();
 
         self.externs.insert(id, Extern::Proc(name, sig));
@@ -23,7 +23,7 @@ impl<'t> Package<'t> {
         id
     }
 
-    pub fn declare_extern_global(&mut self, name: String, ty: Ty) -> ItemId {
+    pub fn declare_extern_global(&mut self, name: String, ty: Ty<'t>) -> ItemId {
         let id = self.next_id();
 
         self.externs.insert(id, Extern::Global(name, ty));
@@ -31,7 +31,7 @@ impl<'t> Package<'t> {
         id
     }
 
-    pub fn declare_global(&mut self, attributes: Attributes, export: bool, name: String, ty: Ty) -> ItemId {
+    pub fn declare_global(&mut self, attributes: Attributes, export: bool, name: String, ty: Ty<'t>) -> ItemId {
         let id = self.next_id();
 
         self.globals.insert(id, Global {
@@ -49,7 +49,7 @@ impl<'t> Package<'t> {
         self.globals.get_mut(&id).unwrap().init = Some(value);
     }
 
-    pub fn declare_body(&mut self, attributes: Attributes, export: bool, name: String, sig: Signature) -> ItemId {
+    pub fn declare_body(&mut self, attributes: Attributes, export: bool, name: String, sig: Signature<'t>) -> ItemId {
         let id = self.next_id();
         let mut locals = BTreeMap::new();
 
@@ -85,7 +85,7 @@ impl<'t> Package<'t> {
         id
     }
 
-    pub fn define_body(&mut self, id: ItemId) -> BodyBuilder {
+    pub fn define_body<'a>(&'a mut self, id: ItemId) -> BodyBuilder<'a, 't> {
         let body = self.bodies.get_mut(&id).unwrap();
 
         BodyBuilder {
@@ -152,17 +152,17 @@ impl Place {
     }
 }
 
-pub struct BodyBuilder<'a> {
-    pub body: &'a mut Body<'a>,
+pub struct BodyBuilder<'a, 't> {
+    pub body: &'a mut Body<'t>,
     current_block: Option<BlockId>,
 }
 
-impl<'a> BodyBuilder<'a> {
-    fn block(&mut self) -> &mut Block {
+impl<'a, 't> BodyBuilder<'a, 't> {
+    fn block(&mut self) -> &mut Block<'t> {
         self.body.blocks.get_mut(self.current_block.as_ref().unwrap()).unwrap()
     }
 
-    pub fn create_var(&mut self, ty: Ty) -> LocalId {
+    pub fn create_var(&mut self, ty: Ty<'t>) -> LocalId {
         let id = LocalId(self.body.locals.len());
 
         self.body.locals.insert(id, Local {
@@ -174,7 +174,7 @@ impl<'a> BodyBuilder<'a> {
         id
     }
 
-    pub fn create_tmp(&mut self, ty: Ty) -> LocalId {
+    pub fn create_tmp(&mut self, ty: Ty<'t>) -> LocalId {
         let id = LocalId(self.body.locals.len());
 
         self.body.locals.insert(id, Local {
@@ -202,7 +202,7 @@ impl<'a> BodyBuilder<'a> {
         self.current_block = Some(block);
     }
 
-    pub fn use_(&mut self, place: Place, op: Operand) {
+    pub fn use_(&mut self, place: Place, op: Operand<'t>) {
         self.block().stmts.push(Stmt::Assign(place, Value::Use(op)));
     }
 
@@ -210,27 +210,27 @@ impl<'a> BodyBuilder<'a> {
         self.block().stmts.push(Stmt::Assign(place, Value::Ref(to)));
     }
 
-    pub fn slice(&mut self, place: Place, arr: Place, lo: Operand, hi: Operand) {
+    pub fn slice(&mut self, place: Place, arr: Place, lo: Operand<'t>, hi: Operand<'t>) {
         self.block().stmts.push(Stmt::Assign(place, Value::Slice(arr, lo, hi)));
     }
 
-    pub fn cast(&mut self, place: Place, ty: Ty, op: Operand) {
+    pub fn cast(&mut self, place: Place, ty: Ty<'t>, op: Operand<'t>) {
         self.block().stmts.push(Stmt::Assign(place, Value::Cast(ty, op)));
     }
 
-    pub fn binary(&mut self, place: Place, op: BinOp, lhs: Operand, rhs: Operand) {
+    pub fn binary(&mut self, place: Place, op: BinOp, lhs: Operand<'t>, rhs: Operand<'t>) {
         self.block().stmts.push(Stmt::Assign(place, Value::BinOp(op, lhs, rhs)));
     }
 
-    pub fn unary(&mut self, place: Place, op: UnOp, val: Operand) {
+    pub fn unary(&mut self, place: Place, op: UnOp, val: Operand<'t>) {
         self.block().stmts.push(Stmt::Assign(place, Value::UnOp(op, val)));
     }
 
-    pub fn nullary(&mut self, place: Place, op: NullOp, ty: Ty) {
+    pub fn nullary(&mut self, place: Place, op: NullOp, ty: Ty<'t>) {
         self.block().stmts.push(Stmt::Assign(place, Value::NullOp(op, ty)));
     }
 
-    pub fn init(&mut self, place: Place, ty: Ty, ops: Vec<Operand>) {
+    pub fn init(&mut self, place: Place, ty: Ty<'t>, ops: Vec<Operand<'t>>) {
         self.block().stmts.push(Stmt::Assign(place, Value::Init(ty, ops)));
     }
 
@@ -246,13 +246,13 @@ impl<'a> BodyBuilder<'a> {
         }
     }
 
-    pub fn call(&mut self, places: Vec<Place>, proc: Operand, args: Vec<Operand>, target: BlockId) {
+    pub fn call(&mut self, places: Vec<Place>, proc: Operand<'t>, args: Vec<Operand<'t>>, target: BlockId) {
         if let Terminator::Unset = self.block().term {
             self.block().term = Terminator::Call(places, proc, args, target);
         }
     }
 
-    pub fn switch(&mut self, op: Operand, vals: Vec<u128>, targets: Vec<BlockId>) {
+    pub fn switch(&mut self, op: Operand<'t>, vals: Vec<u128>, targets: Vec<BlockId>) {
         if let Terminator::Unset = self.block().term {
             self.block().term = Terminator::Switch(op, vals, targets);
         }

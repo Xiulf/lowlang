@@ -9,7 +9,7 @@ pub enum SsaKind {
 
 pub fn analyze(fx: &FunctionCtx<impl Backend>) -> BTreeMap<syntax::LocalId, SsaKind> {
     let mut mapping = fx.body.locals.iter().map(|(id, local)| {
-        if fx.clif_type(local.ty.layout()).is_some() {
+        if fx.clif_type(local.ty.layout(fx.layouts)).is_some() {
             (*id, SsaKind::Ssa)
         } else {
             (*id, SsaKind::NotSsa)

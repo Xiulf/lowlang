@@ -1,7 +1,7 @@
 use crate::{FunctionCtx, Backend};
 use cranelift_codegen::ir::{self, InstBuilder};
 
-impl<'a, B: Backend> FunctionCtx<'a, B> {
+impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
     pub fn trans_cast(&mut self, from: ir::Value, from_signed: bool, to_ty: ir::Type, to_signed: bool) -> ir::Value {
         let from_ty = self.builder.func.dfg.value_type(from);
         

@@ -7,22 +7,26 @@ mod cast;
 mod ratio;
 
 use crate::{FunctionCtx, Error};
-use syntax::layout::Layout;
+use syntax::layout::TyLayout;
 use cranelift_module::{Backend, Module, Linkage, FuncId, DataId};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_codegen::ir::{AbiParam, Signature, ExternalName, InstBuilder};
 use std::collections::BTreeMap;
 
-pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -> Result<B::Product, Error> {
+pub fn translate<'t, 'l, B: Backend>(
+    mut module: Module<B>,
+    layouts: &syntax::layout::LayoutCtx<'t, 'l>,
+    package: &syntax::Package<'t>
+) -> Result<B::Product, Error> {
     let mut func_ids = BTreeMap::new();
     let mut data_ids = BTreeMap::new();
 
     for (ext_id, ext) in &package.externs {
         match ext {
             syntax::Extern::Proc(name, sig) => {
-                let sign = crate::pass::call_sig(&module, sig);
+                let sign = crate::pass::call_sig(&module, layouts, sig);
                 let func = module.declare_function(name, Linkage::Import, &sign).unwrap();
-                let rets = sig.2.iter().map(|r| r.layout()).collect();
+                let rets = sig.2.iter().map(|r| r.layout(layouts)).collect();
 
                 func_ids.insert(*ext_id, (func, sign, rets));
             },
@@ -35,7 +39,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
             &glob.name,
             if glob.export { Linkage::Export } else { Linkage::Local },
             true,
-            Some(glob.ty.layout().details().align as u8)
+            Some(glob.ty.layout(layouts).details.align as u8)
         )?;
 
         let mut data_ctx = cranelift_module::DataContext::new();
@@ -43,18 +47,18 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
         if let Some(init) = &glob.init {
             data_ctx.define(init.clone());
         } else {
-            data_ctx.define_zeroinit(glob.ty.layout().details().size);
+            data_ctx.define_zeroinit(glob.ty.layout(layouts).details.size);
         }
 
         module.define_data(data_id, &data_ctx)?;
-        data_ids.insert(*glob_id, (data_id, glob.ty.layout()));
+        data_ids.insert(*glob_id, (data_id, glob.ty.layout(layouts)));
     }
 
     for (body_id, body) in &package.bodies {
         let mut sig = module.make_signature();
 
         for ret in body.rets() {
-            match crate::pass::pass_mode(&module, ret.ty.layout()) {
+            match crate::pass::pass_mode(&module, ret.ty.layout(layouts)) {
                 crate::pass::PassMode::NoPass => {},
                 crate::pass::PassMode::ByVal(ty) => sig.returns.push(AbiParam::new(ty)),
                 crate::pass::PassMode::ByRef => sig.params.push(AbiParam::new(module.target_config().pointer_type())),
@@ -62,7 +66,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
         }
 
         for arg in body.args() {
-            match crate::pass::pass_mode(&module, arg.ty.layout()) {
+            match crate::pass::pass_mode(&module, arg.ty.layout(layouts)) {
                 crate::pass::PassMode::NoPass => {},
                 crate::pass::PassMode::ByVal(ty) => sig.params.push(AbiParam::new(ty)),
                 crate::pass::PassMode::ByRef => sig.params.push(AbiParam::new(module.target_config().pointer_type())),
@@ -75,7 +79,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
             &sig,
         )?;
 
-        let rets = body.rets().into_iter().map(|r| r.ty.layout()).collect();
+        let rets = body.rets().into_iter().map(|r| r.ty.layout(layouts)).collect();
 
         func_ids.insert(*body_id, (func, sig, rets));
     }
@@ -83,7 +87,7 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
     let mut bytes_count = 0;
 
     for (body_id, body) in &package.bodies {
-        trans_body(&mut module, package, &func_ids, &data_ids, body_id, body, &mut bytes_count)?;
+        trans_body(&mut module, layouts, package, &func_ids, &data_ids, body_id, body, &mut bytes_count)?;
     }
 
     module.finalize_definitions();
@@ -91,14 +95,15 @@ pub fn translate<B: Backend>(mut module: Module<B>, package: &syntax::Package) -
     Ok(module.finish())
 }
 
-fn trans_body(
-    module: &mut Module<impl Backend>,
-    package: *const syntax::Package,
-    func_ids: &BTreeMap<syntax::ItemId, (FuncId, Signature, Vec<Layout>)>,
-    data_ids: &BTreeMap<syntax::ItemId, (DataId, Layout)>,
-    body_id: &syntax::ItemId,
-    body: &syntax::Body,
-    bytes_count: &mut usize,
+fn trans_body<'a, 't, 'l>(
+    module: &'a mut Module<impl Backend>,
+    layouts: &'a syntax::layout::LayoutCtx<'t, 'l>,
+    package: *const syntax::Package<'t>,
+    func_ids: &'a BTreeMap<syntax::ItemId, (FuncId, Signature, Vec<TyLayout<'t, 'l>>)>,
+    data_ids: &'a BTreeMap<syntax::ItemId, (DataId, TyLayout<'t, 'l>)>,
+    body_id: &'a syntax::ItemId,
+    body: &'a syntax::Body<'t>,
+    bytes_count: &'a mut usize,
 ) -> Result<(), Error> {
     let (func, sig, _) = &func_ids[body_id];
     let mut ctx = module.make_context();
@@ -115,6 +120,7 @@ fn trans_body(
     let blocks = body.blocks.iter().map(|(id, _)| (*id, builder.create_ebb())).collect();
     let mut fx = FunctionCtx {
         pointer_type: module.target_config().pointer_type(),
+        layouts,
         package,
         module,
         builder,
@@ -128,12 +134,12 @@ fn trans_body(
 
     let ssa_map = crate::analyze::analyze(&fx);
 
-    fn local_place(
-        fx: &mut FunctionCtx<impl Backend>,
+    fn local_place<'a, 't, 'l>(
+        fx: &mut FunctionCtx<'a, 't, 'l, impl Backend>,
         id: syntax::LocalId,
-        layout: Layout,
+        layout: TyLayout<'t, 'l>,
         ssa: bool
-    ) -> crate::place::Place {
+    ) -> crate::place::Place<'t, 'l> {
         let place = if ssa {
             crate::place::Place::new_var(fx, id, layout)
         } else {
@@ -145,7 +151,7 @@ fn trans_body(
     }
 
     for ret in body.rets() {
-        let layout = ret.ty.layout();
+        let layout = ret.ty.layout(fx.layouts);
 
         match crate::pass::pass_mode(fx.module, layout) {
             crate::pass::PassMode::NoPass => {
@@ -171,7 +177,7 @@ fn trans_body(
     }
 
     for arg in body.args() {
-        let layout = arg.ty.layout();
+        let layout = arg.ty.layout(fx.layouts);
         let value = crate::pass::value_for_param(&mut fx, start_ebb, layout);
         let ssa = ssa_map[&arg.id] == crate::analyze::SsaKind::Ssa;
         let place = local_place(&mut fx, arg.id, layout, ssa);
@@ -185,7 +191,9 @@ fn trans_body(
         match &decl.kind {
             syntax::LocalKind::Var |
             syntax::LocalKind::Tmp => {
-                local_place(&mut fx, *id, decl.ty.layout(), ssa_map[id] == crate::analyze::SsaKind::Ssa);
+                let layout = decl.ty.layout(fx.layouts);
+                
+                local_place(&mut fx, *id, layout, ssa_map[id] == crate::analyze::SsaKind::Ssa);
             },
             _ => {},
         }

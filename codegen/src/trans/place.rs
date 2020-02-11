@@ -3,8 +3,8 @@ use crate::ptr::Pointer;
 use crate::place::Place;
 use cranelift_codegen::ir::InstBuilder;
 
-impl<'a, B: Backend> FunctionCtx<'a, B> {
-    pub fn trans_place(&mut self, place: &syntax::Place) -> Place {
+impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
+    pub fn trans_place(&mut self, place: &syntax::Place) -> Place<'t, 'l> {
         let mut res = match &place.base {
             syntax::PlaceBase::Local(id) => self.locals[id],
             syntax::PlaceBase::Global(id) => {

@@ -11,17 +11,18 @@ pub mod lexer;
 
 pub use diagnostics;
 
-pub fn parse<T: parse::Parse + Default>(
+pub fn parse<T: parse::Parse<D> + Default, D>(
     source: &str,
     file: diagnostics::FileId,
     reporter: &diagnostics::Reporter,
-    start: Option<diagnostics::Span>
+    start: Option<diagnostics::Span>,
+    data: D,
 ) -> T {
     use diagnostics::Spanned;
     
     let mut lexer = lexer::Lexer::new(source, file, reporter);
     let buffer = lexer.run();
-    let stream = parse::ParseBuffer::new(buffer.begin(), reporter, (), if let Some(start) = start {
+    let stream = parse::ParseBuffer::new(buffer.begin(), reporter, data, if let Some(start) = start {
         start
     } else if !buffer.tokens.is_empty() {
         buffer.tokens[0].span()

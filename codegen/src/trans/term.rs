@@ -1,9 +1,8 @@
 use crate::{FunctionCtx, Backend};
-use intern::Intern;
 use cranelift_codegen::ir::InstBuilder;
 
-impl<'a, B: Backend> FunctionCtx<'a, B> {
-    pub fn trans_term(&mut self, term: &syntax::Terminator) {
+impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
+    pub fn trans_term(&mut self, term: &syntax::Terminator<'t>) {
         match term {
             syntax::Terminator::Unset => panic!("unset terminator"),
             syntax::Terminator::Jump(target) => {
@@ -11,7 +10,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
             },
             syntax::Terminator::Return => {
                 let rets = self.body.rets().iter().filter_map(|ret| {
-                    match crate::pass::pass_mode(self.module, ret.ty.layout()) {
+                    match crate::pass::pass_mode(self.module, ret.ty.layout(self.layouts)) {
                         crate::pass::PassMode::ByVal(_) => {
                             let place = self.locals[&ret.id];
                             let ret_val = place.to_value(self).load_scalar(self);
@@ -45,10 +44,10 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     },
                     syntax::Operand::Place(place) => {
                         let place = self.trans_place(place);
-                        let rets = match &*syntax::Type::untern(place.layout.details().ty) {
+                        let rets = match &*place.layout.ty {
                             syntax::Type::Proc(sig) => sig.2.clone(),
                             _ => unreachable!(),
-                        }.iter().map(|ty| ty.layout()).collect();
+                        }.iter().map(|ty| ty.layout(self.layouts)).collect();
 
                         (rets, Some(place))
                     },
@@ -75,12 +74,12 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
                     },
                     syntax::Operand::Place(_) => {
                         let place = func_place.unwrap();
-                        let place_sig = match &*syntax::Type::untern(place.layout.details().ty) {
+                        let place_sig = match &*place.layout.ty {
                             syntax::Type::Proc(sig) => sig.clone(),
                             _ => unreachable!(),
                         };
 
-                        let sig = crate::pass::call_sig(self.module, &place_sig);
+                        let sig = crate::pass::call_sig(self.module, self.layouts, &place_sig);
                         let sig = self.builder.import_signature(sig);
                         let func = place.to_value(self).load_scalar(self);
 

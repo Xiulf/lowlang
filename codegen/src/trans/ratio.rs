@@ -4,15 +4,15 @@ use cranelift_codegen::ir::{self, InstBuilder};
 use std::ops::{Add, Sub, Mul, Div, Rem};
 
 #[derive(Clone, Copy)]
-struct Ratio<'a, B: Backend> {
-    fx: *mut FunctionCtx<'a, B>,
-    num: Value<'a, B>,
-    den: Value<'a, B>,
+struct Ratio<'a, 't, 'l, B: Backend> {
+    fx: *mut FunctionCtx<'a, 't, 'l, B>,
+    num: Value<'a, 't, 'l, B>,
+    den: Value<'a, 't, 'l, B>,
 }
 
-struct Value<'a, B: Backend>(*mut FunctionCtx<'a, B>, ir::Value);
+struct Value<'a, 't, 'l, B: Backend>(*mut FunctionCtx<'a, 't, 'l, B>, ir::Value);
 
-impl<'a, B: Backend> FunctionCtx<'a, B> {
+impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
      fn trans_gcd(&mut self, lhs: ir::Value, rhs: ir::Value) -> ir::Value {
         let mut sig = self.module.make_signature();
 
@@ -43,7 +43,7 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
         self.builder.inst_results(call)[0]
     }
 
-    pub fn trans_binop_ratio_ratio(&mut self, place: Place, op: &syntax::BinOp, lhs: crate::value::Value, rhs: crate::value::Value) {
+    pub fn trans_binop_ratio_ratio(&mut self, place: Place<'t, 'l>, op: &syntax::BinOp, lhs: crate::value::Value<'t, 'l>, rhs: crate::value::Value<'t, 'l>) {
         let lhs_num = lhs.field(self, 0).load_scalar(self);
         let lhs_den = lhs.field(self, 1).load_scalar(self);
         let lhs = Ratio { fx: self, num: Value(self, lhs_num), den: Value(self, lhs_den) };
@@ -62,28 +62,28 @@ impl<'a, B: Backend> FunctionCtx<'a, B> {
     }
 }
 
-impl<'a, B: Backend> Clone for Value<'a, B> {
-    fn clone(&self) -> Value<'a, B> {
+impl<'a, 't, 'l, B: Backend> Clone for Value<'a, 't, 'l, B> {
+    fn clone(&self) -> Value<'a, 't, 'l, B> {
         Value(self.0, self.1)
     }
 }
 
-impl<'a, B: Backend> Copy for Value<'a, B> {}
+impl<'a, 't, 'l, B: Backend> Copy for Value<'a, 't, 'l, B> {}
 
-impl<'a, B: Backend> Ratio<'a, B> {
-    fn fx(&self) -> &mut FunctionCtx<'a, B> {
+impl<'a, 't, 'l, B: Backend> Ratio<'a, 't, 'l, B> {
+    fn fx(&self) -> &mut FunctionCtx<'a, 't, 'l, B> {
         unsafe { &mut *(self.fx) }
     }
 
-    fn lcm(&self, a: Value<'a, B>, b: Value<'a, B>) -> Value<'a, B> {
+    fn lcm(&self, a: Value<'a, 't, 'l, B>, b: Value<'a, 't, 'l, B>) -> Value<'a, 't, 'l, B> {
         Value(self.fx(), self.fx().trans_lcm(a.1, b.1))
     }
 
-    fn gcd(&self, a: Value<'a, B>, b: Value<'a, B>) -> Value<'a, B> {
+    fn gcd(&self, a: Value<'a, 't, 'l, B>, b: Value<'a, 't, 'l, B>) -> Value<'a, 't, 'l, B> {
         Value(self.fx(), self.fx().trans_gcd(a.1, b.1))
     }
     
-    fn add(&self, other: &Self, place: Place) {
+    fn add(&self, other: &Self, place: Place<'t, 'l>) {
         self.den.branch(
             other.den,
             |fx| {
@@ -104,7 +104,7 @@ impl<'a, B: Backend> Ratio<'a, B> {
         );
     }
     
-    fn sub(&self, other: &Self, place: Place) {
+    fn sub(&self, other: &Self, place: Place<'t, 'l>) {
         self.den.branch(
             other.den,
             |fx| {
@@ -125,7 +125,7 @@ impl<'a, B: Backend> Ratio<'a, B> {
         );
     }
 
-    fn mul(&self, other: &Self, place: Place) {
+    fn mul(&self, other: &Self, place: Place<'t, 'l>) {
         let gcd_ad = self.gcd(self.num, other.den);
         let gcd_bc = self.gcd(self.den, other.num);
         let num = self.num / gcd_ad * (other.num / gcd_bc);
@@ -135,7 +135,7 @@ impl<'a, B: Backend> Ratio<'a, B> {
         place.field(self.fx(), 1).store(self.fx(), den.into());
     }
 
-    fn div(&self, other: &Self, place: Place) {
+    fn div(&self, other: &Self, place: Place<'t, 'l>) {
         let gcd_ac = self.gcd(self.num, other.num);
         let gcd_bd = self.gcd(self.den, other.den);
         let num = self.num / gcd_ac * (other.den / gcd_bd);
@@ -145,7 +145,7 @@ impl<'a, B: Backend> Ratio<'a, B> {
         place.field(self.fx(), 1).store(self.fx(), den.into());
     }
     
-    fn rem(&self, other: &Self, place: Place) {
+    fn rem(&self, other: &Self, place: Place<'t, 'l>) {
         self.den.branch(
             other.den,
             |fx| {
@@ -167,12 +167,12 @@ impl<'a, B: Backend> Ratio<'a, B> {
     }
 }
 
-impl<'a, B: Backend> Value<'a, B> {
-    fn fx(&self) -> &mut FunctionCtx<'a, B> {
+impl<'a, 't, 'l, B: Backend> Value<'a, 't, 'l, B> {
+    fn fx(&self) -> &mut FunctionCtx<'a, 't, 'l, B> {
         unsafe { &mut *(self.0) }
     }
 
-    fn branch<T: FnOnce(&mut FunctionCtx<'a, B>), E: FnOnce(&mut FunctionCtx<'a, B>)>
+    fn branch<T: FnOnce(&mut FunctionCtx<'a, 't, 'l, B>), E: FnOnce(&mut FunctionCtx<'a, 't, 'l, B>)>
         (self, other: Self, then: T, else_: E)
     {
         let eq = self.fx().builder.ins().icmp(ir::condcodes::IntCC::Equal, self.1, other.1);
@@ -196,13 +196,13 @@ impl<'a, B: Backend> Value<'a, B> {
     }
 }
 
-impl<'a, B: Backend> Into<crate::value::Value> for Value<'a, B> {
-    fn into(self) -> crate::value::Value {
-        crate::value::Value::new_val(self.1, syntax::layout::ISIZE)
+impl<'a, 't, 'l, B: Backend> Into<crate::value::Value<'t, 'l>> for Value<'a, 't, 'l, B> {
+    fn into(self) -> crate::value::Value<'t, 'l> {
+        crate::value::Value::new_val(self.1, self.fx().layouts.defaults.isize)
     }
 }
 
-impl<'a, B: Backend> Add for Value<'a, B> {
+impl<'a, 't, 'l, B: Backend> Add for Value<'a, 't, 'l, B> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
@@ -212,7 +212,7 @@ impl<'a, B: Backend> Add for Value<'a, B> {
     }
 }
 
-impl<'a, B: Backend> Sub for Value<'a, B> {
+impl<'a, 't, 'l, B: Backend> Sub for Value<'a, 't, 'l, B> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self {
@@ -222,7 +222,7 @@ impl<'a, B: Backend> Sub for Value<'a, B> {
     }
 }
 
-impl<'a, B: Backend> Mul for Value<'a, B> {
+impl<'a, 't, 'l, B: Backend> Mul for Value<'a, 't, 'l, B> {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self {
@@ -232,7 +232,7 @@ impl<'a, B: Backend> Mul for Value<'a, B> {
     }
 }
 
-impl<'a, B: Backend> Div for Value<'a, B> {
+impl<'a, 't, 'l, B: Backend> Div for Value<'a, 't, 'l, B> {
     type Output = Self;
 
     fn div(self, other: Self) -> Self {
@@ -242,7 +242,7 @@ impl<'a, B: Backend> Div for Value<'a, B> {
     }
 }
 
-impl<'a, B: Backend> Rem for Value<'a, B> {
+impl<'a, 't, 'l, B: Backend> Rem for Value<'a, 't, 'l, B> {
     type Output = Self;
 
     fn rem(self, other: Self) -> Self {
