@@ -47,7 +47,7 @@ impl<'t> Display for Global<'t> {
         if self.export {
             write!(f, "export ")?;
         }
-        
+
         write!(f, "global {}: {};", self.name, self.ty)
     }
 }
@@ -57,11 +57,11 @@ impl<'t> Display for Body<'t> {
         if self.export {
             write!(f, "export ")?;
         }
-        
+
         writeln!(f, "fn {} {} ({}) -> ({}) {{", self.name, self.conv, list(self.args(), ", "), list(self.rets(), ", "))?;
-        
+
         let mut printed = 0;
-        
+
         for (_, local) in &self.locals {
             match &local.kind {
                 LocalKind::Var | LocalKind::Tmp => {
@@ -71,15 +71,15 @@ impl<'t> Display for Body<'t> {
                 _ => {},
             }
         }
-        
+
         if printed > 0 {
             writeln!(f)?;
         }
-        
+
         for (_, block) in &self.blocks {
             writeln!(f, "{}", indent(block.to_string()))?;
         }
-        
+
         write!(f, "}}")
     }
 }
@@ -198,7 +198,7 @@ impl<'t> Display for Const<'t> {
         match self {
             Const::Unit => write!(f, "unit"),
             Const::Scalar(value, ty) => write!(f, "{} {}", value, ty),
-            Const::Bytes(bytes) => <str as Display>::fmt(std::str::from_utf8(&bytes).unwrap(), f),
+            Const::Bytes(bytes) => <str as std::fmt::Debug>::fmt(std::str::from_utf8(&bytes).unwrap(), f),
             Const::FuncAddr(id) => <ItemId as Display>::fmt(id, f),
         }
     }

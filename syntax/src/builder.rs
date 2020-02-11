@@ -170,7 +170,7 @@ impl<'a, 't> BodyBuilder<'a, 't> {
             kind: LocalKind::Var,
             ty,
         });
-        
+
         id
     }
 
@@ -197,7 +197,20 @@ impl<'a, 't> BodyBuilder<'a, 't> {
 
         id
     }
-    
+
+    pub fn placed(&mut self, op: Operand<'t>, ty: Ty<'t>) -> Place {
+        match op {
+            Operand::Place(place) => place,
+            _ => {
+                let tmp = self.create_tmp(ty);
+                let place = Place::local(tmp);
+
+                self.use_(place.clone(), op);
+                place
+            },
+        }
+    }
+
     pub fn use_block(&mut self, block: BlockId) {
         self.current_block = Some(block);
     }
@@ -237,11 +250,21 @@ impl<'a, 't> BodyBuilder<'a, 't> {
     pub fn return_(&mut self) {
         if let Terminator::Unset = self.block().term {
             self.block().term = Terminator::Return;
+        } else {
+            let block = self.create_block();
+            
+            self.use_block(block);
+            self.block().term = Terminator::Return;
         }
     }
 
     pub fn jump(&mut self, target: BlockId) {
         if let Terminator::Unset = self.block().term {
+            self.block().term = Terminator::Jump(target);
+        } else {
+            let block = self.create_block();
+            
+            self.use_block(block);
             self.block().term = Terminator::Jump(target);
         }
     }
@@ -249,11 +272,21 @@ impl<'a, 't> BodyBuilder<'a, 't> {
     pub fn call(&mut self, places: Vec<Place>, proc: Operand<'t>, args: Vec<Operand<'t>>, target: BlockId) {
         if let Terminator::Unset = self.block().term {
             self.block().term = Terminator::Call(places, proc, args, target);
+        } else {
+            let block = self.create_block();
+            
+            self.use_block(block);
+            self.block().term = Terminator::Call(places, proc, args, target);
         }
     }
 
     pub fn switch(&mut self, op: Operand<'t>, vals: Vec<u128>, targets: Vec<BlockId>) {
         if let Terminator::Unset = self.block().term {
+            self.block().term = Terminator::Switch(op, vals, targets);
+        } else {
+            let block = self.create_block();
+            
+            self.use_block(block);
             self.block().term = Terminator::Switch(op, vals, targets);
         }
     }
