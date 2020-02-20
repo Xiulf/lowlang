@@ -22,7 +22,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
 
                     Value::new_val(value, ty_layout)
                 },
-                syntax::Const::FuncAddr(id) => {
+                syntax::Const::FuncAddr(id, _) => {
                     let (func_id, _, _) = self.func_ids[id];
                     let func = self.module.declare_func_in_func(func_id, self.builder.func);
                     let value = self.builder.ins().func_addr(self.pointer_type, func);
@@ -34,6 +34,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
 
                     self.trans_bytes(place, bytes)
                 },
+                syntax::Const::Param(_) => unreachable!(),
             },
         }
     }

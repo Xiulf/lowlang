@@ -58,7 +58,22 @@ impl<'t> Display for Body<'t> {
             write!(f, "export ")?;
         }
 
-        writeln!(f, "fn {} {} ({}) -> ({}) {{", self.name, self.conv, list(self.args(), ", "), list(self.rets(), ", "))?;
+        let generics = if self.generics.is_empty() {
+            String::new()
+        } else {
+            let params = self.generics.iter().map(|(k, v)| {
+                match v {
+                    GenParam::Type(Some(ty)) => format!("type {}={}", k, ty),
+                    GenParam::Type(None) => format!("type {}", k),
+                    GenParam::Const(Some(c)) => format!("const {}={}", k, c),
+                    GenParam::Const(None) => format!("const {}", k),
+                }
+            });
+
+            format!("<{}>", list(params, ", "))
+        };
+
+        writeln!(f, "fn {} {} {}({}) -> ({}) {{", self.name, self.conv, generics, list(self.args(), ", "), list(self.rets(), ", "))?;
 
         let mut printed = 0;
 
@@ -127,6 +142,7 @@ impl<'t> Display for Terminator<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Terminator::Unset => write!(f, ""),
+            Terminator::Abort => write!(f, "abort"),
             Terminator::Return => write!(f, "return"),
             Terminator::Jump(target) => write!(f, "jump {}", target),
             Terminator::Call(places, proc, args, target) => {
@@ -199,7 +215,16 @@ impl<'t> Display for Const<'t> {
             Const::Unit => write!(f, "unit"),
             Const::Scalar(value, ty) => write!(f, "{} {}", value, ty),
             Const::Bytes(bytes) => <str as std::fmt::Debug>::fmt(std::str::from_utf8(&bytes).unwrap(), f),
-            Const::FuncAddr(id) => <ItemId as Display>::fmt(id, f),
+            Const::FuncAddr(id, generics) => {
+                let generics = if generics.is_empty() {
+                    String::new()
+                } else {
+                    format!("<{}>", list(generics.iter().map(|(k, v)| format!("{}={}", k, v)), ", "))
+                };
+
+                write!(f, "{}{}", id, generics)
+            },
+            Const::Param(name) => <String as Display>::fmt(name, f),
         }
     }
 }
@@ -269,6 +294,7 @@ impl<'t> Display for Ty<'t> {
 impl<'t> Display for Type<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
+            Type::Param(name) => <String as Display>::fmt(name, f),
             Type::Unit => write!(f, "unit"),
             Type::Bool => write!(f, "bool"),
             Type::Char => write!(f, "char"),
@@ -315,11 +341,20 @@ impl<'t> Display for Type<'t> {
     }
 }
 
+impl<'t> Display for GenArg<'t> {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            GenArg::Type(ty) => <Ty as Display>::fmt(ty, f),
+            GenArg::Const(c) => <Const as Display>::fmt(c, f),
+        }
+    }
+}
+
 impl Display for CallConv {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            CallConv::C => write!(f, r#""C""#),
-            CallConv::Fluix => write!(f, r#""Fluix""#),
+            CallConv::C => write!(f, r#""c""#),
+            CallConv::Lowlang => write!(f, r#""ll""#),
         }
     }
 }

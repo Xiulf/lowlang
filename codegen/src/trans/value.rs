@@ -25,9 +25,17 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
                 place.store(self, ptr);
             },
             syntax::Value::Slice(arr, lo, hi) => {
-                let arr = self.trans_place(arr).as_ptr(self);
+                let arr_place = self.trans_place(arr);
+                let idx_ty = arr_place.layout.details.idx.unwrap();
+                let arr = if let syntax::Type::Array(_, _) = &*arr_place.layout.ty {
+                    arr_place.as_ptr(self)
+                } else {
+                    arr_place.field(self, 0).deref(self).as_ptr(self)
+                };
+
                 let lo = self.trans_op(lo).load_scalar(self);
-                let arr = arr.offset_value(self, lo);
+                let lo2 = self.builder.ins().imul_imm(lo, idx_ty.details.size as i64);
+                let arr = arr.offset_value(self, lo2);
                 let arr = Value::new_val(arr.get_addr(self), place.layout.details.fields[0].1);
                 let hi = self.trans_op(hi).load_scalar(self);
                 let len = self.builder.ins().isub(hi, lo);
@@ -90,6 +98,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
                         _ => unreachable!(),
                     },
                     syntax::BinOp::Eq => match &*ty {
+                        syntax::Type::Char => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
                         syntax::Type::Int(_) => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
                         syntax::Type::UInt(_) => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
                         syntax::Type::Float(_) => self.builder.ins().fcmp(FloatCC::Equal, lhs, rhs),

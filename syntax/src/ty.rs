@@ -71,6 +71,7 @@ impl<'t> intern::Interner<'t, Type<'t>> for TyCtx<'t> {
 
 #[derive(Clone)]
 pub enum Type<'t> {
+    Param(String),
     Unit,
     Bool,
     Char,

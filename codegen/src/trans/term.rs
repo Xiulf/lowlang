@@ -1,10 +1,13 @@
 use crate::{FunctionCtx, Backend};
-use cranelift_codegen::ir::InstBuilder;
+use cranelift_codegen::ir::{self, InstBuilder};
 
 impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
     pub fn trans_term(&mut self, term: &syntax::Terminator<'t>) {
         match term {
             syntax::Terminator::Unset => panic!("unset terminator"),
+            syntax::Terminator::Abort => {
+                self.builder.ins().trap(ir::TrapCode::User(0));
+            },
             syntax::Terminator::Jump(target) => {
                 self.builder.ins().jump(self.blocks[&target], &[]);
             },
@@ -39,7 +42,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
                 let places = places.iter().map(|place| self.trans_place(place)).collect::<Vec<_>>();
                 let args = args.iter().map(|arg| self.trans_op(arg)).collect::<Vec<_>>();
                 let (ret_tys, func_place) = match proc {
-                    syntax::Operand::Constant(syntax::Const::FuncAddr(id)) => {
+                    syntax::Operand::Constant(syntax::Const::FuncAddr(id, _)) => {
                         (self.func_ids[id].2.clone(), None)
                     },
                     syntax::Operand::Place(place) => {
@@ -66,7 +69,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
                 ).collect::<Vec<_>>();
 
                 let call_inst = match proc {
-                    syntax::Operand::Constant(syntax::Const::FuncAddr(id)) => {
+                    syntax::Operand::Constant(syntax::Const::FuncAddr(id, _)) => {
                         let id = self.func_ids[id].0;
                         let func = self.module.declare_func_in_func(id, self.builder.func);
 

@@ -158,6 +158,7 @@ impl<'t, 'l> Ty<'t> {
         TyLayout {
             ty: self,
             details: match &*self {
+                Type::Param(_) => unreachable!(),
                 Type::Unit => ctx.defaults.unit.details,
                 Type::Bool => ctx.defaults.bool.details,
                 Type::Char => ctx.defaults.char.details,

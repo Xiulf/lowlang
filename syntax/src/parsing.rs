@@ -13,6 +13,8 @@ parser::token![ident "extern" TExtern];
 parser::token![ident "global" TGlobal];
 parser::token![ident "fn" TFn];
 parser::token![ident "export" TExport];
+parser::token![ident "type" TType];
+parser::token![ident "const" TConst];
 parser::token![ident "return" TReturn];
 parser::token![ident "jump" TJump];
 parser::token![ident "call" TCall];
@@ -89,62 +91,50 @@ impl<'t> Parse<TI<'t>> for Package<'t> {
         input.parse::<TPackage>()?;
 
         let name = input.parse::<Ident>()?.name;
-        let mut externs = BTreeMap::new();
-        let mut globals = BTreeMap::new();
-        let mut bodies = BTreeMap::new();
+        let mut package = Package {
+            name,
+            externs: BTreeMap::new(),
+            globals: BTreeMap::new(),
+            bodies: BTreeMap::new(),
+        };
         
         while !input.is_empty() {
-            let id = input.parse()?;
+            match package.parse_item(input) {
+                Ok(_) => {},
+                Err(e) => {
+                    input.reporter.add(e);
 
-            input.parse::<TColon>()?;
-
-            if input.peek::<TExtern>() {
-                match input.parse() {
-                    Ok(v) => { externs.insert(id, v); },
-                    Err(e) => {
-                        input.reporter.add(e);
-                                                
-                        while !input.is_empty() && !input.peek::<THash>() {
-                            input.bump();
-                        }
-                    },
-                }
-            } else {
-                let fork = input.fork();
-                let _ = fork.parse::<Attributes>();
-
-                if fork.peek::<TGlobal>() || (fork.peek::<TExport>() && fork.peek2::<TGlobal>()) {
-                    match input.parse() {
-                        Ok(v) => { globals.insert(id, v); },
-                        Err(e) => {
-                            input.reporter.add(e);
-                                                    
-                            while !input.is_empty() && !input.peek::<THash>() {
-                                input.bump();
-                            }
-                        },
+                    while !input.is_empty() && !input.peek::<THash>() {
+                        input.bump();
                     }
-                } else {
-                    match input.parse() {
-                        Ok(v) => { bodies.insert(id, v); },
-                        Err(e) => {
-                            input.reporter.add(e);
-                            
-                            while !input.is_empty() && !input.peek::<THash>() {
-                                input.bump();
-                            }
-                        },
-                    }
-                }
+                },
             }
         }
 
-        Ok(Package {
-            name: name,
-            externs,
-            globals,
-            bodies,
-        })
+        Ok(package)
+    }
+}
+
+impl<'t> Package<'t> {
+    fn parse_item(&mut self, input: ParseStream<TI<'t>>) -> Result<()> {
+        let id = input.parse()?;
+
+        input.parse::<TColon>()?;
+
+        if input.peek::<TExtern>() {
+            self.externs.insert(id, input.parse()?);
+        } else {
+            let fork = input.fork();
+            let _ = fork.parse::<Attributes>();
+
+            if fork.peek::<TGlobal>() || (fork.peek::<TExport>() && fork.peek2::<TGlobal>()) {
+                self.globals.insert(id, input.parse()?);
+            } else {
+                self.bodies.insert(id, input.parse()?);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -240,7 +230,40 @@ impl<'t> Parse<TI<'t>> for Body<'t> {
 
         let name = input.parse::<Ident>()?.name;
         let conv = input.parse()?;
+        let mut generics = BTreeMap::new();
         let mut locals = BTreeMap::new();
+
+        if let Ok(_) = input.parse::<TLeft>() {
+            while !input.is_empty() && !input.peek::<TRight>() {
+                if let Ok(_) = input.parse::<TType>() {
+                    let name = input.parse::<Ident>()?.name;
+                    let def = if let Ok(_) = input.parse::<TEquals>() {
+                        Some(input.parse()?)
+                    } else {
+                        None
+                    };
+
+                    generics.insert(name, GenParam::Type(def));
+                } else {
+                    input.parse::<TConst>()?;
+
+                    let name = input.parse::<Ident>()?.name;
+                    let def = if let Ok(_) = input.parse::<TEquals>() {
+                        Some(input.parse()?)
+                    } else {
+                        None
+                    };
+
+                    generics.insert(name, GenParam::Const(def));
+                }
+
+                if !input.peek::<TRight>() {
+                    input.parse::<TComma>()?;
+                }
+            }
+
+            input.parse::<TRight>()?;
+        }
 
         input.parse::<TLParen>()?;
 
@@ -317,6 +340,7 @@ impl<'t> Parse<TI<'t>> for Body<'t> {
             export,
             name,
             conv,
+            generics,
             locals,
             blocks,
         })
@@ -541,8 +565,33 @@ impl<'t> Parse<TI<'t>> for Const<'t> {
             Ok(Const::Scalar(lit.int, input.parse()?))
         } else if let Ok(lit) = input.parse::<StringLiteral>() {
             Ok(Const::Bytes(lit.text.into_bytes().into_boxed_slice()))
+        } else if input.peek::<Ident>() && !input.peek::<LocalId>() {
+            Ok(Const::Param(input.parse::<Ident>()?.name))
         } else {
-            Ok(Const::FuncAddr(input.parse()?))
+            let id = input.parse()?;
+            let mut generics = BTreeMap::new();
+
+            if let Ok(_) = input.parse::<TLeft>() {
+                while !input.is_empty() && !input.peek::<TRight>() {
+                    let name = input.parse::<Ident>()?.name;
+
+                    input.parse::<TEquals>()?;
+
+                    if let Ok(ty) = input.parse() {
+                        generics.insert(name, GenArg::Type(ty));
+                    } else {
+                        generics.insert(name, GenArg::Const(input.parse()?));
+                    }
+
+                    if !input.peek::<TRight>() {
+                        input.parse::<TComma>()?;
+                    }
+                }
+
+                input.parse::<TRight>()?;
+            }
+
+            Ok(Const::FuncAddr(id, generics))
         }
     }
 }
@@ -601,7 +650,8 @@ impl<'t> Parse<TI<'t>> for Value<'t> {
             let op = input.parse()?;
 
             Ok(Value::Cast(ty, op))
-        } else if let Ok(ty) = input.parse() {
+        } else if { let fork = input.fork(); fork.parse::<Ty>().is_ok() && fork.peek::<TLBrace>() } {
+            let ty = input.parse()?;
             let mut ops = Vec::new();
 
             input.parse::<TLBrace>()?;
@@ -767,8 +817,12 @@ impl<'t> Ty<'t> {
             } else {
                 Ok(Type::Tuple(true, types).intern(input.data))
             }
-        } else {
+        } else if input.peek::<TFn>() {
             Ok(Type::Proc(input.parse()?).intern(input.data))
+        } else if !input.peek::<LocalId>() {
+            Ok(Type::Param(input.parse::<Ident>()?.name).intern(input.data))
+        } else {
+            input.error("Expected a type")
         }
     }
 }
@@ -778,8 +832,8 @@ impl<D> Parse<D> for CallConv {
         let s = input.parse::<StringLiteral>()?.text;
 
         match s.as_str() {
-            "C" => Ok(CallConv::C),
-            "Fluix" => Ok(CallConv::Fluix),
+            "c" => Ok(CallConv::C),
+            "ll" => Ok(CallConv::Lowlang),
             _ => input.error("invalid call convention"),
         }
     }

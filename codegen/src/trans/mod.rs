@@ -216,6 +216,8 @@ fn trans_body<'a, 't, 'l>(
     fx.builder.seal_all_blocks();
     fx.builder.finalize();
 
+    // println!("{}", fx.builder.func.display(fx.module.isa()));
+
     module.define_function(*func, &mut ctx)?;
     module.clear_context(&mut ctx);
 

@@ -14,11 +14,15 @@ pub fn main() {
 
     let type_interner = syntax::ty::TypeInterner::new();
     let types = syntax::ty::TyCtx::new(&type_interner);
-    let module: syntax::Package = syntax::parse(&source, file_id, &reporter, None, &types);
+    let mut package: syntax::Package = syntax::parse(&source, file_id, &reporter, None, &types);
 
     reporter.report(true);
 
-    match codegen::compile(&module, &types, &target_lexicon::HOST.to_string(), true, arg2.into()) {
+    syntax::mono::monomorphize(&mut package, &types);
+
+    println!("{}", package);
+
+    match codegen::compile(&package, &types, &target_lexicon::HOST.to_string(), true, arg2.into()) {
         Ok(_) => {},
         Err(err) => eprintln!("{}", err),
     }

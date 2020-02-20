@@ -11,7 +11,7 @@ impl<'t> Package<'t> {
         }
     }
 
-    fn next_id(&self) -> ItemId {
+    pub fn next_id(&self) -> ItemId {
         ItemId(self.externs.len() + self.globals.len() + self.bodies.len())
     }
 
@@ -78,6 +78,7 @@ impl<'t> Package<'t> {
             name,
             export,
             conv: sig.0,
+            generics: BTreeMap::new(),
             locals,
             blocks: BTreeMap::new(),
         });
@@ -97,7 +98,7 @@ impl<'t> Package<'t> {
 
 impl<'t> Signature<'t> {
     pub fn new() -> Signature<'t> {
-        Signature(CallConv::Fluix, Vec::new(), Vec::new())
+        Signature(CallConv::Lowlang, Vec::new(), Vec::new())
     }
 
     pub fn call_conv(mut self, conv: CallConv) -> Signature<'t> {
@@ -160,6 +161,10 @@ pub struct BodyBuilder<'a, 't> {
 impl<'a, 't> BodyBuilder<'a, 't> {
     fn block(&mut self) -> &mut Block<'t> {
         self.body.blocks.get_mut(self.current_block.as_ref().unwrap()).unwrap()
+    }
+
+    pub fn current_block(&self) -> BlockId {
+        self.current_block.unwrap()
     }
 
     pub fn create_var(&mut self, ty: Ty<'t>) -> LocalId {
@@ -247,12 +252,23 @@ impl<'a, 't> BodyBuilder<'a, 't> {
         self.block().stmts.push(Stmt::Assign(place, Value::Init(ty, ops)));
     }
 
+    pub fn abort(&mut self) {
+        if let Terminator::Unset = self.block().term {
+            self.block().term = Terminator::Abort
+        } else {
+            let block = self.create_block();
+
+            self.use_block(block);
+            self.block().term = Terminator::Abort
+        }
+    }
+
     pub fn return_(&mut self) {
         if let Terminator::Unset = self.block().term {
             self.block().term = Terminator::Return;
         } else {
             let block = self.create_block();
-            
+
             self.use_block(block);
             self.block().term = Terminator::Return;
         }
@@ -263,7 +279,7 @@ impl<'a, 't> BodyBuilder<'a, 't> {
             self.block().term = Terminator::Jump(target);
         } else {
             let block = self.create_block();
-            
+
             self.use_block(block);
             self.block().term = Terminator::Jump(target);
         }
@@ -274,7 +290,7 @@ impl<'a, 't> BodyBuilder<'a, 't> {
             self.block().term = Terminator::Call(places, proc, args, target);
         } else {
             let block = self.create_block();
-            
+
             self.use_block(block);
             self.block().term = Terminator::Call(places, proc, args, target);
         }
@@ -285,7 +301,7 @@ impl<'a, 't> BodyBuilder<'a, 't> {
             self.block().term = Terminator::Switch(op, vals, targets);
         } else {
             let block = self.create_block();
-            
+
             self.use_block(block);
             self.block().term = Terminator::Switch(op, vals, targets);
         }
