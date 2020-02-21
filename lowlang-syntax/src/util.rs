@@ -24,6 +24,29 @@ impl<'t> Body<'t> {
     }
 }
 
+impl Addr {
+    pub fn id(&self) -> ItemId {
+        match self {
+            Addr::Id(id) => *id,
+            Addr::Name(_) => unreachable!(),
+        }
+    }
+
+    pub fn id_mut(&mut self) -> &mut ItemId {
+        match self {
+            Addr::Id(id) => id,
+            Addr::Name(_) => unreachable!(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Addr::Name(name) => name,
+            Addr::Id(_) => unreachable!(),
+        }
+    }
+}
+
 pub struct Mut<'a, T>{
     ptr: *mut T,
     _marker: std::marker::PhantomData<&'a mut T>,

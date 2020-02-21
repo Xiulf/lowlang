@@ -1,12 +1,12 @@
 [package]
-name = "codegen"
+name = "lowlang-cranelift"
 version = "0.1.0"
 authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
 edition = "2018"
 
 [dependencies]
 intern = { path = "../../fluix/intern" }
-syntax = { path = "../syntax" }
+lowlang-syntax = { path = "../lowlang-syntax" }
 cranelift-module = "0.56.0"
 cranelift-frontend = "0.56.0"
 cranelift-codegen = "0.56.0"

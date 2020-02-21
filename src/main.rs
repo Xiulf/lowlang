@@ -1,3 +1,4 @@
+use lowlang_syntax as syntax;
 use intern::Intern;
 
 pub fn main() {
@@ -18,11 +19,12 @@ pub fn main() {
 
     reporter.report(true);
 
+    syntax::post::post_process(&mut package);
     syntax::mono::monomorphize(&mut package, &types);
 
-    println!("{}", package);
+    // println!("{}", package);
 
-    match codegen::compile(&package, &types, &target_lexicon::HOST.to_string(), true, arg2.into()) {
+    match lowlang_cranelift::compile(&package, &types, &target_lexicon::HOST.to_string(), true, arg2.into()) {
         Ok(_) => {},
         Err(err) => eprintln!("{}", err),
     }

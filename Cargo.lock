@@ -34,20 +34,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 
 [[package]]
-name = "codegen"
-version = "0.1.0"
-dependencies = [
- "cranelift-codegen",
- "cranelift-frontend",
- "cranelift-module",
- "cranelift-object",
- "intern",
- "object",
- "syntax",
- "target-lexicon",
-]
-
-[[package]]
 name = "cranelift-bforest"
 version = "0.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -232,10 +218,41 @@ dependencies = [
 name = "lowlang"
 version = "0.1.0"
 dependencies = [
- "codegen",
  "diagnostics",
  "intern",
- "syntax",
+ "lowlang-cranelift",
+ "lowlang-syntax",
+ "target-lexicon",
+]
+
+[[package]]
+name = "lowlang-cranelift"
+version = "0.1.0"
+dependencies = [
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-module",
+ "cranelift-object",
+ "intern",
+ "lowlang-syntax",
+ "object",
+ "target-lexicon",
+]
+
+[[package]]
+name = "lowlang-parser"
+version = "0.1.0"
+dependencies = [
+ "diagnostics",
+]
+
+[[package]]
+name = "lowlang-syntax"
+version = "0.1.0"
+dependencies = [
+ "intern",
+ "lazy_static",
+ "lowlang-parser",
  "target-lexicon",
 ]
 
@@ -275,13 +292,6 @@ name = "parity-wasm"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddfc878dac00da22f8f61e7af3157988424567ab01d9920b962ef7dcbd7cd865"
-
-[[package]]
-name = "parser"
-version = "0.1.0"
-dependencies = [
- "diagnostics",
-]
 
 [[package]]
 name = "plain"
@@ -348,16 +358,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-xid",
-]
-
-[[package]]
-name = "syntax"
-version = "0.1.0"
-dependencies = [
- "intern",
- "lazy_static",
- "parser",
- "target-lexicon",
 ]
 
 [[package]]

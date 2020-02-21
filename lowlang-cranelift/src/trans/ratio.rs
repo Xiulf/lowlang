@@ -1,5 +1,6 @@
 use crate::{FunctionCtx, Backend};
 use crate::place::Place;
+use lowlang_syntax as syntax;
 use cranelift_codegen::ir::{self, InstBuilder};
 use std::ops::{Add, Sub, Mul, Div, Rem};
 

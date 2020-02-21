@@ -7,6 +7,7 @@ mod cast;
 mod ratio;
 
 use crate::{FunctionCtx, Error};
+use lowlang_syntax as syntax;
 use syntax::layout::TyLayout;
 use cranelift_module::{Backend, Module, Linkage, FuncId, DataId};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};

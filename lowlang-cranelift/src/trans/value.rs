@@ -1,6 +1,7 @@
 use crate::{FunctionCtx, Backend};
 use crate::place::Place;
 use crate::value::Value;
+use lowlang_syntax as syntax;
 use cranelift_codegen::ir::{self, InstBuilder};
 use cranelift_codegen::ir::condcodes::{IntCC, FloatCC};
 
@@ -186,14 +187,14 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
                 match op {
                     syntax::NullOp::SizeOf => {
                         let size = ty.layout(self.layouts).details.size;
-                        let ty = self.clif_type(ty.layout(self.layouts)).unwrap();
+                        let ty = self.clif_type(self.layouts.defaults.usize).unwrap();
                         let value = self.builder.ins().iconst(ty, size as i64);
                         
                         place.store(self, Value::new_val(value, place.layout))
                     },
                     syntax::NullOp::AlignOf => {
                         let align = ty.layout(self.layouts).details.align;
-                        let ty = self.clif_type(ty.layout(self.layouts)).unwrap();
+                        let ty = self.clif_type(self.layouts.defaults.usize).unwrap();
                         let value = self.builder.ins().iconst(ty, align as i64);
                         
                         place.store(self, Value::new_val(value, place.layout))

@@ -1,90 +1,91 @@
 use crate::*;
-use parser::parse::{Parse, ParseStream};
-use parser::ident::Ident;
-use parser::literal::StringLiteral;
-use parser::literal::IntLiteral;
-use parser::error::Result;
+use lowlang_parser::parse::{Parse, ParseStream};
+use lowlang_parser::ident::Ident;
+use lowlang_parser::literal::StringLiteral;
+use lowlang_parser::literal::IntLiteral;
+use lowlang_parser::error::Result;
 use std::collections::BTreeMap;
 
 type TI<'a> = &'a crate::ty::TyCtx<'a>;
 
-parser::token![ident "package" TPackage];
-parser::token![ident "extern" TExtern];
-parser::token![ident "global" TGlobal];
-parser::token![ident "fn" TFn];
-parser::token![ident "export" TExport];
-parser::token![ident "type" TType];
-parser::token![ident "const" TConst];
-parser::token![ident "return" TReturn];
-parser::token![ident "jump" TJump];
-parser::token![ident "call" TCall];
-parser::token![ident "switch" TSwitch];
-parser::token![ident "otherwise" TOtherwise];
-parser::token![ident "cast" TCast];
-parser::token![ident "unit" TUnit];
-parser::token![ident "add" TAdd];
-parser::token![ident "sub" TSub];
-parser::token![ident "mul" TMul];
-parser::token![ident "div" TDiv];
-parser::token![ident "rem" TRem];
-parser::token![ident "eq" TEq];
-parser::token![ident "ne" TNe];
-parser::token![ident "lt" TLt];
-parser::token![ident "le" TLe];
-parser::token![ident "gt" TGt];
-parser::token![ident "ge" TGe];
-parser::token![ident "band" TBand];
-parser::token![ident "bor" TBor];
-parser::token![ident "bxor" TBxor];
-parser::token![ident "shl" TShl];
-parser::token![ident "shr" TShr];
-parser::token![ident "neg" TNeg];
-parser::token![ident "not" TNot];
-parser::token![ident "sizeof" TSizeof];
-parser::token![ident "alignof" TAlignof];
-parser::token![ident "bool" TBool];
-parser::token![ident "char" TChar];
-parser::token![ident "str" TStr];
-parser::token![ident "ratio" TRatio];
-parser::token![ident "i8" TI8];
-parser::token![ident "i16" TI16];
-parser::token![ident "i32" TI32];
-parser::token![ident "i64" TI64];
-parser::token![ident "i128" TI128];
-parser::token![ident "isize" TIsize];
-parser::token![ident "u8" TU8];
-parser::token![ident "u16" TU16];
-parser::token![ident "u32" TU32];
-parser::token![ident "u64" TU64];
-parser::token![ident "u128" TU128];
-parser::token![ident "usize" TUsize];
-parser::token![ident "f32" TF32];
-parser::token![ident "f64" TF64];
-parser::token![ident "fsize" TFsize];
+lowlang_parser::token![ident "package" TPackage];
+lowlang_parser::token![ident "extern" TExtern];
+lowlang_parser::token![ident "global" TGlobal];
+lowlang_parser::token![ident "fn" TFn];
+lowlang_parser::token![ident "export" TExport];
+lowlang_parser::token![ident "type" TType];
+lowlang_parser::token![ident "const" TConst];
+lowlang_parser::token![ident "return" TReturn];
+lowlang_parser::token![ident "jump" TJump];
+lowlang_parser::token![ident "call" TCall];
+lowlang_parser::token![ident "switch" TSwitch];
+lowlang_parser::token![ident "otherwise" TOtherwise];
+lowlang_parser::token![ident "cast" TCast];
+lowlang_parser::token![ident "unit" TUnit];
+lowlang_parser::token![ident "add" TAdd];
+lowlang_parser::token![ident "sub" TSub];
+lowlang_parser::token![ident "mul" TMul];
+lowlang_parser::token![ident "div" TDiv];
+lowlang_parser::token![ident "rem" TRem];
+lowlang_parser::token![ident "eq" TEq];
+lowlang_parser::token![ident "ne" TNe];
+lowlang_parser::token![ident "lt" TLt];
+lowlang_parser::token![ident "le" TLe];
+lowlang_parser::token![ident "gt" TGt];
+lowlang_parser::token![ident "ge" TGe];
+lowlang_parser::token![ident "band" TBand];
+lowlang_parser::token![ident "bor" TBor];
+lowlang_parser::token![ident "bxor" TBxor];
+lowlang_parser::token![ident "shl" TShl];
+lowlang_parser::token![ident "shr" TShr];
+lowlang_parser::token![ident "neg" TNeg];
+lowlang_parser::token![ident "not" TNot];
+lowlang_parser::token![ident "sizeof" TSizeof];
+lowlang_parser::token![ident "alignof" TAlignof];
+lowlang_parser::token![ident "bool" TBool];
+lowlang_parser::token![ident "char" TChar];
+lowlang_parser::token![ident "str" TStr];
+lowlang_parser::token![ident "ratio" TRatio];
+lowlang_parser::token![ident "i8" TI8];
+lowlang_parser::token![ident "i16" TI16];
+lowlang_parser::token![ident "i32" TI32];
+lowlang_parser::token![ident "i64" TI64];
+lowlang_parser::token![ident "i128" TI128];
+lowlang_parser::token![ident "isize" TIsize];
+lowlang_parser::token![ident "u8" TU8];
+lowlang_parser::token![ident "u16" TU16];
+lowlang_parser::token![ident "u32" TU32];
+lowlang_parser::token![ident "u64" TU64];
+lowlang_parser::token![ident "u128" TU128];
+lowlang_parser::token![ident "usize" TUsize];
+lowlang_parser::token![ident "f32" TF32];
+lowlang_parser::token![ident "f64" TF64];
+lowlang_parser::token![ident "fsize" TFsize];
 
-parser::token![punct "(" TLParen/1];
-parser::token![punct ")" TRParen/1];
-parser::token![punct "{" TLBrace/1];
-parser::token![punct "}" TRBrace/1];
-parser::token![punct "[" TLBracket/1];
-parser::token![punct "]" TRBracket/1];
-parser::token![punct "." TDot/1];
-parser::token![punct "," TComma/1];
-parser::token![punct ":" TColon/1];
-parser::token![punct ";" TSemi/1];
-parser::token![punct "=" TEquals/1];
-parser::token![punct "#" THash/1];
-parser::token![punct "!" TBang/1];
-parser::token![punct "|" TBar/1];
-parser::token![punct "/" TSlash/1];
-parser::token![punct "<" TLeft/1];
-parser::token![punct ">" TRight/1];
-parser::token![punct "%" TPct/1];
-parser::token![punct "@" TAt/1];
-parser::token![punct "&" TAnd/1];
-parser::token![punct "*" TStar/1];
-parser::token![punct "->" TArrow/2];
-parser::token![punct ".." TDots/2];
+lowlang_parser::token![punct "(" TLParen/1];
+lowlang_parser::token![punct ")" TRParen/1];
+lowlang_parser::token![punct "{" TLBrace/1];
+lowlang_parser::token![punct "}" TRBrace/1];
+lowlang_parser::token![punct "[" TLBracket/1];
+lowlang_parser::token![punct "]" TRBracket/1];
+lowlang_parser::token![punct "." TDot/1];
+lowlang_parser::token![punct "," TComma/1];
+lowlang_parser::token![punct ":" TColon/1];
+lowlang_parser::token![punct ";" TSemi/1];
+lowlang_parser::token![punct "=" TEquals/1];
+lowlang_parser::token![punct "#" THash/1];
+lowlang_parser::token![punct "$" TDollar/1];
+lowlang_parser::token![punct "!" TBang/1];
+lowlang_parser::token![punct "|" TBar/1];
+lowlang_parser::token![punct "/" TSlash/1];
+lowlang_parser::token![punct "<" TLeft/1];
+lowlang_parser::token![punct ">" TRight/1];
+lowlang_parser::token![punct "%" TPct/1];
+lowlang_parser::token![punct "@" TAt/1];
+lowlang_parser::token![punct "&" TAnd/1];
+lowlang_parser::token![punct "*" TStar/1];
+lowlang_parser::token![punct "->" TArrow/2];
+lowlang_parser::token![punct ".." TDots/2];
 
 impl<'t> Parse<TI<'t>> for Package<'t> {
     fn parse(input: ParseStream<TI<'t>>) -> Result<Package<'t>> {
@@ -104,7 +105,10 @@ impl<'t> Parse<TI<'t>> for Package<'t> {
                 Err(e) => {
                     input.reporter.add(e);
 
-                    while !input.is_empty() && !input.peek::<THash>() {
+                    while !input.is_empty() && !(
+                        input.peek::<TAt>() || input.peek::<TExport>() || input.peek::<TExtern>() ||
+                        input.peek::<TGlobal>() || input.peek::<TFn>()
+                    ) {
                         input.bump();
                     }
                 },
@@ -117,9 +121,7 @@ impl<'t> Parse<TI<'t>> for Package<'t> {
 
 impl<'t> Package<'t> {
     fn parse_item(&mut self, input: ParseStream<TI<'t>>) -> Result<()> {
-        let id = input.parse()?;
-
-        input.parse::<TColon>()?;
+        let id = self.next_id();
 
         if input.peek::<TExtern>() {
             self.externs.insert(id, input.parse()?);
@@ -536,23 +538,22 @@ impl<D: Copy> Parse<D> for Place {
 
 impl<D: Copy> Parse<D> for PlaceBase {
     fn parse(input: ParseStream<D>) -> Result<PlaceBase> {
-        if input.peek::<THash>() && input.peek2::<TBang>() {
-            let id = input.parse::<IntLiteral>()
-                .map(|l| ItemId(l.int as usize))?;
-
-            Ok(PlaceBase::Global(id))
-        } else {
+        if input.peek::<LocalId>() {
             Ok(PlaceBase::Local(input.parse()?))
+        } else if input.peek::<Ident>() && !input.peek2::<TLeft>() {
+            Ok(PlaceBase::Global(Addr::Name(input.parse::<Ident>()?.name)))
+        } else {
+            input.error("expected a local id or a global")
         }
     }
 }
 
 impl<'t> Parse<TI<'t>> for Operand<'t> {
     fn parse(input: ParseStream<TI<'t>>) -> Result<Operand<'t>> {
-        if let Ok(c) = input.parse() {
-            Ok(Operand::Constant(c))
-        } else {
+        if input.fork().parse::<Place>().is_ok() {
             Ok(Operand::Place(input.parse()?))
+        } else {
+            Ok(Operand::Constant(input.parse()?))
         }
     }
 }
@@ -565,10 +566,10 @@ impl<'t> Parse<TI<'t>> for Const<'t> {
             Ok(Const::Scalar(lit.int, input.parse()?))
         } else if let Ok(lit) = input.parse::<StringLiteral>() {
             Ok(Const::Bytes(lit.text.into_bytes().into_boxed_slice()))
-        } else if input.peek::<Ident>() && !input.peek::<LocalId>() {
+        } else if let Ok(_) = input.parse::<TDollar>() {
             Ok(Const::Param(input.parse::<Ident>()?.name))
         } else {
-            let id = input.parse()?;
+            let id = Addr::Name(input.parse::<Ident>()?.name);
             let mut generics = BTreeMap::new();
 
             if let Ok(_) = input.parse::<TLeft>() {
@@ -851,7 +852,7 @@ impl<D> Parse<D> for LocalId {
     fn parse(input: ParseStream<D>) -> Result<LocalId> {
         let name = input.parse::<Ident>()?.name;
         let num = name.chars().skip(1).collect::<String>();
-        let id = num.parse::<usize>().unwrap();
+        let id = num.parse::<usize>().map_err(|_| input.error::<usize, _>("invalid local id").unwrap_err())?;
 
         Ok(LocalId(id))
     }
@@ -865,8 +866,8 @@ impl<D> Parse<D> for BlockId {
     }
 }
 
-impl parser::token::Token for LocalId {
-    fn peek(cursor: parser::buffer::Cursor) -> bool {
+impl lowlang_parser::token::Token for LocalId {
+    fn peek(cursor: lowlang_parser::buffer::Cursor) -> bool {
         match cursor.ident() {
             Some((ident, _)) => {
                 ident.name.starts_with('_') &&

@@ -27,9 +27,13 @@ struct Mono<'a, 't> {
     tcx: &'a TyCtx<'t>,
     package: &'a mut Package<'t>,
     poly_bodies: &'a BTreeMap<ItemId, Body<'t>>,
-    body_subst: &'a mut BTreeMap<(ItemId, Subst<'t>), ItemId>,
+    body_subst: &'a mut BTreeMap<(ItemId, String), ItemId>,
     next_id: ItemId,
     changed: bool,
+}
+
+fn subst_string(name: &str, subst: &Subst) -> String {
+    format!("{}<{}>", name, subst.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(", "))
 }
 
 impl<'a, 't> VisitorMut<'t> for Mono<'a, 't> {
@@ -40,26 +44,20 @@ impl<'a, 't> VisitorMut<'t> for Mono<'a, 't> {
     }
     
     fn visit_const(&mut self, const_: &mut Const<'t>) {
-        fn get<'a>(map: &BTreeMap<(ItemId, Subst<'a>), ItemId>, id: &ItemId, subst: &Subst<'a>) -> Option<ItemId> {
-            map.iter().filter(|((e_id, e_subst), _)| e_id == id && {
-                e_subst.iter().zip(subst.iter()).all(|((ap, at), (bp, bt))| ap == bp && {
-                    at == bt
-                })
-            }).map(|(_, v)| *v).next()
-        }
-
         if !self.changed {
             match const_ {
                 Const::FuncAddr(func, subst) if !subst.is_empty() => {
-                    if let Some(next_id) = get(self.body_subst, func, subst) {
-                        *func = next_id;
+                    let name = subst_string(&self.poly_bodies[&func.id()].name, subst);
+
+                    if let Some(next_id) = self.body_subst.get(&(func.id(), name.clone())) {
+                        *func.id_mut() = *next_id;
                         subst.clear();
                         self.changed = true;
                     } else {
                         self.package.bodies.extend(Some((
                             self.next_id,
                             {
-                                let mut body = self.poly_bodies[func].clone();
+                                let mut body = self.poly_bodies[&func.id()].clone();
 
                                 body.generics.clear();
                                 Substitue { subst, tcx: self.tcx }.visit_body(self.next_id, &mut body);
@@ -68,8 +66,8 @@ impl<'a, 't> VisitorMut<'t> for Mono<'a, 't> {
                             },
                         )));
 
-                        self.body_subst.insert((*func, subst.clone()), self.next_id);
-                        *func = self.next_id;
+                        self.body_subst.insert((func.id(), name), self.next_id);
+                        *func.id_mut() = self.next_id;
                         subst.clear();
                         self.changed = true;
                     }
@@ -83,7 +81,7 @@ impl<'a, 't> VisitorMut<'t> for Mono<'a, 't> {
 fn monomorphize_one<'t>(
     package: Mut<Package<'t>>,
     poly_bodies: &BTreeMap<ItemId, Body<'t>>,
-    body_subst: &mut BTreeMap<(ItemId, Subst<'t>), ItemId>,
+    body_subst: &mut BTreeMap<(ItemId, String), ItemId>,
     tcx: &TyCtx<'t>,
 ) -> bool {
     let mut mono = Mono {
@@ -106,7 +104,7 @@ struct Substitue<'a, 't> {
 
 impl<'a, 't> VisitorMut<'t> for Substitue<'a, 't> {
     fn visit_body(&mut self, _id: ItemId, body: &mut Body<'t>) {
-        body.name = format!("{}<{}>", body.name, self.subst.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(", "));
+        body.name = subst_string(&body.name, self.subst);
         self.super_body(body);
     }
 
@@ -129,10 +127,77 @@ impl<'a, 't> VisitorMut<'t> for Substitue<'a, 't> {
 }
 
 fn subst_ty<'t>(ty: &Ty<'t>, subst: &Subst<'t>, tcx: &TyCtx<'t>) -> Ty<'t> {
+    use intern::Intern;
+
     match &**ty {
         Type::Param(name) if subst.contains_key(name) => match &subst[name] {
             GenArg::Type(ty) => *ty,
             GenArg::Const(_) => panic!("expected a type"),
+        },
+        Type::Ref(to) => {
+            let new_to = subst_ty(to, subst, tcx);
+
+            if to == &new_to {
+                *ty
+            } else {
+                Type::Ref(new_to).intern(tcx)
+            }
+        },
+        Type::Slice(of) => {
+            let new_of = subst_ty(of, subst, tcx);
+
+            if of == &new_of {
+                *ty
+            } else {
+                Type::Slice(new_of).intern(tcx)
+            }
+        },
+        Type::Array(of, len) => {
+            let new_of = subst_ty(of, subst, tcx);
+
+            if of == &new_of {
+                *ty
+            } else {
+                Type::Array(new_of, *len).intern(tcx)
+            }
+        },
+        Type::Vector(of, len) => {
+            let new_of = subst_ty(of, subst, tcx);
+
+            if of == &new_of {
+                *ty
+            } else {
+                Type::Vector(new_of, *len).intern(tcx)
+            }
+        },
+        Type::Proc(sig) => {
+            let mut changed = false;
+
+            let new_params = sig.1.iter().map(|p| {
+                let p2 = subst_ty(p, subst, tcx);
+
+                if &p2 != p {
+                    changed = true;
+                }
+
+                p2
+            }).collect();
+
+            let new_rets = sig.2.iter().map(|r| {
+                let r2 = subst_ty(r, subst, tcx);
+
+                if &r2 != r {
+                    changed = true;
+                }
+
+                r2
+            }).collect();
+
+            if changed {
+                Type::Proc(Signature(sig.0, new_params, new_rets)).intern(tcx)
+            } else {
+                *ty
+            }
         },
         _ => *ty,
     }

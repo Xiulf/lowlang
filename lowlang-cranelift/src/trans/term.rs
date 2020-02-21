@@ -1,4 +1,5 @@
 use crate::{FunctionCtx, Backend};
+use lowlang_syntax as syntax;
 use cranelift_codegen::ir::{self, InstBuilder};
 
 impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
@@ -43,7 +44,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
                 let args = args.iter().map(|arg| self.trans_op(arg)).collect::<Vec<_>>();
                 let (ret_tys, func_place) = match proc {
                     syntax::Operand::Constant(syntax::Const::FuncAddr(id, _)) => {
-                        (self.func_ids[id].2.clone(), None)
+                        (self.func_ids[&id.id()].2.clone(), None)
                     },
                     syntax::Operand::Place(place) => {
                         let place = self.trans_place(place);
@@ -70,7 +71,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
 
                 let call_inst = match proc {
                     syntax::Operand::Constant(syntax::Const::FuncAddr(id, _)) => {
-                        let id = self.func_ids[id].0;
+                        let id = self.func_ids[&id.id()].0;
                         let func = self.module.declare_func_in_func(id, self.builder.func);
 
                         self.builder.ins().call(func, &args)

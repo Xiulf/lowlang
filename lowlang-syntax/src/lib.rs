@@ -3,13 +3,14 @@
 pub mod builder;
 pub mod ty;
 pub mod visit;
+pub mod post;
 pub mod mono;
 pub mod layout;
 mod parsing;
 mod printing;
 mod util;
 
-pub use parser::parse;
+pub use lowlang_parser::parse;
 pub use ty::*;
 use std::collections::BTreeMap;
 
@@ -108,7 +109,7 @@ pub struct Place {
 #[derive(Clone)]
 pub enum PlaceBase {
     Local(LocalId),
-    Global(ItemId),
+    Global(Addr),
 }
 
 #[derive(Clone)]
@@ -129,9 +130,15 @@ pub enum Operand<'t> {
 pub enum Const<'t> {
     Unit,
     Scalar(u128, Ty<'t>),
-    FuncAddr(ItemId, BTreeMap<String, GenArg<'t>>),
+    FuncAddr(Addr, BTreeMap<String, GenArg<'t>>),
     Bytes(Box<[u8]>),
     Param(String),
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Addr {
+    Id(ItemId),
+    Name(String),
 }
 
 #[derive(Clone)]

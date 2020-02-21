@@ -3,6 +3,7 @@ use crate::*;
 #[macro_export]
 macro_rules! make_visitor{
     ($name:ident, $($mut:ident)?) => {
+        #[allow(unused_variables)]
         pub trait $name<'t> {
             fn visit_package(&mut self, package: & $($mut)? Package<'t>) {
                 self.super_package(package)

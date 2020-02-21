@@ -1,25 +1,47 @@
 package test
 
-#0:
+extern malloc: fn "c"(usize) -> (&unit);
+
 export fn main "ll"(_0: i32, _1: &&u8) -> (_2: i32) {
+    _3: &(i32, bool)
+
     %0 {
-        call #1<T=u8,A=4u8>(), %1
+        call _3 = new<T=(i32, bool)>(cons), %1
     }
 
     %1 {
+        _2 = (*_3).0
         return
     }
 }
 
-#1:
-fn test "ll"<type T, const A>() -> (_0: T) {
+fn new "ll"<type T>(_0: fn "ll"(&T) -> ()) -> (_1: &T) {
+    _2: usize
+    _3: &unit
+
     %0 {
-        _0 = A
+        _2 = sizeof T
+        call _3 = malloc(_2), %1
+    }
+
+    %1 {
+        _1 = cast &T, _3
+        call _0(_1), %2
+    }
+
+    %2 {
         return
     }
 }
 
-#12000:
+fn cons "ll"(_0: &(i32, bool)) -> () {
+    %0 {
+        (*_0).0 = 47i32
+        (*_0).1 = 1 bool
+        return
+    }
+}
+
 @lang
 fn __insintric_gcd "ll"(_0: isize, _1: isize) -> (_2: isize) {
     _3: bool
@@ -37,7 +59,7 @@ fn __insintric_gcd "ll"(_0: isize, _1: isize) -> (_2: isize) {
 
     %2 {
         _4 = rem _0 _1
-        call _2 = #12000(_1, _4), %3
+        call _2 = __insintric_gcd(_1, _4), %3
     }
 
     %3 {
@@ -45,7 +67,6 @@ fn __insintric_gcd "ll"(_0: isize, _1: isize) -> (_2: isize) {
     }
 }
 
-#12001:
 @lang
 fn __insintric_lcm "ll"(_0: isize, _1: isize) -> (_2: isize) {
     _3: isize
@@ -53,7 +74,7 @@ fn __insintric_lcm "ll"(_0: isize, _1: isize) -> (_2: isize) {
 
     %0 {
         _3 = mul _0 _1
-        call _4 = #12000(_0, _1), %1
+        call _4 = __insintric_gcd(_0, _1), %1
     }
 
     %1 {

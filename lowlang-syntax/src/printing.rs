@@ -184,7 +184,7 @@ impl Display for Place {
 
         match &self.base {
             PlaceBase::Local(id) => <LocalId as Display>::fmt(id, f)?,
-            PlaceBase::Global(id) => write!(f, "#!{}", id.0)?,
+            PlaceBase::Global(id) => <Addr as Display>::fmt(id, f)?,
         }
 
         for elem in &self.elems {
@@ -213,7 +213,7 @@ impl<'t> Display for Const<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Const::Unit => write!(f, "unit"),
-            Const::Scalar(value, ty) => write!(f, "{} {}", value, ty),
+            Const::Scalar(value, ty) => write!(f, "{}{}", value, ty),
             Const::Bytes(bytes) => <str as std::fmt::Debug>::fmt(std::str::from_utf8(&bytes).unwrap(), f),
             Const::FuncAddr(id, generics) => {
                 let generics = if generics.is_empty() {
@@ -225,6 +225,15 @@ impl<'t> Display for Const<'t> {
                 write!(f, "{}{}", id, generics)
             },
             Const::Param(name) => <String as Display>::fmt(name, f),
+        }
+    }
+}
+
+impl Display for Addr {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            Addr::Id(id) => <ItemId as Display>::fmt(id, f),
+            Addr::Name(name) => <String as Display>::fmt(name, f),
         }
     }
 }
@@ -332,9 +341,9 @@ impl<'t> Display for Type<'t> {
                 write!(f, "({})", list(types, ", "))
             },
             Type::Union(tagged, types) => if *tagged {
-                write!(f, "{}", list(types, " / "))
+                write!(f, "({})", list(types, " / "))
             } else {
-                write!(f, "{}", list(types, " | "))
+                write!(f, "({})", list(types, " | "))
             },
             Type::Tagged(idx, ty) => write!(f, "/{} {}", idx, ty),
         }

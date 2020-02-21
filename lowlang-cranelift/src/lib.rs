@@ -7,7 +7,8 @@ pub mod trans;
 pub mod error;
 
 use error::Error;
-use syntax::layout::TyLayout;
+use lowlang_syntax as syntax;
+use lowlang_syntax::layout::TyLayout;
 pub use cranelift_module::{Backend, Module, FuncId, DataId};
 use cranelift_frontend::FunctionBuilder;
 use cranelift_codegen::ir::{self, types};

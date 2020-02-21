@@ -1,2 +1,2 @@
-pub use codegen;
-pub use syntax as ir;
+pub use lowlang_cranelift;
+pub use lowlang_syntax as ir;

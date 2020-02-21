@@ -1,6 +1,7 @@
 use crate::{FunctionCtx, Backend};
 use crate::ptr::Pointer;
 use crate::value::Value;
+use lowlang_syntax as syntax;
 use syntax::layout::TyLayout;
 use cranelift_codegen::ir;
 use cranelift_module::Module;

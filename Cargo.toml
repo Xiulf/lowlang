@@ -11,6 +11,6 @@ path = "src/main.rs"
 [dependencies]
 intern = { path = "../fluix/intern" }
 diagnostics = { path = "../fluix/diagnostics" }
-syntax = { path = "syntax" }
-codegen = { path = "codegen" }
+lowlang-syntax = { path = "lowlang-syntax" }
+lowlang-cranelift = { path = "lowlang-cranelift" }
 target-lexicon = "0.10.0"

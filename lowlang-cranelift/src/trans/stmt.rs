@@ -1,4 +1,5 @@
 use crate::{FunctionCtx, Backend};
+use lowlang_syntax as syntax;
 
 impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
     pub fn trans_stmt(&mut self, stmt: &syntax::Stmt<'t>) {

@@ -1,6 +1,7 @@
 use crate::{FunctionCtx, Backend};
 use crate::ptr::Pointer;
 use crate::place::Place;
+use lowlang_syntax as syntax;
 use cranelift_codegen::ir::InstBuilder;
 
 impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
@@ -8,7 +9,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
         let mut res = match &place.base {
             syntax::PlaceBase::Local(id) => self.locals[id],
             syntax::PlaceBase::Global(id) => {
-                let (data_id, layout) = self.data_ids[id];
+                let (data_id, layout) = self.data_ids[&id.id()];
                 let local_data_id = self.module.declare_data_in_func(data_id, self.builder.func);
                 let global_ptr = self.builder.ins().global_value(self.pointer_type, local_data_id);
 

@@ -127,7 +127,7 @@ impl Place {
 
     pub fn global(id: ItemId) -> Place {
         Place {
-            base: PlaceBase::Global(id),
+            base: PlaceBase::Global(Addr::Id(id)),
             elems: Vec::new(),
         }
     }
