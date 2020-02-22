@@ -132,7 +132,11 @@ impl<'t> Package<'t> {
             if fork.peek::<TGlobal>() || (fork.peek::<TExport>() && fork.peek2::<TGlobal>()) {
                 self.globals.insert(id, input.parse()?);
             } else {
-                self.bodies.insert(id, input.parse()?);
+                let mut body = input.parse::<Body>()?;
+
+                body.id = id;
+
+                self.bodies.insert(id, body);
             }
         }
 
@@ -338,6 +342,7 @@ impl<'t> Parse<TI<'t>> for Body<'t> {
         input.parse::<TRBrace>()?;
 
         Ok(Body {
+            id: Default::default(),
             attributes,
             export,
             name,

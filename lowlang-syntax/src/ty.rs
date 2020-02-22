@@ -90,7 +90,7 @@ pub enum Type<'t> {
     Tagged(usize, Ty<'t>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum IntSize {
     Bits8,
     Bits16,
@@ -100,7 +100,7 @@ pub enum IntSize {
     Size,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum FloatSize {
     Bits32,
     Bits64,

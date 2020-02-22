@@ -22,7 +22,14 @@ pub struct Package<'t> {
     pub bodies: BTreeMap<ItemId, Body<'t>>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Clone, Copy)]
+pub struct Location {
+    pub item: ItemId,
+    pub block: BlockId,
+    pub stmt: usize,
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemId(usize);
 
 #[derive(Default, Clone)]
@@ -43,6 +50,7 @@ pub struct Global<'t> {
 
 #[derive(Clone)]
 pub struct Body<'t> {
+    pub id: ItemId,
     pub attributes: Attributes,
     pub export: bool,
     pub name: String,
@@ -57,7 +65,7 @@ pub struct Attributes {
     lang: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LocalId(pub usize);
 
 #[derive(Clone, Copy)]
@@ -75,7 +83,7 @@ pub enum LocalKind {
     Tmp,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockId(usize);
 
 #[derive(Clone)]
@@ -184,7 +192,7 @@ pub enum GenArg<'t> {
     Const(Const<'t>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum CallConv {
     C,
     Lowlang,

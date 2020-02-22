@@ -1,0 +1,10 @@
+[package]
+name = "lowlang-check"
+version = "0.1.0"
+authors = ["Cyberduc-k <tttymo@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+diagnostics = { path = "../../fluix/diagnostics" }
+intern = { path = "../../fluix/intern" }
+lowlang-syntax = { path = "../lowlang-syntax" }

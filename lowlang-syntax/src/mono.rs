@@ -126,7 +126,7 @@ impl<'a, 't> VisitorMut<'t> for Substitue<'a, 't> {
     }
 }
 
-fn subst_ty<'t>(ty: &Ty<'t>, subst: &Subst<'t>, tcx: &TyCtx<'t>) -> Ty<'t> {
+pub fn subst_ty<'t>(ty: &Ty<'t>, subst: &Subst<'t>, tcx: &TyCtx<'t>) -> Ty<'t> {
     use intern::Intern;
 
     match &**ty {

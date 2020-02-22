@@ -22,6 +22,8 @@ pub fn main() {
     syntax::post::post_process(&mut package);
     syntax::mono::monomorphize(&mut package, &types);
 
+    lowlang_check::verify(&package, &types);
+
     // println!("{}", package);
 
     match lowlang_cranelift::compile(&package, &types, &target_lexicon::HOST.to_string(), true, arg2.into()) {

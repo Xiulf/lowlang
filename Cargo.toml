@@ -12,5 +12,6 @@ path = "src/main.rs"
 intern = { path = "../fluix/intern" }
 diagnostics = { path = "../fluix/diagnostics" }
 lowlang-syntax = { path = "lowlang-syntax" }
+lowlang-check = { path = "lowlang-check" }
 lowlang-cranelift = { path = "lowlang-cranelift" }
 target-lexicon = "0.10.0"

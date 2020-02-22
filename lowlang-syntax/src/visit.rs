@@ -95,7 +95,7 @@ macro_rules! make_visitor{
             }
 
             fn super_body(&mut self, body: & $($mut)? Body<'t>) {
-                let Body { name: _, export: _, attributes: _, conv: _, generics, locals, blocks } = body;
+                let Body { id: _, name: _, export: _, attributes: _, conv: _, generics, locals, blocks } = body;
 
                 for (_, param) in generics {
                     match param {

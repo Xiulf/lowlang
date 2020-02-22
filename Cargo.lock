@@ -220,9 +220,19 @@ version = "0.1.0"
 dependencies = [
  "diagnostics",
  "intern",
+ "lowlang-check",
  "lowlang-cranelift",
  "lowlang-syntax",
  "target-lexicon",
+]
+
+[[package]]
+name = "lowlang-check"
+version = "0.1.0"
+dependencies = [
+ "diagnostics",
+ "intern",
+ "lowlang-syntax",
 ]
 
 [[package]]

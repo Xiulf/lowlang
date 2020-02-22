@@ -74,6 +74,7 @@ impl<'t> Package<'t> {
         }
 
         self.bodies.insert(id, Body {
+            id,
             attributes,
             name,
             export,
