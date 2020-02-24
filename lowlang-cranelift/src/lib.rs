@@ -15,6 +15,12 @@ use cranelift_codegen::ir::{self, types};
 use cranelift_codegen::settings;
 use std::collections::BTreeMap;
 
+pub fn triple(target: &str) -> target_lexicon::Triple {
+    use std::str::FromStr as _;
+
+    target_lexicon::triple!(target)
+}
+
 pub fn compile<'t>(
     package: &syntax::Package<'t>,
     types: &'t syntax::ty::TyCtx<'t>,

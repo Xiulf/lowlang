@@ -22,9 +22,16 @@ pub fn main() {
     syntax::post::post_process(&mut package);
     syntax::mono::monomorphize(&mut package, &types);
 
+    lowlang_transform::pre(&mut package);
     lowlang_check::verify(&package, &types);
 
-    // println!("{}", package);
+    let layout_interner = lowlang_syntax::layout::LayoutInterner::new();
+    let triple = lowlang_cranelift::triple(&target_lexicon::HOST.to_string());
+    let lcx = lowlang_syntax::layout::LayoutCtx::new(&types, &layout_interner, &triple);
+
+    lowlang_transform::post(&mut package, &lcx);
+
+    println!("{}", package);
 
     match lowlang_cranelift::compile(&package, &types, &target_lexicon::HOST.to_string(), true, arg2.into()) {
         Ok(_) => {},

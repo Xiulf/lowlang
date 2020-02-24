@@ -60,6 +60,7 @@ impl<'a, 't> VisitorMut<'t> for Mono<'a, 't> {
                                 let mut body = self.poly_bodies[&func.id()].clone();
 
                                 body.generics.clear();
+                                body.id = self.next_id;
                                 Substitue { subst, tcx: self.tcx }.visit_body(self.next_id, &mut body);
 
                                 body
@@ -195,6 +196,25 @@ pub fn subst_ty<'t>(ty: &Ty<'t>, subst: &Subst<'t>, tcx: &TyCtx<'t>) -> Ty<'t> {
 
             if changed {
                 Type::Proc(Signature(sig.0, new_params, new_rets)).intern(tcx)
+            } else {
+                *ty
+            }
+        },
+        Type::Tuple(packed, tys) => {
+            let mut changed = false;
+
+            let new_tys = tys.iter().map(|t| {
+                let t2 = subst_ty(t, subst, tcx);
+
+                if &t2 != t {
+                    changed = true;
+                }
+
+                t2
+            }).collect();
+
+            if changed {
+                Type::Tuple(*packed, new_tys).intern(tcx)
             } else {
                 *ty
             }

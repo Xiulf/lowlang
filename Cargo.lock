@@ -223,6 +223,7 @@ dependencies = [
  "lowlang-check",
  "lowlang-cranelift",
  "lowlang-syntax",
+ "lowlang-transform",
  "target-lexicon",
 ]
 
@@ -264,6 +265,13 @@ dependencies = [
  "lazy_static",
  "lowlang-parser",
  "target-lexicon",
+]
+
+[[package]]
+name = "lowlang-transform"
+version = "0.1.0"
+dependencies = [
+ "lowlang-syntax",
 ]
 
 [[package]]

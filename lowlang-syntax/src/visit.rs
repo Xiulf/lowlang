@@ -134,6 +134,7 @@ macro_rules! make_visitor{
             fn super_stmt(&mut self, stmt: & $($mut)? Stmt<'t>) {
                 match stmt {
                     Stmt::Assign(place, value) => self.visit_assign(place, value),
+                    Stmt::Nop => {},
                 }
             }
 

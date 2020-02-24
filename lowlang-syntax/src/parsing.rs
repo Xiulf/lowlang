@@ -146,8 +146,6 @@ impl<'t> Package<'t> {
 
 impl<'t> Parse<TI<'t>> for Signature<'t> {
     fn parse(input: ParseStream<TI<'t>>) -> Result<Signature<'t>> {
-        input.parse::<TFn>()?;
-
         let conv = input.parse()?;
         let mut params = Vec::new();
 
@@ -186,17 +184,20 @@ impl<'t> Parse<TI<'t>> for Extern<'t> {
     fn parse(input: ParseStream<TI<'t>>) -> Result<Extern<'t>> {
         input.parse::<TExtern>()?;
 
-        let name = input.parse::<Ident>()?.name;
+        let ext = if let Ok(_) = input.parse::<TFn>() {
+            let name = input.parse::<Ident>()?.name;
+            let sig = input.parse()?;
 
-        input.parse::<TColon>()?;
-
-        let ext = if input.peek::<TFn>() {
-            Extern::Proc(name, input.parse()?)
+            Extern::Proc(name, sig)
         } else {
+            input.parse::<Global>()?;
+
+            let name = input.parse::<Ident>()?.name;
+            
+            input.parse::<TColon>()?;
+
             Extern::Global(name, input.parse()?)
         };
-
-        input.parse::<TSemi>()?;
 
         Ok(ext)
     }
@@ -823,7 +824,7 @@ impl<'t> Ty<'t> {
             } else {
                 Ok(Type::Tuple(true, types).intern(input.data))
             }
-        } else if input.peek::<TFn>() {
+        } else if let Ok(_) = input.parse::<TFn>() {
             Ok(Type::Proc(input.parse()?).intern(input.data))
         } else if !input.peek::<LocalId>() {
             Ok(Type::Param(input.parse::<Ident>()?.name).intern(input.data))

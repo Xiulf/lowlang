@@ -96,6 +96,7 @@ pub struct Block<'t> {
 #[derive(Clone)]
 pub enum Stmt<'t> {
     Assign(Place, Value<'t>),
+    Nop,
 }
 
 #[derive(Clone)]

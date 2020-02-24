@@ -9,6 +9,7 @@ impl<'a, 't, 'l, B: Backend> FunctionCtx<'a, 't, 'l, B> {
 
                 self.trans_value(place, value);
             },
+            syntax::Stmt::Nop => {},
         }
     }
 }

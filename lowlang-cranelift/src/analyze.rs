@@ -26,6 +26,7 @@ pub fn analyze(fx: &FunctionCtx<impl Backend>) -> BTreeMap<ast::LocalId, SsaKind
                     },
                     _ => {},
                 },
+                ast::Stmt::Nop => {},
             }
         }
     }

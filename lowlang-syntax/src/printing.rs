@@ -36,8 +36,8 @@ impl<'t> Display for Signature<'t> {
 impl<'t> Display for Extern<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            Extern::Proc(name, sig) => write!(f, "extern {}: {};", name, sig),
-            Extern::Global(name, ty) => write!(f, "extern {}: {};", name, ty),
+            Extern::Proc(name, sig) => write!(f, "extern fn {} {}", name, &sig.to_string()[3..]),
+            Extern::Global(name, ty) => write!(f, "extern global {}: {}", name, ty),
         }
     }
 }
@@ -91,8 +91,12 @@ impl<'t> Display for Body<'t> {
             writeln!(f)?;
         }
 
-        for (_, block) in &self.blocks {
-            writeln!(f, "{}", indent(block.to_string()))?;
+        for (i, (_, block)) in self.blocks.iter().enumerate() {
+            if i != 0 {
+                writeln!(f, "\n{}", indent(block.to_string()))?;
+            } else {
+                writeln!(f, "{}", indent(block.to_string()))?;
+            }
         }
 
         write!(f, "}}")
@@ -122,7 +126,9 @@ impl<'t> Display for Block<'t> {
         writeln!(f, "{} {{", self.id)?;
 
         for stmt in &self.stmts {
-            writeln!(f, "{}", indent(stmt.to_string()))?;
+            if let Stmt::Nop = stmt {} else {
+                writeln!(f, "{}", indent(stmt.to_string()))?;
+            }
         }
 
         writeln!(f, "{}", indent(self.term.to_string()))?;
@@ -133,7 +139,8 @@ impl<'t> Display for Block<'t> {
 impl<'t> Display for Stmt<'t> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            Stmt::Assign(place, value) => write!(f, "{} = {}", place, value)
+            Stmt::Assign(place, value) => write!(f, "{} = {}", place, value),
+            Stmt::Nop => Ok(()),
         }
     }
 }

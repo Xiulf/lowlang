@@ -95,6 +95,7 @@ impl<'a, 't> TypeChecker<'a, 't> {
 
                 self.unify(place_ty, value_ty, loc)?;
             },
+            Stmt::Nop => {},
         }
 
         Ok(())
@@ -136,11 +137,7 @@ impl<'a, 't> TypeChecker<'a, 't> {
                     _ => return Err(Diagnostic::error(format!("Cannot call type `{}`", proc), loc)),
                 }
             },
-            Terminator::Switch(pred, _, _) => {
-                let pred_ty = self.type_of_op(body, pred, loc)?;
-
-                self.unify(pred_ty, self.tcx.defaults.bool, loc)?;
-            },
+            Terminator::Switch(_, _, _) => {},
         }
 
         Ok(())
