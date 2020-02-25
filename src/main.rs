@@ -20,9 +20,8 @@ pub fn main() {
     reporter.report(true);
 
     syntax::post::post_process(&mut package);
-    syntax::mono::monomorphize(&mut package, &types);
-
     lowlang_transform::pre(&mut package);
+    syntax::mono::monomorphize(&mut package, &types);
     lowlang_check::verify(&package, &types);
 
     let layout_interner = lowlang_syntax::layout::LayoutInterner::new();

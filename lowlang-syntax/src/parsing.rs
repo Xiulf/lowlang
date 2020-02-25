@@ -4,6 +4,7 @@ use lowlang_parser::ident::Ident;
 use lowlang_parser::literal::StringLiteral;
 use lowlang_parser::literal::IntLiteral;
 use lowlang_parser::error::Result;
+use lowlang_parser::diagnostics::{Diagnostic, Severity};
 use std::collections::BTreeMap;
 
 type TI<'a> = &'a crate::ty::TyCtx<'a>;
@@ -362,11 +363,16 @@ impl<D> Parse<D> for Attributes {
         while !input.is_empty() && input.peek::<TAt>() {
             input.parse::<TAt>()?;
 
-            let text = input.parse::<Ident>()?.name;
+            let text = input.parse::<Ident>()?;
 
-            match text.as_str() {
+            match text.name.as_str() {
                 "lang" => attributes.lang = true,
-                _ => return input.error(format!("Unknown attribute '{}'", text)),
+                "inline" => attributes.inline = true,
+                "noinline" => attributes.no_inline = true,
+                _ => return Err(
+                    Diagnostic::new(Severity::Error, None, format!("Unknown attribute: {}", text))
+                        .label(Severity::Error, text.span, None::<String>)
+                ),
             }
         }
 

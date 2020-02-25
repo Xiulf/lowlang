@@ -37,8 +37,8 @@ fn subst_string(name: &str, subst: &Subst) -> String {
 }
 
 impl<'a, 't> VisitorMut<'t> for Mono<'a, 't> {
-    fn visit_body(&mut self, id: ItemId, body: &mut Body<'t>) {
-        if !self.changed && !self.poly_bodies.contains_key(&id) {
+    fn visit_body(&mut self, body: &mut Body<'t>) {
+        if !self.changed && !self.poly_bodies.contains_key(&body.id) {
             self.super_body(body);
         }
     }
@@ -61,7 +61,7 @@ impl<'a, 't> VisitorMut<'t> for Mono<'a, 't> {
 
                                 body.generics.clear();
                                 body.id = self.next_id;
-                                Substitue { subst, tcx: self.tcx }.visit_body(self.next_id, &mut body);
+                                Substitue { subst, tcx: self.tcx }.visit_body(&mut body);
 
                                 body
                             },
@@ -104,7 +104,7 @@ struct Substitue<'a, 't> {
 }
 
 impl<'a, 't> VisitorMut<'t> for Substitue<'a, 't> {
-    fn visit_body(&mut self, _id: ItemId, body: &mut Body<'t>) {
+    fn visit_body(&mut self, body: &mut Body<'t>) {
         body.name = subst_string(&body.name, self.subst);
         self.super_body(body);
     }

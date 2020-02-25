@@ -17,7 +17,7 @@ macro_rules! make_visitor{
                 self.super_global(global)
             }
 
-            fn visit_body(&mut self, id: ItemId, body: & $($mut)? Body<'t>) {
+            fn visit_body(&mut self, body: & $($mut)? Body<'t>) {
                 self.super_body(body)
             }
 
@@ -76,8 +76,8 @@ macro_rules! make_visitor{
                     self.visit_global(*id, global);
                 }
 
-                for (id, body) in bodies {
-                    self.visit_body(*id, body);
+                for (_, body) in bodies {
+                    self.visit_body(body);
                 }
             }
 

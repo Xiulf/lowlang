@@ -62,10 +62,12 @@ pub struct Body<'t> {
 
 #[derive(Default, Clone)]
 pub struct Attributes {
-    lang: bool,
+    pub lang: bool,
+    pub inline: bool,
+    pub no_inline: bool,
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LocalId(pub usize);
 
 #[derive(Clone, Copy)]
@@ -83,7 +85,7 @@ pub enum LocalKind {
     Tmp,
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockId(usize);
 
 #[derive(Clone)]

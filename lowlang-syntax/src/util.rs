@@ -22,6 +22,43 @@ impl<'t> Body<'t> {
     pub fn rets(&self) -> Vec<&Local<'t>> {
         self.locals.iter().map(|l| l.1).filter(|l| l.kind == LocalKind::Ret).collect()
     }
+
+    pub fn max_local_id(&self) -> LocalId {
+        let mut max = LocalId(0);
+
+        for (id, _) in &self.locals {
+            max = std::cmp::max(max, *id);
+        }
+
+        max
+    }
+
+    pub fn max_block_id(&self) -> BlockId {
+        let mut max = BlockId(0);
+
+        for (id, _) in &self.blocks {
+            max = std::cmp::max(max, *id);
+        }
+
+        max
+    }
+}
+
+impl Place {
+    pub fn merge(&self, other: &Place) -> Place {
+        let mut elems = self.elems.clone();
+
+        elems.extend(other.elems.clone());
+
+        Place {
+            base: other.base.clone(),
+            elems,
+        }
+    }
+}
+
+impl BlockId {
+    pub const FIRST: BlockId = BlockId(0);
 }
 
 impl Addr {
@@ -44,6 +81,22 @@ impl Addr {
             Addr::Name(name) => name,
             Addr::Id(_) => unreachable!(),
         }
+    }
+}
+
+impl std::ops::Add for LocalId {
+    type Output = LocalId;
+
+    fn add(self, rhs: LocalId) -> LocalId {
+        LocalId(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Add for BlockId {
+    type Output = BlockId;
+
+    fn add(self, rhs: BlockId) -> BlockId {
+        BlockId(self.0 + rhs.0)
     }
 }
 

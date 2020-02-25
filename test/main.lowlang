@@ -25,6 +25,7 @@ export fn main "ll"(_0: i32, _1: &&u8) -> (_2: i32) {
     }
 }
 
+@inline
 fn Vec_new "ll"<type T>() -> (_0: ((&T, usize), usize)) {
     _1: (&T, usize)
 
@@ -110,8 +111,8 @@ fn RawVec_reserve "ll"<type T>(_0: &(&T, usize), _1: usize, _2: usize) -> () {
     %3 {
         _6 = cast &unit, (*_0).0
         _5 = sizeof T
-        _5 = mul (*_0).1 _5
-        call _6 = realloc(_6, _5, _3), %5
+        _7 = mul (*_0).1 _5
+        call _6 = realloc(_6, _7, _3), %5
     }
 
     %4 {

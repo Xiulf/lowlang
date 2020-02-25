@@ -26,7 +26,7 @@ impl<'a, 't, 'l> Transformer<'t> for ConstVar<'a, 't, 'l> {
 }
 
 impl<'a, 't, 'l> VisitorMut<'t> for ConstVar<'a, 't, 'l> {
-    fn visit_body(&mut self, _id: ItemId, body: &mut Body<'t>) {
+    fn visit_body(&mut self, body: &mut Body<'t>) {
         self.current = None;
         self.super_body(body);
     }
@@ -52,6 +52,10 @@ impl<'a, 't, 'l> VisitorMut<'t> for ConstVar<'a, 't, 'l> {
 
             if place.elems.is_empty() {
                 match value {
+                    Value::Use(Operand::Constant(c)) => {
+                        self.current = Some((local, c.clone()));
+                        self.remove = true;
+                    },
                     Value::NullOp(op, ty) => {
                         let val = Const::Scalar(match op {
                             NullOp::SizeOf => ty.layout(self.lcx).details.size,
