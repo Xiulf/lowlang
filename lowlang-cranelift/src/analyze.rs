@@ -2,7 +2,7 @@ use crate::{FunctionCtx, Backend};
 use lowlang_syntax as ast;
 use std::collections::BTreeMap;
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum SsaKind {
     Ssa,
     NotSsa,
