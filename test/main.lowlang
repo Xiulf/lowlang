@@ -2,25 +2,45 @@ package test
 
 extern fn malloc "c"(usize) -> (&unit)
 extern fn realloc "c"(&unit, usize, usize) -> (&unit)
-
-// type Vec<T> = (RawVec<T=T>, usize)
-// type RawVec<T> = (&T, usize)
+extern fn free "c"(&unit) -> ()
 
 export fn main "ll"(_0: i32, _1: &&u8) -> (_2: i32) {
-    _3: ((&i32, usize), usize)
-    _4: &((&i32, usize), usize)
-
     %0 {
-        call _3 = Vec_new<T=i32>(), %1
+        call _2 = closures(3usize), %1
     }
 
     %1 {
-        _4 = &_3
-        call Vec_push<T=i32>(_4, 27i32), %2
+        return
+    }
+}
+
+fn closures "ll"(_0: usize) -> (_5: i32) {
+    _1: usize
+    _2: &unit
+    _3: (fn "ll"(&(usize)) -> (usize), &(usize))
+    _4: usize
+
+    %0 {
+        _1 = sizeof (usize)
+        call _2 = malloc(_1), %1
+    }
+
+    %1 {
+        _3.0 = square
+        _3.1 = cast &(usize), _2
+        (*_3.1).0 = _0
+        call _4 = _3.0(_3.1), %2
     }
 
     %2 {
-        _2 = *_3.0.0
+        _5 = cast i32, _4
+        return
+    }
+}
+
+fn square "ll"(_0: &(usize)) -> (_1: usize) {
+    %0 {
+        _1 = mul (*_0).0 (*_0).0
         return
     }
 }
@@ -36,6 +56,20 @@ fn Vec_new "ll"<type T>() -> (_0: ((&T, usize), usize)) {
     %1 {
         _0.0 = _1
         _0.1 = 0usize
+        return
+    }
+}
+
+@inline
+fn Vec_drop "ll"<type T>(_0: &((&T, usize), usize)) -> () {
+    _1: &unit
+
+    %0 {
+        _1 = cast &unit, (*_0).0.0
+        call free(_1), %1
+    }
+
+    %1 {
         return
     }
 }

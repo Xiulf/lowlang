@@ -810,11 +810,7 @@ impl<'t> Ty<'t> {
 
             input.parse::<TRParen>()?;
 
-            if types.len() == 1 {
-                Ok(types.into_iter().next().unwrap())
-            } else {
-                Ok(Type::Tuple(false, types).intern(input.data))
-            }
+            Ok(Type::Tuple(false, types).intern(input.data))
         } else if let Ok(_) = input.parse::<TLeft>() {
             let mut types = vec![input.parse()?];
 
@@ -825,11 +821,7 @@ impl<'t> Ty<'t> {
 
             input.parse::<TRight>()?;
 
-            if types.len() == 1 {
-                Ok(types.into_iter().next().unwrap())
-            } else {
-                Ok(Type::Tuple(true, types).intern(input.data))
-            }
+            Ok(Type::Tuple(true, types).intern(input.data))
         } else if let Ok(_) = input.parse::<TFn>() {
             Ok(Type::Proc(input.parse()?).intern(input.data))
         } else if !input.peek::<LocalId>() {
