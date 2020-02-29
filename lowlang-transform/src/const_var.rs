@@ -8,6 +8,7 @@ pub struct ConstVar<'a, 't, 'l> {
     lcx: &'a LayoutCtx<'t, 'l>,
     current: BTreeMap<LocalId, Const<'t>>,
     remove: bool,
+    changed: bool,
 }
 
 impl<'a, 't, 'l> ConstVar<'a, 't, 'l> {
@@ -16,13 +17,21 @@ impl<'a, 't, 'l> ConstVar<'a, 't, 'l> {
             lcx,
             current: BTreeMap::new(),
             remove: false,
+            changed: false,
         }
     }
 }
 
 impl<'a, 't, 'l> Transformer<'t> for ConstVar<'a, 't, 'l> {
-    fn transform(&mut self, package: &mut Package<'t>) {
+    fn transform(&mut self, package: &mut Package<'t>) -> bool {
         self.visit_package(package);
+        self.changed
+    }
+
+    fn reset(&mut self) {
+        self.changed = false;
+        self.remove = false;
+        self.current.clear();
     }
 }
 
@@ -38,6 +47,7 @@ impl<'a, 't, 'l> VisitorMut<'t> for ConstVar<'a, 't, 'l> {
         if self.remove {
             *stmt = Stmt::Nop;
             self.remove = false;
+            self.changed = true;
         }
     }
 

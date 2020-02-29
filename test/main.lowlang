@@ -5,8 +5,10 @@ extern fn realloc "c"(&unit, usize, usize) -> (&unit)
 extern fn free "c"(&unit) -> ()
 
 export fn main "ll"(_0: i32, _1: &&u8) -> (_2: i32) {
+    _3: (&i32, usize)
+
     %0 {
-        call _2 = closures(3usize), %1
+        call _3 = RawVec_new<T=i32>(), %1
     }
 
     %1 {
@@ -93,6 +95,7 @@ fn Vec_push "ll"<type T>(_0: &((&T, usize), usize), _1: T) -> () {
     }
 }
 
+@inline
 fn RawVec_new "ll"<type T>() -> (_0: (&T, usize)) {
     _1: usize
     _2: usize

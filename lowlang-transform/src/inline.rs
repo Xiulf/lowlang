@@ -7,6 +7,7 @@ pub struct Inliner<'t> {
     to_inline: BTreeMap<ItemId, Body<'t>>,
     current_body: Option<*mut Body<'t>>,
     current_block: Option<*mut Block<'t>>,
+    changed: bool,
 }
 
 impl<'t> Inliner<'t> {
@@ -15,6 +16,7 @@ impl<'t> Inliner<'t> {
             to_inline: BTreeMap::new(),
             current_body: None,
             current_block: None,
+            changed: false,
         }
     }
 
@@ -30,14 +32,23 @@ impl<'t> Inliner<'t> {
 }
 
 impl<'t> Transformer<'t> for Inliner<'t> {
-    fn transform(&mut self, package: &mut Package<'t>) {
-        for (id, body) in &package.bodies {
-            if body.attributes.inline {
-                self.to_inline.insert(*id, body.clone());
+    fn transform(&mut self, package: &mut Package<'t>) -> bool {
+        if self.to_inline.is_empty() {
+            for (id, body) in &package.bodies {
+                if body.attributes.inline {
+                    self.to_inline.insert(*id, body.clone());
+                }
             }
         }
 
         self.visit_package(package);
+        self.changed
+    }
+
+    fn reset(&mut self) {
+        self.current_body = None;
+        self.current_block = None;
+        self.changed = false;
     }
 }
 
@@ -79,6 +90,7 @@ impl<'t> VisitorMut<'t> for Inliner<'t> {
                 self.block().term = first.term;
                 self.body().locals.extend(inlined.locals.into_iter().filter(|l| l.1.kind == LocalKind::Tmp || l.1.kind == LocalKind::Var));
                 self.body().blocks.extend(blocks.map(|(_, b)| (b.id, b)));
+                self.changed = true;
             }
         }
     }

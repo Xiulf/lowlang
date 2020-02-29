@@ -16,8 +16,9 @@ impl BlockRemover {
 }
 
 impl<'t> Transformer<'t> for BlockRemover {
-    #[inline]
-    fn transform(&mut self, package: &mut Package<'t>) {
+    fn transform(&mut self, package: &mut Package<'t>) -> bool {
+        let mut changed = false;
+
         for (_, body) in &mut package.bodies {
             self.count.clear();
             self.count.insert(BlockId::FIRST, 1);
@@ -27,9 +28,16 @@ impl<'t> Transformer<'t> for BlockRemover {
             for (id, count) in &self.count {
                 if *count == 0 {
                     body.blocks.remove(id);
+                    changed = true;
                 }
             }
         }
+
+        changed
+    }
+
+    fn reset(&mut self) {
+        self.count.clear();
     }
 }
 
