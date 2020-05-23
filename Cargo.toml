@@ -1,0 +1,14 @@
+[package]
+name = "lowlang"
+version = "0.1.0"
+authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
+edition = "2018"
+
+[[bin]]
+name = "lowlang"
+path = "src/main.rs"
+
+[dependencies]
+intern = { path = "../.crates/intern" }
+diagnostics = { path = "../.crates/diagnostics" }
+target-lexicon = "0.10.0"
