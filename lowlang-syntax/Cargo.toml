@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 lowlang-parser = { path = "../lowlang-parser" }
-intern = { path = "../../fluix/intern" }
+intern = { path = "../../.crates/intern" }
 lazy_static = "1.4.0"
 target-lexicon = "0.10.0"

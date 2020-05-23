@@ -5,6 +5,6 @@ authors = ["Cyberduc-k <tttymo@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-diagnostics = { path = "../../fluix/diagnostics" }
-intern = { path = "../../fluix/intern" }
+diagnostics = { path = "../../.crates/diagnostics" }
+intern = { path = "../../.crates/intern" }
 lowlang-syntax = { path = "../lowlang-syntax" }

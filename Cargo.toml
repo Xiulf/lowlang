@@ -9,8 +9,8 @@ name = "lowlang"
 path = "src/main.rs"
 
 [dependencies]
-intern = { path = "../fluix/intern" }
-diagnostics = { path = "../fluix/diagnostics" }
+intern = { path = "../.crates/intern" }
+diagnostics = { path = "../.crates/diagnostics" }
 lowlang-syntax = { path = "lowlang-syntax" }
 lowlang-check = { path = "lowlang-check" }
 lowlang-transform = { path = "lowlang-transform" }

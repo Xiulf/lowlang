@@ -1,0 +1,25 @@
+package hello_world
+
+extern fn write "c"(i32, &u8, usize) -> (isize)
+
+export fn main "ll"(_0: i32, _1: &&u8) -> (_2: i32) {
+    %0 {
+        call print("Hello World!\n"), %1
+    }
+
+    %1 {
+        return
+    }
+}
+
+fn print "ll"(_0: str) -> () {
+    _1: isize
+
+    %0 {
+        call _1 = write(1i32, _0.0, _0.1), %1
+    }
+
+    %1 {
+        return
+    }
+}

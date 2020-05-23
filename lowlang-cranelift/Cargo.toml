@@ -5,7 +5,7 @@ authors = ["Cyberduc-k <cyberduck_@outlook.com>"]
 edition = "2018"
 
 [dependencies]
-intern = { path = "../../fluix/intern" }
+intern = { path = "../../.crates/intern" }
 lowlang-syntax = { path = "../lowlang-syntax" }
 cranelift-module = "0.56.0"
 cranelift-frontend = "0.56.0"
