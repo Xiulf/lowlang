@@ -59,6 +59,8 @@ impl<'ctx> DeclMethods<'ctx> for ClifBackend<'ctx> {
         fx.ctx.compute_cfg();
         fx.ctx.compute_domtree();
 
+        // println!("{}", fx.bcx.func);
+
         fx.mcx
             .ctx
             .eliminate_unreachable_code(fx.mcx.module.isa())

@@ -5,7 +5,9 @@ pub mod obj_file;
 use ir::layout::{Scalar, TyLayout};
 use std::collections::HashMap;
 
-pub trait Backend<'ctx>: Sized + DeclMethods<'ctx> + TransMethods<'ctx> + 'ctx {
+pub trait Backend<'ctx>:
+    Sized + DeclMethods<'ctx, Backend = Self> + TransMethods<'ctx, Backend = Self> + 'ctx
+{
     type Module;
     type Context: 'ctx;
     type Builder: 'ctx;
@@ -16,7 +18,7 @@ pub trait Backend<'ctx>: Sized + DeclMethods<'ctx> + TransMethods<'ctx> + 'ctx {
     type Value: Value<'ctx, Backend = Self> + Clone;
     type Type: Type<'ctx, Backend = Self>;
 
-    fn create_module(&mut self) -> Self::Module;
+    fn create_module(&mut self, target: &target_lexicon::Triple) -> Self::Module;
     fn create_context(&mut self, module: &mut Self::Module) -> Self::Context;
     fn create_builder(&mut self, ctx: &mut Self::Context) -> Self::Builder;
 
@@ -192,7 +194,7 @@ pub struct FunctionCtx<'ir, 'ctx, 'mcx, B: Backend<'ctx>> {
 
 impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
     pub fn new(ir: &'ir ir::Module, target: target_lexicon::Triple, mut backend: B) -> Self {
-        let mut module = backend.create_module();
+        let mut module = backend.create_module(&target);
         let ctx = backend.create_context(&mut module);
 
         ModuleCtx {
@@ -206,7 +208,7 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
 
     pub fn build(mut self) -> obj_file::ObjectFile {
         let mut func_ids = Vec::new();
-        let mut static_ids: Vec::new();
+        let mut static_ids = Vec::new();
         let ir = self.ir;
 
         for decl in &ir.decls {
@@ -214,6 +216,56 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
                 func_ids.push(B::declare_func(&mut self, decl));
             } else {
                 static_ids.push(B::declare_static(&mut self, decl));
+            }
+        }
+
+        let mut func_ids = func_ids.into_iter();
+        // let mut static_ids = static_ids.into_iter();
+
+        for body in &ir.bodies {
+            let decl = &ir.decls[body.decl];
+
+            if let ir::Type::Func(_) = &decl.ty {
+                let func_id = func_ids.next().unwrap();
+                let builder = B::create_builder(&mut self.backend, &mut self.ctx);
+                let mut fx = FunctionCtx::new(&mut self, builder, body);
+
+                B::func_prologue(&mut fx);
+
+                for block in &body.blocks {
+                    let block_id = fx.blocks[&block.id];
+
+                    B::switch_to_block(&mut fx, block_id);
+
+                    for stmt in &block.stmts {
+                        match stmt {
+                            ir::Stmt::Assign(place, rvalue) => {
+                                let place = B::trans_place(&mut fx, place);
+
+                                B::trans_rvalue(&mut fx, place, rvalue);
+                            }
+                            ir::Stmt::Call(rets, func, args) => {
+                                let rets = rets
+                                    .iter()
+                                    .map(|r| B::trans_place(&mut fx, r))
+                                    .collect::<Vec<_>>();
+
+                                let args = args
+                                    .iter()
+                                    .map(|a| B::trans_op(&mut fx, a, None))
+                                    .collect::<Vec<_>>();
+
+                                B::trans_call(&mut fx, rets, func, args);
+                            }
+                        }
+                    }
+
+                    B::trans_term(&mut fx, &block.term);
+                }
+
+                B::define_func(&mut fx, func_id);
+            } else {
+                unimplemented!();
             }
         }
 
@@ -233,6 +285,22 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
 
     pub fn scalar_ty(&self, scalar: &Scalar) -> <B::Type as Type<'ctx>>::Raw {
         <B::Type as Type<'ctx>>::scalar_ty(scalar, self)
+    }
+}
+
+impl<'ir, 'ctx, 'mcx, B: Backend<'ctx>> FunctionCtx<'ir, 'ctx, 'mcx, B> {
+    pub fn new(
+        mcx: &'mcx mut ModuleCtx<'ir, 'ctx, B>,
+        bcx: B::Builder,
+        body: &'ir ir::Body,
+    ) -> Self {
+        FunctionCtx {
+            mcx,
+            bcx,
+            body,
+            locals: HashMap::new(),
+            blocks: HashMap::new(),
+        }
     }
 }
 

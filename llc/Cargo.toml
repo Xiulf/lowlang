@@ -8,3 +8,4 @@ edition = "2018"
 ir = { path = "../ir" }
 analysis = { path = "../analysis" }
 assemble = { path = "../assemble" }
+target-lexicon = "0.11.0"

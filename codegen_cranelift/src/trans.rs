@@ -248,7 +248,12 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
 
             fx.bcx.ins().call(func, &args)
         } else {
-            unimplemented!()
+            let func_ty = ir::operand_type(fx.ir, fx.body, func);
+            let sig = crate::mk_signature(fx.mcx, &func_ty.signature());
+            let sig = fx.bcx.import_signature(sig);
+            let func = Self::trans_op(fx, func, None).load_scalar(fx);
+
+            fx.bcx.ins().call_indirect(sig, func, &args)
         };
 
         let mut res = fx

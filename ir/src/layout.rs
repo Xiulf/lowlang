@@ -4,7 +4,115 @@ use std::ops::{Add, Mul, RangeInclusive};
 use target_lexicon::{PointerWidth, Triple};
 
 pub fn layout_of(ty: &Type, target: &Triple) -> TyLayout {
-    unimplemented!();
+    let scalar_unit = |value: Primitive| {
+        let bits = value.size(target).bits();
+
+        Scalar {
+            value,
+            valid_range: 0..=(!0 >> (128 - bits)),
+        }
+    };
+
+    let scalar = |value: Primitive| Layout::scalar(scalar_unit(value), target);
+
+    let ptr_size = match target.pointer_width() {
+        Ok(PointerWidth::U16) => Size::from_bits(16),
+        Ok(PointerWidth::U32) => Size::from_bits(32),
+        Ok(PointerWidth::U64) => Size::from_bits(64),
+        Err(_) => Size::from_bits(64),
+    };
+
+    let layout = match ty {
+        Type::I8 => scalar(Primitive::Int(Integer::I8, true)),
+        Type::I16 => scalar(Primitive::Int(Integer::I16, true)),
+        Type::I32 => scalar(Primitive::Int(Integer::I32, true)),
+        Type::I64 => scalar(Primitive::Int(Integer::I64, true)),
+        Type::I128 => scalar(Primitive::Int(Integer::I128, true)),
+        Type::F32 => scalar(Primitive::F32),
+        Type::F64 => scalar(Primitive::F64),
+        Type::Ptr(_) => scalar(Primitive::Pointer),
+        Type::Func(_) => {
+            let mut ptr = scalar_unit(Primitive::Pointer);
+
+            ptr.valid_range = 1..=*ptr.valid_range.end();
+            Layout::scalar(ptr, target)
+        }
+        Type::Tuple(tys) => {
+            struct_layout(tys.iter().map(|t| layout_of(t, target)).collect(), target)
+        }
+        Type::Opaque(_) => Layout {
+            size: Size::ZERO,
+            align: Align::from_bytes(1),
+            stride: Size::ZERO,
+            abi: Abi::Aggregate { sized: false },
+            fields: FieldsShape::Arbitrary {
+                offsets: Vec::new(),
+            },
+            variants: Variants::Single { index: 0 },
+            largest_niche: None,
+        },
+        Type::Type(_) => Layout {
+            size: ptr_size * 4,
+            align: Align::from_bytes(ptr_size.bytes()),
+            stride: ptr_size * 4,
+            abi: Abi::Aggregate { sized: true },
+            fields: FieldsShape::Arbitrary {
+                offsets: vec![Size::ZERO, ptr_size, ptr_size * 2, ptr_size * 3],
+            },
+            variants: Variants::Single { index: 0 },
+            largest_niche: None,
+        },
+        Type::Vwt(_) => Layout {
+            size: ptr_size * 3,
+            align: Align::from_bytes(ptr_size.bytes()),
+            stride: ptr_size * 3,
+            abi: Abi::Aggregate { sized: true },
+            fields: FieldsShape::Arbitrary {
+                offsets: vec![Size::ZERO, ptr_size, ptr_size * 2],
+            },
+            variants: Variants::Single { index: 0 },
+            largest_niche: None,
+        },
+        _ => unimplemented!(),
+    };
+
+    TyLayout {
+        ty: ty.clone(),
+        layout,
+    }
+}
+
+fn struct_layout(fields: Vec<TyLayout>, target: &Triple) -> Layout {
+    let mut align = Align::from_bytes(1);
+    let mut offsets = vec![Size::ZERO; fields.len()];
+    let mut offset = Size::ZERO;
+    let mut niches = Vec::new();
+
+    for (i, field) in fields.into_iter().enumerate() {
+        if let Some(niche) = &field.largest_niche {
+            niches.push(niche.clone());
+        }
+
+        offset = offset.align_to(field.align);
+        align = align.max(field.align);
+        offsets[i] = offset;
+        offset = offset + field.size;
+    }
+
+    let size = offset;
+    let stride = offset.align_to(align);
+    let abi = Abi::Aggregate { sized: true };
+    let largest_niche = niches.into_iter().max_by_key(|n| n.available(target));
+
+    Layout {
+        size,
+        align,
+        stride,
+        abi,
+        fields: FieldsShape::Arbitrary { offsets },
+        variants: Variants::Single { index: 0 },
+        largest_niche,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

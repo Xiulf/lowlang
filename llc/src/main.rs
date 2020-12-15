@@ -10,4 +10,6 @@ fn main() {
     analysis::analyze(analysis::copy::CopyAnalyzer, &mut module);
 
     println!("{}", module);
+
+    assemble::assemble(&module, target_lexicon::Triple::host());
 }

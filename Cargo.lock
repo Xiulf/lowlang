@@ -22,6 +22,7 @@ dependencies = [
  "codegen",
  "codegen_cranelift",
  "ir",
+ "target-lexicon",
 ]
 
 [[package]]
@@ -230,6 +231,7 @@ dependencies = [
  "analysis",
  "assemble",
  "ir",
+ "target-lexicon",
 ]
 
 [[package]]

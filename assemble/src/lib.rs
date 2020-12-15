@@ -1,4 +1,8 @@
 #[cfg(feature = "cranelift")]
-extern crate codegen_cranelift as backend;
+pub fn assemble(module: &ir::Module, target: target_lexicon::Triple) {
+    let backend = codegen_cranelift::ClifBackend::new();
+    let mcx = codegen::ModuleCtx::new(module, target, backend);
+    let obj_file = mcx.build();
 
-pub fn assemble() {}
+    obj_file.copy(&std::path::PathBuf::from("test.o"));
+}

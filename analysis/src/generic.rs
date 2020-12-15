@@ -177,7 +177,17 @@ impl VisitorMut for GenericFixer {
                         args.insert(0, ir::Operand::Place(place));
                         self.fix_operand(&mut args[0], loc);
                     } else if let ir::Type::Opaque(_) = ir::place_type(self.body(), &rets[i]) {
-                        rets[i].elems.push(ir::PlaceElem::Deref);
+                        let mut builder = ir::Builder::new(self.body_mut());
+                        let ty = ir::Type::Ptr(Box::new(ret_ty.clone()));
+                        let local = builder.create_tmp(ty.clone());
+                        let place = ir::Place::new(local);
+
+                        self.insert.push((
+                            loc,
+                            ir::Stmt::Assign(place.clone(), ir::RValue::Cast(rets[i].clone(), ty)),
+                        ));
+
+                        rets[i] = place.deref();
                     }
                 }
             }

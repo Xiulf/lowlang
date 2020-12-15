@@ -28,6 +28,17 @@ pub struct ClifBackend<'ctx> {
     _marker: PhantomData<&'ctx cranelift::codegen::Context>,
 }
 
+impl<'ctx> ClifBackend<'ctx> {
+    pub fn new() -> Self {
+        ClifBackend {
+            func_ctx: std::ptr::null_mut(),
+            func_ids: HashMap::new(),
+            ssa_vars: 0,
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<'ctx> Backend<'ctx> for ClifBackend<'ctx> {
     type Module = ObjectModule;
     type Context = clif::Context;
@@ -39,8 +50,16 @@ impl<'ctx> Backend<'ctx> for ClifBackend<'ctx> {
     type Value = value::Value<'ctx>;
     type Type = ClifType;
 
-    fn create_module(&mut self) -> Self::Module {
-        unimplemented!();
+    fn create_module(&mut self, target: &target_lexicon::Triple) -> Self::Module {
+        let flags_builder = clif::settings::builder();
+        let flags = clif::settings::Flags::new(flags_builder);
+        let isa = clif::isa::lookup(target.clone()).unwrap().finish(flags);
+
+        let builder =
+            cranelift_object::ObjectBuilder::new(isa, "test", clif::default_libcall_names())
+                .unwrap();
+
+        cranelift_object::ObjectModule::new(builder)
     }
 
     fn create_context(&mut self, module: &mut Self::Module) -> Self::Context {
