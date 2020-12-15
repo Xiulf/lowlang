@@ -7,6 +7,7 @@ fn main() {
     analysis::analyze(analysis::witness::WitnessAnalyzer, &mut module);
     analysis::analyze(analysis::thunk::ThunkAnalyzer::new(), &mut module);
     analysis::analyze(analysis::generic::GenericAnalyzer, &mut module);
+    analysis::analyze(analysis::copy::CopyAnalyzer, &mut module);
 
     println!("{}", module);
 }

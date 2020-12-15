@@ -1,5 +1,6 @@
 pub mod builder;
 mod display;
+pub mod layout;
 pub(crate) mod lexer;
 pub mod parser;
 pub mod visitor;
@@ -187,6 +188,14 @@ impl Body {
                 false
             }
         })
+    }
+
+    pub fn args(&self) -> impl Iterator<Item = &LocalData> {
+        self.locals.iter().filter(|l| l.kind == LocalKind::Arg)
+    }
+
+    pub fn rets(&self) -> impl Iterator<Item = &LocalData> {
+        self.locals.iter().filter(|l| l.kind == LocalKind::Ret)
     }
 }
 

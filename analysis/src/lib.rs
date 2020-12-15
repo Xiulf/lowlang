@@ -1,5 +1,6 @@
 #![feature(drain_filter)]
 
+pub mod copy;
 pub mod generic;
 pub mod thunk;
 pub mod witness;
