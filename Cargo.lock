@@ -6,6 +6,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "ir",
+ "target-lexicon",
  "transform",
 ]
 
@@ -178,6 +179,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "eval"
+version = "0.1.0"
+dependencies = [
+ "index_vec",
+ "ir",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -225,22 +234,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1482821306169ec4d07f6aca392a4681f66c75c9918aa49641a2595db64053cb"
 
 [[package]]
-name = "llc"
-version = "0.1.0"
-dependencies = [
- "analysis",
- "assemble",
- "ir",
- "target-lexicon",
-]
-
-[[package]]
 name = "log"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fabed175da42fed1fa0746b0ea71f412aa9d35e76e95e59b192c64b9dc2bf8b"
 dependencies = [
  "cfg-if 0.1.10",
+]
+
+[[package]]
+name = "lowc"
+version = "0.1.0"
+dependencies = [
+ "analysis",
+ "assemble",
+ "ir",
+ "target-lexicon",
 ]
 
 [[package]]

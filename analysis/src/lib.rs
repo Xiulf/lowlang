@@ -1,8 +1,11 @@
 #![feature(drain_filter)]
+#![feature(bindings_after_at)]
+#![feature(box_patterns)]
 
 pub mod copy;
 pub mod generic;
 pub mod thunk;
+pub mod type_info;
 pub mod witness;
 
 use transform::Transform;

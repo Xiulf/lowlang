@@ -218,7 +218,7 @@ impl std::ops::Deref for TyLayout {
     }
 }
 
-fn ptr_sized_int(target: &Triple) -> Type {
+pub fn ptr_sized_int(target: &Triple) -> Type {
     match target.pointer_width() {
         Ok(PointerWidth::U16) => Type::I16,
         Ok(PointerWidth::U32) => Type::I32,

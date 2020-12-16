@@ -8,7 +8,7 @@ fn @main {
     arg _1 :: i32
     arg _2 :: **i8
 %0:
-    call @apply(@incr, 22 : i32) -> _0
+    call @apply(@incr, 22 :: i32) -> _0
     return
 }
 
@@ -16,7 +16,7 @@ fn @incr {
     ret _0 :: i32
     arg _1 :: i32
 %0:
-    _0 = #add_i32(_1, 1 : i32)
+    _0 = #add_i32(_1, 1 :: i32)
     return
 }
 

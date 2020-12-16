@@ -3,8 +3,9 @@ members = [
     "ir",
     "transform",
     "analysis",
+    "eval",
     "codegen",
     "codegen_cranelift",
     "assemble",
-    "llc",
+    "lowc",
 ]

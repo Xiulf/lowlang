@@ -7,6 +7,7 @@ pub mod visitor;
 
 pub use builder::Builder;
 use index_vec::IndexVec;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
@@ -176,6 +177,15 @@ pub struct Signature {
 }
 
 impl Body {
+    pub fn new(id: BodyId, decl: DeclId) -> Self {
+        Body {
+            id,
+            decl,
+            locals: IndexVec::new(),
+            blocks: IndexVec::new(),
+        }
+    }
+
     pub fn gen_local(&self, gen: &str) -> Option<&LocalData> {
         self.locals.iter().find(|l| {
             if let Type::Ptr(to) = &l.ty {
@@ -267,5 +277,41 @@ impl Type {
             Type::Func(sig) => sig.clone(),
             _ => unreachable!(),
         }
+    }
+}
+
+impl Signature {
+    pub fn find_type_instances(
+        self,
+        args: &[Operand],
+        rets: &[Place],
+        module: &Module,
+        body: &Body,
+    ) -> HashMap<String, Type> {
+        let mut res = HashMap::new();
+
+        fn rec(param: Type, arg: Type, res: &mut HashMap<String, Type>) {
+            match (param, arg) {
+                (Type::Opaque(t), arg) => {
+                    res.insert(t, arg);
+                }
+                (Type::Ptr(param), Type::Ptr(arg)) => rec(*param, *arg, res),
+                (_, _) => {}
+            }
+        }
+
+        for (param, arg) in self.params.into_iter().zip(args) {
+            let arg_ty = operand_type(module, body, arg);
+
+            rec(param, arg_ty, &mut res);
+        }
+
+        for (ret, place) in self.rets.into_iter().zip(rets) {
+            let place_ty = place_type(body, place);
+
+            rec(ret, place_ty, &mut res);
+        }
+
+        res
     }
 }

@@ -1,11 +1,11 @@
 [package]
-name = "analysis"
+name = "lowc"
 version = "0.1.0"
 authors = ["Cyberduc-k <tttymo@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 ir = { path = "../ir" }
-transform = { path = "../transform" }
-indexmap = "1.6.0"
+analysis = { path = "../analysis" }
+assemble = { path = "../assemble" }
 target-lexicon = "0.11.0"

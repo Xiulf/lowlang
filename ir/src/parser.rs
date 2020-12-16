@@ -555,7 +555,7 @@ fn parse_const(
 
         Ok((Const::Tuple(cs), i))
     } else if let Token::Scalar(s) = tokens[i] {
-        let i = expect!(tokens, i + 1, Token::Colon);
+        let i = expect!(tokens, i + 1, Token::DblColon);
         let (ty, i) = parse_type(tokens, i)?;
 
         Ok((Const::Scalar(s, ty), i))

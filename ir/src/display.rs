@@ -70,8 +70,8 @@ impl Display for Module {
 
         fn fmt_const(c: &Const, f: &mut Formatter, this: &Module) -> Result {
             match c {
-                Const::Undefined(ty) => write!(f, "\x1B[0;32mundefined\x1B[0m : {}", ty),
-                Const::Scalar(s, ty) => write!(f, "\x1B[0;32m{}\x1B[0m : {}", s, ty),
+                Const::Undefined(ty) => write!(f, "\x1B[0;32mundefined\x1B[0m :: {}", ty),
+                Const::Scalar(s, ty) => write!(f, "\x1B[0;32m{}\x1B[0m :: {}", s, ty),
                 Const::Addr(decl) => write!(f, "\x1B[0;34m@{}\x1B[0m", this.decls[*decl].name),
                 Const::Ptr(to) => {
                     write!(f, "&")?;
