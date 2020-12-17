@@ -6,7 +6,11 @@ use ir::layout::{Scalar, TyLayout};
 use std::collections::HashMap;
 
 pub trait Backend<'ctx>:
-    Sized + DeclMethods<'ctx, Backend = Self> + TransMethods<'ctx, Backend = Self> + 'ctx
+    Sized
+    + DeclMethods<'ctx, Backend = Self>
+    + TransMethods<'ctx, Backend = Self>
+    + ConstMethods<'ctx, Backend = Self>
+    + 'ctx
 {
     type Module;
     type Context: 'ctx;
@@ -41,8 +45,14 @@ pub trait DeclMethods<'ctx> {
     fn define_static(
         mcx: &mut ModuleCtx<'_, 'ctx, Self::Backend>,
         id: <Self::Backend as Backend<'ctx>>::Static,
-        bytes: Vec<u8>,
-    );
+        body: &ir::Body,
+    ) {
+        let vals = eval::evaluate(mcx.ir, body, &mcx.target);
+        let ty = ir::const_type(mcx.ir, &vals[0]);
+        let layout = ir::layout::layout_of(&ty, &mcx.target);
+
+        Self::Backend::alloc_const(mcx, &vals[0], layout, Some(id));
+    }
 
     fn define_func(
         fx: &mut FunctionCtx<'_, 'ctx, '_, Self::Backend>,
@@ -50,6 +60,17 @@ pub trait DeclMethods<'ctx> {
     );
 
     fn func_prologue(fx: &mut FunctionCtx<'_, 'ctx, '_, Self::Backend>);
+}
+
+pub trait ConstMethods<'ctx> {
+    type Backend: Backend<'ctx> + 'ctx;
+
+    fn alloc_const(
+        mcx: &mut ModuleCtx<'_, 'ctx, Self::Backend>,
+        c: &ir::Const,
+        layout: TyLayout,
+        data_id: Option<<Self::Backend as Backend<'ctx>>::Static>,
+    ) -> <Self::Backend as Backend<'ctx>>::Static;
 }
 
 pub trait TransMethods<'ctx> {
@@ -220,7 +241,7 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
         }
 
         let mut func_ids = func_ids.into_iter();
-        // let mut static_ids = static_ids.into_iter();
+        let mut static_ids = static_ids.into_iter();
 
         for body in &ir.bodies {
             let decl = &ir.decls[body.decl];
@@ -265,7 +286,9 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
 
                 B::define_func(&mut fx, func_id);
             } else {
-                unimplemented!();
+                let static_id = static_ids.next().unwrap();
+
+                B::define_static(&mut self, static_id, body);
             }
         }
 

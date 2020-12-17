@@ -15,9 +15,14 @@ impl<'ctx> DeclMethods<'ctx> for ClifBackend<'ctx> {
             ir::Linkage::Local => clif::Linkage::Local,
         };
 
-        mcx.module
+        let data = mcx
+            .module
             .declare_data(&decl.name, linkage, true, false)
-            .unwrap()
+            .unwrap();
+
+        mcx.data_ids.insert(decl.id, data);
+
+        data
     }
 
     fn declare_func(
@@ -42,24 +47,13 @@ impl<'ctx> DeclMethods<'ctx> for ClifBackend<'ctx> {
         func
     }
 
-    fn define_static(
-        mcx: &mut ModuleCtx<'_, 'ctx, ClifBackend<'ctx>>,
-        id: clif::DataId,
-        bytes: Vec<u8>,
-    ) {
-        let mut dcx = clif::DataContext::new();
-
-        dcx.define(bytes.into());
-        mcx.module.define_data(id, &dcx).unwrap();
-    }
-
     fn define_func(fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>, func: clif::FuncId) {
         fx.bcx.seal_all_blocks();
         fx.bcx.finalize();
         fx.ctx.compute_cfg();
         fx.ctx.compute_domtree();
 
-        // println!("{}", fx.bcx.func);
+        println!("{}", fx.bcx.func);
 
         fx.mcx
             .ctx

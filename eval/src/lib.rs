@@ -1,8 +1,8 @@
 use index_vec::IndexVec;
 use ir::*;
 
-pub fn evaluate<'ir>(module: &'ir Module, body: &'ir Body) -> Vec<Const> {
-    let mut eval_ctx = EvalCtx::new(module, body);
+pub fn evaluate(module: &Module, body: &Body, target: &target_lexicon::Triple) -> Vec<Const> {
+    let mut eval_ctx = EvalCtx::new(module, body, target);
 
     eval_ctx.eval();
     eval_ctx.finish()
@@ -11,6 +11,7 @@ pub fn evaluate<'ir>(module: &'ir Module, body: &'ir Body) -> Vec<Const> {
 pub struct EvalCtx<'ir> {
     module: &'ir Module,
     body: &'ir Body,
+    target: &'ir target_lexicon::Triple,
     locals: IndexVec<Local, Const>,
     current_block: Block,
     status: EvalStatus,
@@ -23,10 +24,11 @@ pub enum EvalStatus {
 }
 
 impl<'ir> EvalCtx<'ir> {
-    pub fn new(module: &'ir Module, body: &'ir Body) -> Self {
+    pub fn new(module: &'ir Module, body: &'ir Body, target: &'ir target_lexicon::Triple) -> Self {
         EvalCtx {
             module,
             body,
+            target,
             locals: body
                 .locals
                 .iter()
@@ -161,6 +163,13 @@ impl<'ir> EvalCtx<'ir> {
                     Const::Tuple(cs) => {
                         ptr = &mut cs[*idx];
                     }
+                    Const::Undefined(ty) => {
+                        *ptr = init_undefined(ty.clone(), self.target);
+
+                        if let Const::Tuple(cs) = ptr {
+                            ptr = &mut cs[*idx];
+                        }
+                    }
                     _ => unreachable!(),
                 },
                 PlaceElem::Index(_idx) => unimplemented!(),
@@ -168,5 +177,23 @@ impl<'ir> EvalCtx<'ir> {
         }
 
         *ptr = val;
+    }
+}
+
+fn init_undefined(ty: Type, target: &target_lexicon::Triple) -> Const {
+    match ty {
+        Type::Tuple(tys) => Const::Tuple(tys.into_iter().map(|t| Const::Undefined(t)).collect()),
+        Type::Type(t) => Const::Tuple(vec![
+            Const::Undefined(layout::ptr_sized_int(target)),
+            Const::Undefined(layout::ptr_sized_int(target)),
+            Const::Undefined(layout::ptr_sized_int(target)),
+            Const::Undefined(Type::Ptr(Box::new(Type::Vwt(t)))),
+        ]),
+        Type::Vwt(t) => Const::Tuple(vec![
+            Const::Undefined(layout::copy_fn_type(&t)),
+            Const::Undefined(layout::copy_fn_type(&t)),
+            Const::Undefined(layout::drop_fn_type(&t)),
+        ]),
+        _ => Const::Undefined(ty),
     }
 }

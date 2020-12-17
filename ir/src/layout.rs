@@ -227,7 +227,7 @@ pub fn ptr_sized_int(target: &Triple) -> Type {
     }
 }
 
-fn copy_fn_type(t: &String) -> Type {
+pub fn copy_fn_type(t: &String) -> Type {
     Type::Func(crate::Signature {
         params: vec![
             Type::Ptr(Box::new(Type::Opaque(t.clone()))),
@@ -238,7 +238,7 @@ fn copy_fn_type(t: &String) -> Type {
     })
 }
 
-fn drop_fn_type(t: &String) -> Type {
+pub fn drop_fn_type(t: &String) -> Type {
     Type::Func(crate::Signature {
         params: vec![
             Type::Ptr(Box::new(Type::Opaque(t.clone()))),

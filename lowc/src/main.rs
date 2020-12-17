@@ -14,7 +14,7 @@ fn main() {
         &mut module,
     );
 
-    println!("{}", module);
+    // println!("{}", module);
 
     assemble::assemble(&module, target);
 }

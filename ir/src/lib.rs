@@ -265,7 +265,15 @@ pub fn const_type(module: &Module, c: &Const) -> Type {
     match c {
         Const::Undefined(ty) => ty.clone(),
         Const::Scalar(_, ty) => ty.clone(),
-        Const::Addr(decl) => module.decls[*decl].ty.clone(),
+        Const::Addr(decl) => {
+            let ty = module.decls[*decl].ty.clone();
+
+            if let Type::Func(_) = ty {
+                ty
+            } else {
+                Type::Ptr(Box::new(ty))
+            }
+        }
         Const::Ptr(to) => Type::Ptr(Box::new(const_type(module, to))),
         Const::Tuple(cs) => Type::Tuple(cs.iter().map(|c| const_type(module, c)).collect()),
     }

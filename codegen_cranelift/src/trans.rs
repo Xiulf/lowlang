@@ -112,7 +112,12 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
 
                         value::Value::new_val(func, layout)
                     } else {
-                        unimplemented!();
+                        let data = fx.data_ids[decl];
+                        let ptr_type = fx.module.target_config().pointer_type();
+                        let global = fx.mcx.module.declare_data_in_func(data, &mut fx.bcx.func);
+                        let global = fx.bcx.ins().global_value(ptr_type, global);
+
+                        value::Value::new_val(global, layout)
                     }
                 }
                 _ => unimplemented!(),

@@ -6,5 +6,6 @@ edition = "2018"
 
 [dependencies]
 ir = { path = "../ir" }
+eval = { path = "../eval" }
 target-lexicon = "0.11.0"
 tempfile = "3.1.0"

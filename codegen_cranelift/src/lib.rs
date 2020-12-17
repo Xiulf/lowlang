@@ -1,5 +1,6 @@
 #![feature(decl_macro)]
 
+mod const_;
 mod decl;
 pub mod place;
 pub mod ptr;
@@ -24,7 +25,9 @@ mod clif {
 pub struct ClifBackend<'ctx> {
     func_ctx: *mut clif::FunctionBuilderContext,
     func_ids: HashMap<ir::DeclId, (clif::FuncId, clif::Signature)>,
+    data_ids: HashMap<ir::DeclId, clif::DataId>,
     ssa_vars: u32,
+    anon_count: usize,
     _marker: PhantomData<&'ctx cranelift::codegen::Context>,
 }
 
@@ -33,7 +36,9 @@ impl<'ctx> ClifBackend<'ctx> {
         ClifBackend {
             func_ctx: std::ptr::null_mut(),
             func_ids: HashMap::new(),
+            data_ids: HashMap::new(),
             ssa_vars: 0,
+            anon_count: 0,
             _marker: PhantomData,
         }
     }
