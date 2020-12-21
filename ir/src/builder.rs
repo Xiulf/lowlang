@@ -100,6 +100,23 @@ impl<'ir> Builder<'ir> {
         &mut self.body.blocks[self.current_block]
     }
 
+    pub fn local_ty(&self, local: Local) -> Type {
+        self.body.locals[local].ty.clone()
+    }
+
+    pub fn placed(&mut self, op: Operand, ty: Type) -> Place {
+        match op {
+            Operand::Place(place) => place,
+            Operand::Const(_) => {
+                let tmp = self.create_tmp(ty);
+                let tmp = Place::new(tmp);
+
+                self.use_op(tmp.clone(), op);
+                tmp
+            }
+        }
+    }
+
     pub fn abort(&mut self) {
         self.block().term = Term::Abort;
     }

@@ -4,6 +4,7 @@
 
 pub mod copy;
 pub mod generic;
+pub mod lifetime;
 pub mod thunk;
 pub mod type_info;
 pub mod witness;

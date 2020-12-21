@@ -118,6 +118,8 @@ macro_rules! define_visitor {
 
             fn super_stmt(&mut self, stmt: &$($mut)? Stmt) {
                 match stmt {
+                    Stmt::VarLive(_) => {},
+                    Stmt::VarDead(_) => {},
                     Stmt::Assign(place, rvalue) => {
                         self.visit_place(place);
                         self.visit_rvalue(rvalue);

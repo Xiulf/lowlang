@@ -8,4 +8,5 @@ members = [
     "codegen_cranelift",
     "assemble",
     "lowc",
+    "umbrella",
 ]

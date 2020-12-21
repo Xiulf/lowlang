@@ -23,6 +23,11 @@ pub fn layout_of(ty: &Type, target: &Triple) -> TyLayout {
     };
 
     let layout = match ty {
+        Type::U8 => scalar(Primitive::Int(Integer::I8, false)),
+        Type::U16 => scalar(Primitive::Int(Integer::I16, false)),
+        Type::U32 => scalar(Primitive::Int(Integer::I32, false)),
+        Type::U64 => scalar(Primitive::Int(Integer::I64, false)),
+        Type::U128 => scalar(Primitive::Int(Integer::I128, false)),
         Type::I8 => scalar(Primitive::Int(Integer::I8, true)),
         Type::I16 => scalar(Primitive::Int(Integer::I16, true)),
         Type::I32 => scalar(Primitive::Int(Integer::I32, true)),
@@ -73,7 +78,20 @@ pub fn layout_of(ty: &Type, target: &Triple) -> TyLayout {
             variants: Variants::Single { index: 0 },
             largest_niche: None,
         },
-        _ => unimplemented!(),
+        Type::Union(tys) => {
+            let lyts = tys.iter().map(|t| layout_of(t, target)).collect::<Vec<_>>();
+            let max = lyts.iter().max_by_key(|l| l.size).unwrap();
+
+            Layout {
+                size: max.size,
+                align: max.align,
+                stride: max.stride,
+                abi: Abi::Aggregate { sized: true },
+                fields: FieldsShape::Union(tys.len()),
+                variants: Variants::Single { index: 0 },
+                largest_niche: None,
+            }
+        }
     };
 
     TyLayout {
@@ -282,7 +300,12 @@ impl TyLayout {
         assert!(field < self.fields.count());
 
         let ty = match &self.ty {
-            Type::I8
+            Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::U128
+            | Type::I8
             | Type::I16
             | Type::I32
             | Type::I64

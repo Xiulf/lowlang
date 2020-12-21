@@ -8,31 +8,16 @@ fn @main {
     arg _1 :: i32
     arg _2 :: **i8
 %0:
-    call @apply(@identity, 22 :: i32) -> _0
-    return
-}
-
-fn @incr {
-    ret _0 :: i32
-    arg _1 :: i32
-%0:
-    _0 = #add_i32(_1, 1 :: i32)
+    call @identity(22 :: i32) -> _0
     return
 }
 
 fn @identity {
     ret _0 :: T
     arg _1 :: T
+    tmp _2 :: T
 %0:
-    _0 = _1
-    return
-}
-
-fn @apply {
-    ret _0 :: B
-    arg _1 :: (A) -> (B)
-    arg _2 :: A
-%0:
-    call _1(_2) -> _0
+    _2 = _1
+    _0 = _2
     return
 }

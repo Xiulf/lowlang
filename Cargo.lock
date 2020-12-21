@@ -255,6 +255,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lowlang"
+version = "0.1.0"
+dependencies = [
+ "analysis",
+ "assemble",
+ "codegen",
+ "eval",
+ "ir",
+ "transform",
+]
+
+[[package]]
 name = "object"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

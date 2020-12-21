@@ -81,6 +81,16 @@ pub trait TransMethods<'ctx> {
         block: <Self::Backend as Backend<'ctx>>::Block,
     );
 
+    fn trans_init(
+        fx: &mut FunctionCtx<'_, 'ctx, '_, Self::Backend>,
+        place: <Self::Backend as Backend<'ctx>>::Place,
+    );
+
+    fn trans_drop(
+        fx: &mut FunctionCtx<'_, 'ctx, '_, Self::Backend>,
+        place: <Self::Backend as Backend<'ctx>>::Place,
+    );
+
     fn trans_place(
         fx: &mut FunctionCtx<'_, 'ctx, '_, Self::Backend>,
         place: &ir::Place,
@@ -228,26 +238,23 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
     }
 
     pub fn build(mut self) -> obj_file::ObjectFile {
-        let mut func_ids = Vec::new();
-        let mut static_ids = Vec::new();
+        let mut func_ids = HashMap::new();
+        let mut static_ids = HashMap::new();
         let ir = self.ir;
 
         for decl in &ir.decls {
             if let ir::Type::Func(_) = &decl.ty {
-                func_ids.push(B::declare_func(&mut self, decl));
+                func_ids.insert(decl.id, B::declare_func(&mut self, decl));
             } else {
-                static_ids.push(B::declare_static(&mut self, decl));
+                static_ids.insert(decl.id, B::declare_static(&mut self, decl));
             }
         }
-
-        let mut func_ids = func_ids.into_iter();
-        let mut static_ids = static_ids.into_iter();
 
         for body in &ir.bodies {
             let decl = &ir.decls[body.decl];
 
             if let ir::Type::Func(_) = &decl.ty {
-                let func_id = func_ids.next().unwrap();
+                let func_id = func_ids.remove(&decl.id).unwrap();
                 let builder = B::create_builder(&mut self.backend, &mut self.ctx);
                 let mut fx = FunctionCtx::new(&mut self, builder, body);
 
@@ -260,6 +267,16 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
 
                     for stmt in &block.stmts {
                         match stmt {
+                            ir::Stmt::VarLive(local) => {
+                                let place = fx.locals[local].clone();
+
+                                B::trans_init(&mut fx, place)
+                            }
+                            ir::Stmt::VarDead(local) => {
+                                let place = fx.locals[local].clone();
+
+                                B::trans_drop(&mut fx, place)
+                            }
                             ir::Stmt::Assign(place, rvalue) => {
                                 let place = B::trans_place(&mut fx, place);
 
@@ -286,7 +303,7 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
 
                 B::define_func(&mut fx, func_id);
             } else {
-                let static_id = static_ids.next().unwrap();
+                let static_id = static_ids.remove(&decl.id).unwrap();
 
                 B::define_static(&mut self, static_id, body);
             }

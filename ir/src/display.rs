@@ -130,6 +130,8 @@ impl Display for Module {
 
         let fmt_stmt = |stmt: &Stmt, f: &mut Formatter| -> Result {
             match stmt {
+                Stmt::VarLive(local) => write!(f, "init {}", local),
+                Stmt::VarDead(local) => write!(f, "drop {}", local),
                 Stmt::Assign(place, rvalue) => {
                     fmt_place(place, f, self)?;
                     write!(f, " = ")?;
@@ -171,7 +173,7 @@ impl Display for Module {
             match term {
                 Term::Abort => write!(f, "\x1B[0;31mabort\x1B[0m"),
                 Term::Return => write!(f, "\x1B[0;31mreturn\x1B[0m"),
-                Term::Jump(to) => write!(f, "\x1Bp0;31mjump\x1B[0m {}", to),
+                Term::Jump(to) => write!(f, "\x1B[0;31mjump\x1B[0m {}", to),
                 Term::Switch(op, vals, blocks) => {
                     write!(f, "\x1B[0;31mswitch\x1B[0m ")?;
                     fmt_op(op, f, self)?;
@@ -305,6 +307,11 @@ impl Display for LocalKind {
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
+            Type::U8 => write!(f, "\x1B[0;33mu8\x1B[0m"),
+            Type::U16 => write!(f, "\x1B[0;33mu16\x1B[0m"),
+            Type::U32 => write!(f, "\x1B[0;33mu32\x1B[0m"),
+            Type::U64 => write!(f, "\x1B[0;33mu64\x1B[0m"),
+            Type::U128 => write!(f, "\x1B[0;33mu128\x1B[0m"),
             Type::I8 => write!(f, "\x1B[0;33mi8\x1B[0m"),
             Type::I16 => write!(f, "\x1B[0;33mi16\x1B[0m"),
             Type::I32 => write!(f, "\x1B[0;33mi32\x1B[0m"),

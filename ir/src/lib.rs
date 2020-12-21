@@ -9,11 +9,15 @@ pub use builder::Builder;
 use index_vec::IndexVec;
 use std::collections::HashMap;
 
+pub type Decls = IndexVec<DeclId, Decl>;
+pub type Impls = IndexVec<ImplId, Impl>;
+pub type Bodies = IndexVec<BodyId, Body>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
-    pub decls: IndexVec<DeclId, Decl>,
-    pub impls: IndexVec<ImplId, Impl>,
-    pub bodies: IndexVec<BodyId, Body>,
+    pub decls: Decls,
+    pub impls: Impls,
+    pub bodies: Bodies,
 }
 
 index_vec::define_index_type! {
@@ -104,6 +108,8 @@ pub struct BlockData {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
+    VarLive(Local),
+    VarDead(Local),
     Assign(Place, RValue),
     Call(Vec<Place>, Operand, Vec<Operand>),
 }
@@ -154,6 +160,11 @@ pub enum Const {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
     I8,
     I16,
     I32,

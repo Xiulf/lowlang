@@ -51,6 +51,18 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
         fx.bcx.switch_to_block(block);
     }
 
+    fn trans_init(
+        fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
+        place: place::Place<'ctx>,
+    ) {
+    }
+
+    fn trans_drop(
+        fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
+        place: place::Place<'ctx>,
+    ) {
+    }
+
     fn trans_place(
         fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
         place: &ir::Place,

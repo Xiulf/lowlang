@@ -1,0 +1,13 @@
+[package]
+name = "lowlang"
+version = "0.1.0"
+authors = ["Cyberduc-k <tttymo@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+ir = { path = "../ir" }
+transform = { path = "../transform" }
+analysis = { path = "../analysis" }
+eval = { path = "../eval" }
+codegen = { path = "../codegen" }
+assemble = { path = "../assemble" }

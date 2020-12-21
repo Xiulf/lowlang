@@ -80,6 +80,7 @@ impl<'ctx> ConstMethods<'ctx> for ClifBackend<'ctx> {
 
         rec(mcx, &mut dcx, c, layout, &mut bytes);
 
+        bytes.resize(bytes.capacity(), 0);
         dcx.define(bytes.into());
         mcx.module.define_data(data_id, &dcx).unwrap();
         data_id

@@ -14,7 +14,11 @@ fn main() {
         &mut module,
     );
 
-    // println!("{}", module);
+    analysis::analyze(analysis::lifetime::LifetimeAnalyzer::new(), &mut module);
 
-    assemble::assemble(&module, target);
+    println!("{}", module);
+
+    let obj = assemble::assemble(&module, target);
+
+    obj.copy(&std::path::PathBuf::from("test.o"));
 }

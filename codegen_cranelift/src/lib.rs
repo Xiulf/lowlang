@@ -23,7 +23,7 @@ mod clif {
 }
 
 pub struct ClifBackend<'ctx> {
-    func_ctx: *mut clif::FunctionBuilderContext,
+    func_ctx: Option<&'static mut clif::FunctionBuilderContext>,
     func_ids: HashMap<ir::DeclId, (clif::FuncId, clif::Signature)>,
     data_ids: HashMap<ir::DeclId, clif::DataId>,
     ssa_vars: u32,
@@ -34,7 +34,7 @@ pub struct ClifBackend<'ctx> {
 impl<'ctx> ClifBackend<'ctx> {
     pub fn new() -> Self {
         ClifBackend {
-            func_ctx: std::ptr::null_mut(),
+            func_ctx: None,
             func_ids: HashMap::new(),
             data_ids: HashMap::new(),
             ssa_vars: 0,
@@ -72,11 +72,13 @@ impl<'ctx> Backend<'ctx> for ClifBackend<'ctx> {
     }
 
     fn create_builder(&mut self, ctx: &mut Self::Context) -> Self::Builder {
-        self.func_ctx = Box::into_raw(Box::new(clif::FunctionBuilderContext::new()));
+        self.func_ctx = Some(Box::leak(Box::new(clif::FunctionBuilderContext::new())));
 
         let func: *mut _ = &mut ctx.func;
+        let func_ctx: *mut _ = *self.func_ctx.as_mut().unwrap();
 
-        clif::FunctionBuilder::new(unsafe { &mut *func }, unsafe { &mut *self.func_ctx })
+        // SAFETY: unsafe blocks are used to correct the lifetimes
+        clif::FunctionBuilder::new(unsafe { &mut *func }, unsafe { &mut *func_ctx })
     }
 
     fn finish(mcx: ModuleCtx<'_, 'ctx, Self>) -> obj_file::ObjectFile {
@@ -99,7 +101,9 @@ impl<'ctx> ClifBackend<'ctx> {
 impl<'ctx> Drop for ClifBackend<'ctx> {
     fn drop(&mut self) {
         unsafe {
-            Box::from_raw(self.func_ctx);
+            if let Some(func_ctx) = self.func_ctx.take() {
+                Box::from_raw(func_ctx);
+            }
         }
     }
 }
