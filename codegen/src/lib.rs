@@ -267,12 +267,12 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
 
                     for stmt in &block.stmts {
                         match stmt {
-                            ir::Stmt::VarLive(local) => {
+                            ir::Stmt::Init(local) => {
                                 let place = fx.locals[local].clone();
 
                                 B::trans_init(&mut fx, place)
                             }
-                            ir::Stmt::VarDead(local) => {
+                            ir::Stmt::Drop(local) => {
                                 let place = fx.locals[local].clone();
 
                                 B::trans_drop(&mut fx, place)

@@ -130,8 +130,8 @@ impl Display for Module {
 
         let fmt_stmt = |stmt: &Stmt, f: &mut Formatter| -> Result {
             match stmt {
-                Stmt::VarLive(local) => write!(f, "init {}", local),
-                Stmt::VarDead(local) => write!(f, "drop {}", local),
+                Stmt::Init(local) => write!(f, "init {}", local),
+                Stmt::Drop(local) => write!(f, "drop {}", local),
                 Stmt::Assign(place, rvalue) => {
                     fmt_place(place, f, self)?;
                     write!(f, " = ")?;

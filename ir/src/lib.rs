@@ -108,8 +108,8 @@ pub struct BlockData {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
-    VarLive(Local),
-    VarDead(Local),
+    Init(Local),
+    Drop(Local),
     Assign(Place, RValue),
     Call(Vec<Place>, Operand, Vec<Operand>),
 }

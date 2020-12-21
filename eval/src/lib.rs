@@ -60,8 +60,8 @@ impl<'ir> EvalCtx<'ir> {
 
     fn eval_stmt(&mut self, stmt: &'ir Stmt) {
         match stmt {
-            Stmt::VarLive(_) => {}
-            Stmt::VarDead(_) => {}
+            Stmt::Init(_) => {}
+            Stmt::Drop(_) => {}
             Stmt::Assign(place, rvalue) => {
                 let val = self.eval_rvalue(rvalue);
 
