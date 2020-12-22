@@ -1,10 +1,11 @@
 use crate::Analyzer;
 use ir::visitor::Visitor;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use transform::Transform;
 
 pub struct LifetimeAnalyzer {
     alive: HashSet<ir::Local>,
+    ties: HashMap<ir::Local, ir::Local>,
     annotations: Vec<Annotation>,
 }
 
@@ -22,6 +23,7 @@ impl LifetimeAnalyzer {
     pub fn new() -> Self {
         LifetimeAnalyzer {
             alive: HashSet::new(),
+            ties: HashMap::new(),
             annotations: Vec::new(),
         }
     }
@@ -67,6 +69,7 @@ impl Visitor for LifetimeAnalyzer {
         let root = body.blocks.first().unwrap().id;
 
         self.alive.clear();
+        self.ties.clear();
         self.find_inits(body, Vec::new(), root);
     }
 }
@@ -94,6 +97,12 @@ impl LifetimeAnalyzer {
                 ir::Stmt::Assign(place, rvalue) => {
                     self.place_lifetime(place, loc, true);
                     self.rvalue_lifetime(rvalue, loc, true);
+
+                    if let ir::RValue::AddrOf(rhs) = rvalue {
+                        if place.elems.is_empty() && rhs.elems.is_empty() {
+                            self.ties.insert(place.local, rhs.local);
+                        }
+                    }
                 }
                 ir::Stmt::Call(rets, func, args) => {
                     for ret in rets {
@@ -229,6 +238,17 @@ impl LifetimeAnalyzer {
                 loc,
                 state,
             });
+
+            if let Some(tie) = self.ties.get(&place.local) {
+                if !self.alive.contains(tie) {
+                    self.alive.insert(*tie);
+                    self.annotations.push(Annotation {
+                        local: *tie,
+                        loc,
+                        state: false,
+                    });
+                }
+            }
         }
 
         for elem in &place.elems {
