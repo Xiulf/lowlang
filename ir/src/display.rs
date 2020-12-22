@@ -130,8 +130,8 @@ impl Display for Module {
 
         let fmt_stmt = |stmt: &Stmt, f: &mut Formatter| -> Result {
             match stmt {
-                Stmt::Init(local) => write!(f, "init {}", local),
-                Stmt::Drop(local) => write!(f, "drop {}", local),
+                Stmt::Init(local) => write!(f, "\x1B[0;31minit {}", local),
+                Stmt::Drop(local) => write!(f, "\x1B[0;31mdrop {}", local),
                 Stmt::Assign(place, rvalue) => {
                     fmt_place(place, f, self)?;
                     write!(f, " = ")?;

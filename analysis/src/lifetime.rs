@@ -66,12 +66,17 @@ impl Visitor for LifetimeAnalyzer {
     fn visit_body(&mut self, body: &ir::Body) {
         let root = body.blocks.first().unwrap().id;
 
-        self.block_lifetimes(body, Vec::new(), root);
+        self.alive.clear();
+        self.find_inits(body, Vec::new(), root);
     }
 }
 
 impl LifetimeAnalyzer {
-    fn block_lifetimes(&mut self, body: &ir::Body, mut prev: Vec<ir::Block>, block: ir::Block) {
+    fn reverse_anns(&mut self, start: usize) {
+        self.annotations[start..].reverse();
+    }
+
+    fn find_inits(&mut self, body: &ir::Body, mut prev: Vec<ir::Block>, block: ir::Block) {
         let data = &body.blocks[block];
 
         for (i, stmt) in data.stmts.iter().enumerate() {
@@ -82,7 +87,9 @@ impl LifetimeAnalyzer {
             };
 
             match stmt {
-                ir::Stmt::Init(_) => {}
+                ir::Stmt::Init(local) => {
+                    self.alive.insert(*local);
+                }
                 ir::Stmt::Drop(_) => {}
                 ir::Stmt::Assign(place, rvalue) => {
                     self.place_lifetime(place, loc, true);
@@ -100,6 +107,104 @@ impl LifetimeAnalyzer {
                     }
                 }
             }
+        }
+
+        let succ = match &data.term {
+            ir::Term::Abort => Vec::new(),
+            ir::Term::Return => Vec::new(),
+            ir::Term::Jump(next) => vec![*next],
+            ir::Term::Switch(op, _, next) => {
+                self.op_lifetime(
+                    op,
+                    ir::Location {
+                        body: body.id,
+                        stmt: data.stmts.len(),
+                        block,
+                    },
+                    true,
+                );
+
+                next.clone()
+            }
+        };
+
+        if succ.is_empty() {
+            let alive = HashSet::with_capacity(self.alive.len());
+            let alive = std::mem::replace(&mut self.alive, alive);
+
+            self.find_drops(body, prev, block, block);
+            self.alive = alive;
+        } else {
+            prev.push(block);
+
+            for next in succ {
+                self.find_inits(body, prev.clone(), next);
+            }
+        }
+    }
+
+    fn find_drops(
+        &mut self,
+        body: &ir::Body,
+        mut prev: Vec<ir::Block>,
+        block: ir::Block,
+        next_block: ir::Block,
+    ) {
+        let data = &body.blocks[block];
+
+        match &data.term {
+            ir::Term::Abort => {}
+            ir::Term::Return => {}
+            ir::Term::Jump(_) => {}
+            ir::Term::Switch(op, _, _) => {
+                self.op_lifetime(
+                    op,
+                    ir::Location {
+                        body: body.id,
+                        block: next_block,
+                        stmt: 0,
+                    },
+                    false,
+                );
+            }
+        }
+
+        let start = self.annotations.len();
+
+        for (i, stmt) in data.stmts.iter().enumerate().rev() {
+            let loc = ir::Location {
+                body: body.id,
+                stmt: i + 1,
+                block,
+            };
+
+            match stmt {
+                ir::Stmt::Init(_) => {}
+                ir::Stmt::Drop(local) => {
+                    self.alive.insert(*local);
+                }
+                ir::Stmt::Assign(place, rvalue) => {
+                    self.place_lifetime(place, loc, false);
+                    self.rvalue_lifetime(rvalue, loc, false);
+                }
+                ir::Stmt::Call(rets, func, args) => {
+                    for ret in rets {
+                        self.place_lifetime(ret, loc, false);
+                    }
+
+                    self.op_lifetime(func, loc, false);
+
+                    for arg in args {
+                        self.op_lifetime(arg, loc, false);
+                    }
+                }
+            }
+        }
+
+        self.reverse_anns(start);
+
+        if let Some(next) = prev.pop() {
+            self.find_drops(body, prev, next, block);
         }
     }
 
