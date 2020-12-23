@@ -45,31 +45,39 @@ impl VisitorMut for WitnessTransform {
         self.super_module(module);
     }
 
+    fn visit_decl(&mut self, decl: &mut ir::Decl) {
+        if !decl.attrs.c_abi {
+            self.super_decl(decl);
+        }
+    }
+
     fn visit_body(&mut self, body: &mut ir::Body) {
-        self.body = body;
-        let mut gen = IndexSet::new();
+        if !self.module().decls[body.decl].attrs.c_abi {
+            self.body = body;
+            let mut gen = IndexSet::new();
 
-        for local in body.locals.iter().rev() {
-            if let ir::LocalKind::Ret | ir::LocalKind::Arg = local.kind {
-                collect_generic(&local.ty, &mut gen);
+            for local in body.locals.iter().rev() {
+                if let ir::LocalKind::Ret | ir::LocalKind::Arg = local.kind {
+                    collect_generic(&local.ty, &mut gen);
+                }
             }
+
+            for ty in gen {
+                let ty = ir::Type::Ptr(Box::new(ir::Type::Type(ty)));
+                let local = body.locals.next_idx();
+
+                body.locals.insert(
+                    local,
+                    ir::LocalData {
+                        id: local,
+                        kind: ir::LocalKind::Arg,
+                        ty,
+                    },
+                );
+            }
+
+            self.super_body(body);
         }
-
-        for ty in gen {
-            let ty = ir::Type::Ptr(Box::new(ir::Type::Type(ty)));
-            let local = body.locals.next_idx();
-
-            body.locals.insert(
-                local,
-                ir::LocalData {
-                    id: local,
-                    kind: ir::LocalKind::Arg,
-                    ty,
-                },
-            );
-        }
-
-        self.super_body(body);
     }
 
     fn visit_stmt(&mut self, stmt: &mut ir::Stmt, _loc: ir::Location) {

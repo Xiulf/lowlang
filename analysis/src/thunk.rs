@@ -109,6 +109,7 @@ impl Transform for ThunkTransform {
                     name,
                     linkage: ir::Linkage::Local,
                     ty: ir::Type::Func(thunk.into.clone()),
+                    attrs: ir::Attrs::default(),
                 },
             );
 

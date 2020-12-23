@@ -110,27 +110,31 @@ impl VisitorMut for GenericFixer {
         }
 
         for decl in decls {
-            self.visit_decl(decl);
+            if !decl.attrs.c_abi {
+                self.visit_decl(decl);
+            }
         }
     }
 
     fn visit_body(&mut self, body: &mut ir::Body) {
-        self.body = body;
+        if !self.module().decls[body.decl].attrs.c_abi {
+            self.body = body;
 
-        let ir::Body { locals, blocks, .. } = body;
+            let ir::Body { locals, blocks, .. } = body;
 
-        for block in blocks.iter_mut() {
-            self.visit_block(block, body.id);
-        }
+            for block in blocks.iter_mut() {
+                self.visit_block(block, body.id);
+            }
 
-        for local in locals {
-            self.visit_local(local);
-        }
+            for local in locals {
+                self.visit_local(local);
+            }
 
-        let insert = std::mem::replace(&mut self.insert, Vec::new());
+            let insert = std::mem::replace(&mut self.insert, Vec::new());
 
-        for (loc, stmt) in insert.into_iter().rev() {
-            blocks[loc.block].stmts.insert(loc.stmt, stmt);
+            for (loc, stmt) in insert.into_iter().rev() {
+                blocks[loc.block].stmts.insert(loc.stmt, stmt);
+            }
         }
     }
 

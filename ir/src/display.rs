@@ -258,8 +258,8 @@ impl Display for Decl {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(
             f,
-            "\x1B[0;31m{}\x1B[0;34m @{}\x1B[0m :: {}",
-            self.linkage, self.name, self.ty
+            "{}\x1B[0;31m{}\x1B[0;34m @{}\x1B[0m :: {}",
+            self.attrs, self.linkage, self.name, self.ty
         )
     }
 }
@@ -272,6 +272,16 @@ impl Display for Linkage {
             Linkage::Hidden => write!(f, "hidden"),
             Linkage::Local => write!(f, "local"),
         }
+    }
+}
+
+impl Display for Attrs {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        if self.c_abi {
+            writeln!(f, "\x1B[0;35m@c_abi")?;
+        }
+
+        Ok(())
     }
 }
 

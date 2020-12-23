@@ -30,13 +30,17 @@ macro_rules! define_visitor {
                 self.super_block(block, body);
             }
 
-            fn visit_stmt(&mut self, stmt: &$($mut)? Stmt, _loc: Location) {
-                self.super_stmt(stmt);
+            fn visit_stmt(&mut self, stmt: &$($mut)? Stmt, loc: Location) {
+                self.super_stmt(stmt, loc);
             }
 
             fn visit_term(&mut self, term: &$($mut)? Term, _loc: Location) {
                 self.super_term(term);
             }
+
+            fn visit_init(&mut self, _local: Local, _loc: Location) {}
+
+            fn visit_drop(&mut self, _local: Local, _loc: Location) {}
 
             fn visit_rvalue(&mut self, rvalue: &$($mut)? RValue) {
                 self.super_rvalue(rvalue);
@@ -116,10 +120,10 @@ macro_rules! define_visitor {
                 self.visit_term(term, Location { body, block: *id, stmt: stmts.len() });
             }
 
-            fn super_stmt(&mut self, stmt: &$($mut)? Stmt) {
+            fn super_stmt(&mut self, stmt: &$($mut)? Stmt, loc: Location) {
                 match stmt {
-                    Stmt::Init(_) => {},
-                    Stmt::Drop(_) => {},
+                    Stmt::Init(local) => self.visit_init(*local, loc),
+                    Stmt::Drop(local) => self.visit_drop(*local, loc),
                     Stmt::Assign(place, rvalue) => {
                         self.visit_place(place);
                         self.visit_rvalue(rvalue);

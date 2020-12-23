@@ -30,6 +30,7 @@ pub struct Decl {
     pub linkage: Linkage,
     pub name: String,
     pub ty: Type,
+    pub attrs: Attrs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,17 @@ pub enum Linkage {
     Export,
     Local,
     Hidden,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Attrs {
+    pub c_abi: bool,
+}
+
+impl Default for Attrs {
+    fn default() -> Self {
+        Attrs { c_abi: false }
+    }
 }
 
 index_vec::define_index_type! {

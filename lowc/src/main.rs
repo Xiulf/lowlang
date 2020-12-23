@@ -5,16 +5,7 @@ fn main() {
     let mut module = ir::parser::parse(&source).unwrap();
     let target = target_lexicon::Triple::host();
 
-    analysis::analyze(analysis::witness::WitnessAnalyzer, &mut module);
-    analysis::analyze(analysis::thunk::ThunkAnalyzer::new(), &mut module);
-    analysis::analyze(analysis::generic::GenericAnalyzer, &mut module);
-    analysis::analyze(analysis::copy::CopyAnalyzer, &mut module);
-    analysis::analyze(
-        analysis::type_info::TypeInfoAnalyzer::new(&target),
-        &mut module,
-    );
-
-    analysis::analyze(analysis::lifetime::LifetimeAnalyzer::new(), &mut module);
+    analysis::mandatory(&mut module, &target);
 
     println!("{}", module);
 

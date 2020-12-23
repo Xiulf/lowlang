@@ -77,6 +77,7 @@ fn parse_decl(
             linkage,
             name,
             ty,
+            attrs: Attrs::default(),
         },
     );
 

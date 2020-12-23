@@ -149,6 +149,7 @@ impl<'a> Transform for TypeInfoTransform<'a> {
                     name: format!("__type_info_{}", decl.index()),
                     linkage: ir::Linkage::Hidden,
                     ty: ir::Type::Type(String::new()),
+                    attrs: ir::Attrs::default(),
                 },
             );
 

@@ -226,7 +226,7 @@ impl<'ctx> codegen::Place<'ctx> for Place<'ctx> {
                 _ if src_ty.is_vector() && dst_ty.is_vector() => {
                     fx.bcx.ins().raw_bitcast(dst_ty, data)
                 }
-                _ => unreachable!(),
+                _ => unreachable!("{} != {}", src_ty, dst_ty),
             };
 
             fx.bcx.def_var(var, data);

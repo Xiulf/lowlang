@@ -52,14 +52,14 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
     }
 
     fn trans_init(
-        fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
-        place: place::Place<'ctx>,
+        _fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
+        _place: place::Place<'ctx>,
     ) {
     }
 
     fn trans_drop(
-        fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
-        place: place::Place<'ctx>,
+        _fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
+        _place: place::Place<'ctx>,
     ) {
     }
 
@@ -179,8 +179,68 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
 
                 intrinsic!(fx, name, args[..], place, [
                     (simple "add_i32"(a, b) => iadd),
+                    (simple "sub_i32"(a, b) => isub),
+                    (simple "mul_i32"(a, b) => imul),
+                    (simple "div_i32"(a, b) => sdiv),
+                    (simple "rem_i32"(a, b) => srem),
+                    (complex "lt_i32"(a, b) => {
+                        let val = fx.bcx.ins().icmp(clif::IntCC::SignedLessThan, a, b);
+                        let val = fx.bcx.ins().bint(clif::types::I8, val);
+                        value::Value::new_val(val, place.layout.clone())
+                    }),
+                    (complex "le_i32"(a, b) => {
+                        let val = fx.bcx.ins().icmp(clif::IntCC::SignedLessThanOrEqual, a, b);
+                        let val = fx.bcx.ins().bint(clif::types::I8, val);
+                        value::Value::new_val(val, place.layout.clone())
+                    }),
+                    (complex "gt_i32"(a, b) => {
+                        let val = fx.bcx.ins().icmp(clif::IntCC::SignedGreaterThan, a, b);
+                        let val = fx.bcx.ins().bint(clif::types::I8, val);
+                        value::Value::new_val(val, place.layout.clone())
+                    }),
+                    (complex "ge_i32"(a, b) => {
+                        let val = fx.bcx.ins().icmp(clif::IntCC::SignedGreaterThanOrEqual, a, b);
+                        let val = fx.bcx.ins().bint(clif::types::I8, val);
+                        value::Value::new_val(val, place.layout.clone())
+                    }),
+                    (complex "eq_i32"(a, b) => {
+                        let val = fx.bcx.ins().icmp(clif::IntCC::Equal, a, b);
+                        let val = fx.bcx.ins().bint(clif::types::I8, val);
+                        value::Value::new_val(val, place.layout.clone())
+                    }),
+                    (complex "ne_i32"(a, b) => {
+                        let val = fx.bcx.ins().icmp(clif::IntCC::NotEqual, a, b);
+                        let val = fx.bcx.ins().bint(clif::types::I8, val);
+                        value::Value::new_val(val, place.layout.clone())
+                    }),
                     (complex "memcpy"(dst, src, n) => {
                         fx.bcx.call_memcpy(fx.mcx.module.target_config(), dst, src, n);
+                        value::Value::new_unit()
+                    }),
+                    (complex "stack_alloc"(n) => {
+                        let mut malloc = fx.module.make_signature();
+                        let ptr_type = fx.module.target_config().pointer_type();
+
+                        malloc.returns.push(clif::AbiParam::new(ptr_type));
+                        malloc.params.push(clif::AbiParam::new(ptr_type));
+
+                        let malloc = fx.mcx.module.declare_function("malloc", clif::Linkage::Import, &malloc).unwrap();
+                        let malloc = fx.mcx.module.declare_func_in_func(malloc, &mut fx.bcx.func);
+                        let inst = fx.bcx.ins().call(malloc, &[n]);
+                        let val = fx.bcx.inst_results(inst)[0];
+
+                        value::Value::new_val(val, place.layout.clone())
+                    }),
+                    (complex "stack_free"(ptr) => {
+                        let mut free = fx.module.make_signature();
+                        let ptr_type = fx.module.target_config().pointer_type();
+
+                        free.params.push(clif::AbiParam::new(ptr_type));
+
+                        let free = fx.mcx.module.declare_function("free", clif::Linkage::Import, &free).unwrap();
+                        let free = fx.mcx.module.declare_func_in_func(free, &mut fx.bcx.func);
+
+                        fx.bcx.ins().call(free, &[ptr]);
                         value::Value::new_unit()
                     }),
                 ]);
