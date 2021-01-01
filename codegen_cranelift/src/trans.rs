@@ -217,6 +217,7 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
                         fx.bcx.call_memcpy(fx.mcx.module.target_config(), dst, src, n);
                         value::Value::new_unit()
                     }),
+                    (simple "ptr_offset"(otr, offset) => iadd),
                     (complex "stack_alloc"(n) => {
                         let mut malloc = fx.module.make_signature();
                         let ptr_type = fx.module.target_config().pointer_type();
