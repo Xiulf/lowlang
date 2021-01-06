@@ -183,7 +183,11 @@ impl Display for Module {
                         write!(f, "{}: {}, ", val, block)?;
                     }
 
-                    write!(f, "\x1B[0;31motherwise\x1B[0m {}", blocks[blocks.len() - 1])
+                    write!(
+                        f,
+                        "\x1B[0;31motherwise\x1B[0m {}]",
+                        blocks[blocks.len() - 1]
+                    )
                 }
             }
         };

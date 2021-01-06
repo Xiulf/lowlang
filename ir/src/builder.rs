@@ -117,6 +117,10 @@ impl<'ir> Builder<'ir> {
         }
     }
 
+    pub fn term(&self) -> &Term {
+        &self.body.blocks[self.current_block].term
+    }
+
     pub fn abort(&mut self) {
         self.block().term = Term::Abort;
     }
