@@ -78,6 +78,9 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
 
                     res = res.index(fx, idx);
                 }
+                ir::PlaceElem::Downcast(idx) => {
+                    res = res.downcast_variant(fx, *idx);
+                }
             }
         }
 
@@ -102,6 +105,19 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
                     val
                 }
                 ir::Const::Tuple(vals) if vals.is_empty() => value::Value::new_unit(),
+                ir::Const::Variant(idx, cs, _) => {
+                    let as_variant = into.clone().downcast_variant(fx, *idx);
+
+                    for (i, c) in cs.iter().enumerate() {
+                        let place = as_variant.clone().field(fx, i);
+
+                        Self::trans_const(fx, c, Some(place));
+                    }
+
+                    Self::trans_set_discr(fx, into.clone(), *idx as u128);
+
+                    into.to_value(fx)
+                }
                 _ => unimplemented!(),
             }
         } else {
@@ -137,6 +153,49 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
         }
     }
 
+    fn trans_set_discr(
+        fx: &mut FunctionCtx<'_, 'ctx, '_, Self::Backend>,
+        place: place::Place<'ctx>,
+        val: u128,
+    ) {
+        match place.layout.variants.clone() {
+            ir::layout::Variants::Single { index } => {
+                assert_eq!(index, val as usize);
+            }
+            ir::layout::Variants::Multiple {
+                tag: _,
+                tag_field,
+                tag_encoding: ir::layout::TagEncoding::Direct,
+                variants: _,
+            } => {
+                let ptr = place.field(fx, tag_field);
+                let discr = value::Value::new_const(val, fx, ptr.layout.clone());
+
+                ptr.store(fx, discr);
+            }
+            ir::layout::Variants::Multiple {
+                tag: _,
+                tag_field,
+                tag_encoding:
+                    ir::layout::TagEncoding::Niche {
+                        dataful_variant,
+                        niche_variants,
+                        niche_start,
+                    },
+                variants: _,
+            } => {
+                if val != dataful_variant as u128 {
+                    let niche = place.field(fx, tag_field);
+                    let niche_value = val - *niche_variants.start() as u128;
+                    let niche_value = niche_value.wrapping_add(niche_start);
+                    let niche_val = value::Value::new_const(niche_value, fx, niche.layout.clone());
+
+                    niche.store(fx, niche_val);
+                }
+            }
+        }
+    }
+
     fn trans_rvalue(
         fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
         place: place::Place<'ctx>,
@@ -157,6 +216,37 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
                 let val = val.cast(fx, layout);
 
                 place.store(fx, val);
+            }
+            ir::RValue::GetDiscr(val) => {
+                let val = Self::trans_place(fx, val).to_value(fx);
+
+                if let ir::layout::Abi::Uninhabited = val.layout.abi {
+                    unreachable!();
+                }
+
+                let (_tag_scalar, tag_field, tag_encoding) = match &val.layout.variants {
+                    ir::layout::Variants::Single { index } => {
+                        let val = value::Value::new_const(*index as u128, fx, place.layout.clone());
+
+                        place.store(fx, val);
+                        return;
+                    }
+                    ir::layout::Variants::Multiple {
+                        tag,
+                        tag_field,
+                        tag_encoding,
+                        variants: _,
+                    } => (tag.clone(), *tag_field, tag_encoding.clone()),
+                };
+
+                let tag = val.field(fx, tag_field);
+
+                match tag_encoding {
+                    ir::layout::TagEncoding::Direct => {
+                        place.store(fx, tag);
+                    }
+                    ir::layout::TagEncoding::Niche { .. } => unimplemented!(),
+                }
             }
             ir::RValue::Intrinsic(name, args) => {
                 let args = args

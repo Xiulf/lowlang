@@ -75,6 +75,10 @@ impl<'ctx> ConstMethods<'ctx> for ClifBackend<'ctx> {
                     }
                     _ => unimplemented!(),
                 },
+                ir::Const::Variant(idx, cs, _) if cs.is_empty() => {
+                    bytes.extend(&idx.to_ne_bytes()[..layout.size.bytes() as usize])
+                }
+                ir::Const::Variant(_, _, _) => unimplemented!(),
             }
         }
 

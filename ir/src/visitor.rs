@@ -128,6 +128,7 @@ macro_rules! define_visitor {
                         self.visit_place(place);
                         self.visit_rvalue(rvalue);
                     }
+                    Stmt::SetDiscr(place, _) => self.visit_place(place),
                     Stmt::Call(rets, func, args) => {
                         for place in rets {
                             self.visit_place(place);
@@ -153,6 +154,7 @@ macro_rules! define_visitor {
                 match rvalue {
                     RValue::Use(op) => self.visit_op(op),
                     RValue::AddrOf(place) => self.visit_place(place),
+                    RValue::GetDiscr(place) => self.visit_place(place),
                     RValue::Cast(place, ty) => {
                         self.visit_place(place);
                         self.visit_type(ty);

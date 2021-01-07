@@ -158,4 +158,14 @@ impl<'ir> Builder<'ir> {
     pub fn call(&mut self, rets: Vec<Place>, func: Operand, args: Vec<Operand>) {
         self.block().stmts.push(Stmt::Call(rets, func, args));
     }
+
+    pub fn set_discr(&mut self, place: Place, val: u128) {
+        self.block().stmts.push(Stmt::SetDiscr(place, val))
+    }
+
+    pub fn get_discr(&mut self, place: Place, val: Place) {
+        self.block()
+            .stmts
+            .push(Stmt::Assign(place, RValue::GetDiscr(val)));
+    }
 }

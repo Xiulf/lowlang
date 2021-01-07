@@ -67,6 +67,7 @@ impl<'ir> EvalCtx<'ir> {
 
                 self.store(place, val);
             }
+            Stmt::SetDiscr(..) => unimplemented!(),
             Stmt::Call(..) => unimplemented!(),
         }
     }
@@ -114,6 +115,7 @@ impl<'ir> EvalCtx<'ir> {
 
                 Const::Ptr(Box::new(val))
             }
+            RValue::GetDiscr(..) => unimplemented!(),
             RValue::Cast(place, _) => self.load(place),
             RValue::Intrinsic(..) => unimplemented!(),
         }
@@ -144,6 +146,7 @@ impl<'ir> EvalCtx<'ir> {
                     _ => unreachable!(),
                 },
                 PlaceElem::Index(_idx) => unimplemented!(),
+                PlaceElem::Downcast(_) => unimplemented!(),
             }
         }
 
@@ -175,6 +178,7 @@ impl<'ir> EvalCtx<'ir> {
                     _ => unreachable!(),
                 },
                 PlaceElem::Index(_idx) => unimplemented!(),
+                PlaceElem::Downcast(_) => unimplemented!(),
             }
         }
 

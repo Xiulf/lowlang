@@ -48,6 +48,7 @@ impl Display for Module {
                     PlaceElem::Deref => write!(f, "(*")?,
                     PlaceElem::Field(_) => {}
                     PlaceElem::Index(_) => {}
+                    PlaceElem::Downcast(_) => write!(f, "(")?,
                 }
             }
 
@@ -62,6 +63,7 @@ impl Display for Module {
                         fmt_op(idx, f, this)?;
                         write!(f, "]")?;
                     }
+                    PlaceElem::Downcast(i) => write!(f, " as {})", i)?,
                 }
             }
 
@@ -90,6 +92,19 @@ impl Display for Module {
 
                     write!(f, ")")
                 }
+                Const::Variant(i, cs, ty) => {
+                    write!(f, "{}(", i)?;
+
+                    for (i, c) in cs.iter().enumerate() {
+                        if i != 0 {
+                            write!(f, ", ")?;
+                        }
+
+                        fmt_const(c, f, this)?;
+                    }
+
+                    write!(f, ") :: {}", ty)
+                }
             }
         }
 
@@ -105,6 +120,10 @@ impl Display for Module {
                 RValue::Use(op) => fmt_op(op, f, self),
                 RValue::AddrOf(place) => {
                     write!(f, "\x1B[0;31maddrof\x1B[0m ")?;
+                    fmt_place(place, f, self)
+                }
+                RValue::GetDiscr(place) => {
+                    write!(f, "\x1B[0;31mget_discr\x1B[0m ")?;
                     fmt_place(place, f, self)
                 }
                 RValue::Cast(place, ty) => {
@@ -136,6 +155,11 @@ impl Display for Module {
                     fmt_place(place, f, self)?;
                     write!(f, " = ")?;
                     fmt_rvalue(rvalue, f)
+                }
+                Stmt::SetDiscr(place, val) => {
+                    write!(f, "\x1B[0;31mset_discr\x1B[0m ")?;
+                    fmt_place(place, f, self)?;
+                    write!(f, ", \x1B[0;32m{}\x1B[0m", val)
                 }
                 Stmt::Call(rets, func, args) => {
                     write!(f, "\x1B[0;31mcall\x1B[0m ")?;
@@ -352,8 +376,17 @@ impl Display for Type {
                     .collect::<Vec<_>>()
                     .join(" | ")
             ),
+            Type::Tagged(tys) => write!(
+                f,
+                "({})",
+                tys.iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" / ")
+            ),
             Type::Opaque(name) => write!(f, "\x1B[0;33m{}\x1B[0m", name),
             Type::Func(sig) => sig.fmt(f),
+            Type::Discr(ty) => write!(f, "\x1B[0;33mdiscr\x1B[0m {}", ty),
         }
     }
 }

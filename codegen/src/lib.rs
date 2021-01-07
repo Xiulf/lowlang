@@ -108,6 +108,12 @@ pub trait TransMethods<'ctx> {
         rvalue: &ir::RValue,
     );
 
+    fn trans_set_discr(
+        fx: &mut FunctionCtx<'_, 'ctx, '_, Self::Backend>,
+        place: <Self::Backend as Backend<'ctx>>::Place,
+        val: u128,
+    );
+
     fn trans_call(
         fx: &mut FunctionCtx<'_, 'ctx, '_, Self::Backend>,
         rets: Vec<<Self::Backend as Backend<'ctx>>::Place>,
@@ -281,6 +287,11 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
                                 let place = B::trans_place(&mut fx, place);
 
                                 B::trans_rvalue(&mut fx, place, rvalue);
+                            }
+                            ir::Stmt::SetDiscr(place, val) => {
+                                let place = B::trans_place(&mut fx, place);
+
+                                B::trans_set_discr(&mut fx, place, *val);
                             }
                             ir::Stmt::Call(rets, func, args) => {
                                 let rets = rets

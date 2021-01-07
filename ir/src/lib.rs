@@ -123,6 +123,7 @@ pub enum Stmt {
     Init(Local),
     Drop(Local),
     Assign(Place, RValue),
+    SetDiscr(Place, u128),
     Call(Vec<Place>, Operand, Vec<Operand>),
 }
 
@@ -138,6 +139,7 @@ pub enum Term {
 pub enum RValue {
     Use(Operand),
     AddrOf(Place),
+    GetDiscr(Place),
     Cast(Place, Type),
     Intrinsic(String, Vec<Operand>),
 }
@@ -159,6 +161,7 @@ pub enum PlaceElem {
     Deref,
     Field(usize),
     Index(Operand),
+    Downcast(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,6 +171,7 @@ pub enum Const {
     Addr(DeclId),
     Tuple(Vec<Const>),
     Ptr(Box<Const>),
+    Variant(usize, Vec<Const>, Type),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -190,7 +194,9 @@ pub enum Type {
     Ptr(Box<Type>),
     Tuple(Vec<Type>),
     Union(Vec<Type>),
+    Tagged(Vec<Type>),
     Func(Signature),
+    Discr(Box<Type>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,6 +260,11 @@ impl Place {
         self.elems.push(PlaceElem::Index(idx));
         self
     }
+
+    pub fn downcast(mut self, idx: usize) -> Self {
+        self.elems.push(PlaceElem::Downcast(idx));
+        self
+    }
 }
 
 pub fn operand_type(module: &Module, body: &Body, op: &Operand) -> Type {
@@ -278,6 +289,7 @@ pub fn place_type(body: &Body, place: &Place) -> Type {
                 _ => unreachable!(),
             },
             PlaceElem::Index(_) => unimplemented!(),
+            PlaceElem::Downcast(_) => continue,
         }
     }
 
@@ -299,6 +311,7 @@ pub fn const_type(module: &Module, c: &Const) -> Type {
         }
         Const::Ptr(to) => Type::Ptr(Box::new(const_type(module, to))),
         Const::Tuple(cs) => Type::Tuple(cs.iter().map(|c| const_type(module, c)).collect()),
+        Const::Variant(_, _, ty) => ty.clone(),
     }
 }
 

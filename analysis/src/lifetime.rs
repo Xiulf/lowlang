@@ -104,6 +104,9 @@ impl LifetimeAnalyzer {
                         }
                     }
                 }
+                ir::Stmt::SetDiscr(place, _) => {
+                    self.place_lifetime(place, loc, true);
+                }
                 ir::Stmt::Call(rets, func, args) => {
                     for ret in rets {
                         self.place_lifetime(ret, loc, true);
@@ -196,6 +199,9 @@ impl LifetimeAnalyzer {
                     self.place_lifetime(place, loc, false);
                     self.rvalue_lifetime(rvalue, loc, false);
                 }
+                ir::Stmt::SetDiscr(place, _) => {
+                    self.place_lifetime(place, loc, false);
+                }
                 ir::Stmt::Call(rets, func, args) => {
                     for ret in rets {
                         self.place_lifetime(ret, loc, false);
@@ -221,6 +227,7 @@ impl LifetimeAnalyzer {
         match rvalue {
             ir::RValue::Use(op) => self.op_lifetime(op, loc, state),
             ir::RValue::AddrOf(place) => self.place_lifetime(place, loc, state),
+            ir::RValue::GetDiscr(place) => self.place_lifetime(place, loc, state),
             ir::RValue::Cast(place, _) => self.place_lifetime(place, loc, state),
             ir::RValue::Intrinsic(_, args) => {
                 for arg in args {
@@ -256,6 +263,7 @@ impl LifetimeAnalyzer {
                 ir::PlaceElem::Deref => {}
                 ir::PlaceElem::Field(_) => {}
                 ir::PlaceElem::Index(op) => self.op_lifetime(op, loc, state),
+                ir::PlaceElem::Downcast(_) => {}
             }
         }
     }

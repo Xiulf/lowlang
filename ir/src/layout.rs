@@ -92,6 +92,23 @@ pub fn layout_of(ty: &Type, target: &Triple) -> TyLayout {
                 largest_niche: None,
             }
         }
+        Type::Tagged(tys) => {
+            let lyts = tys
+                .iter()
+                .map(|t| layout_of(t, target).layout)
+                .collect::<Vec<_>>();
+
+            enum_layout(lyts, target)
+        }
+        Type::Discr(ty) => {
+            let layout = layout_of(ty, target);
+
+            if let Variants::Multiple { tag, .. } = &layout.variants {
+                Layout::scalar(tag.clone(), target)
+            } else {
+                unreachable!();
+            }
+        }
     };
 
     TyLayout {
@@ -130,6 +147,99 @@ fn struct_layout(fields: Vec<TyLayout>, target: &Triple) -> Layout {
         fields: FieldsShape::Arbitrary { offsets },
         variants: Variants::Single { index: 0 },
         largest_niche,
+    }
+}
+
+fn enum_layout(mut variants: Vec<Layout>, target: &Triple) -> Layout {
+    if variants.is_empty() {
+        Layout {
+            fields: FieldsShape::Arbitrary {
+                offsets: Vec::new(),
+            },
+            variants: Variants::Single { index: 0 },
+            largest_niche: None,
+            abi: Abi::Aggregate { sized: true },
+            size: Size::ZERO,
+            align: Align::from_bytes(1),
+            stride: Size::ZERO,
+        }
+    } else if variants.len() == 1 {
+        variants.remove(0)
+    } else {
+        let largest_niche = variants
+            .iter()
+            .filter_map(|v| v.largest_niche.clone())
+            .max_by_key(|niche| niche.available(target));
+
+        for (i, variant) in variants.iter_mut().enumerate() {
+            variant.variants = Variants::Single { index: i };
+        }
+
+        let largest = variants.iter().max_by_key(|v| v.size).unwrap();
+        let align = largest.align;
+        let mut size = largest.size;
+        let mut no_niche = |mut variants: Vec<Layout>| {
+            let tag_size = Size::from_bits(variants.len()).align_to(align);
+            let offsets = vec![Size::ZERO, tag_size];
+            let tag = Scalar {
+                value: Primitive::Int(
+                    match tag_size.bytes() {
+                        1 => Integer::I8,
+                        2 => Integer::I16,
+                        3 | 4 => Integer::I32,
+                        5 | 6 | 7 | 8 => Integer::I64,
+                        _ => Integer::I128,
+                    },
+                    false,
+                ),
+                valid_range: 0..=u128::max_value(),
+            };
+
+            let tag_encoding = TagEncoding::Direct;
+
+            size = size + tag_size;
+
+            for variant in &mut variants {
+                if let FieldsShape::Arbitrary { offsets } = &mut variant.fields {
+                    for offset in offsets {
+                        *offset = *offset + tag_size;
+                    }
+                }
+            }
+
+            (
+                FieldsShape::Arbitrary { offsets },
+                Variants::Multiple {
+                    tag,
+                    tag_encoding,
+                    variants,
+                    tag_field: 0,
+                },
+            )
+        };
+
+        let (fields, variants) = if let Some(niche) = largest_niche {
+            if niche.available(target) >= variants.len() as u128 {
+                // @TODO: implement niches
+                no_niche(variants)
+            } else {
+                no_niche(variants)
+            }
+        } else {
+            no_niche(variants)
+        };
+
+        let stride = size.align_to(align);
+
+        Layout {
+            fields,
+            variants,
+            largest_niche: None,
+            abi: Abi::Aggregate { sized: true },
+            size,
+            align,
+            stride,
+        }
     }
 }
 
@@ -314,7 +424,8 @@ impl TyLayout {
             | Type::F64
             | Type::Ptr(_)
             | Type::Func(_)
-            | Type::Opaque(_) => unreachable!(),
+            | Type::Opaque(_)
+            | Type::Discr(_) => unreachable!(),
             Type::Type(t) => match field {
                 0 => ptr_sized_int(target),
                 1 => ptr_sized_int(target),
@@ -330,6 +441,20 @@ impl TyLayout {
             },
             Type::Tuple(tys) => tys[field].clone(),
             Type::Union(tys) => tys[field].clone(),
+            Type::Tagged(tys) => match self.variants {
+                Variants::Single { index } => layout_of(&tys[index], target)
+                    .field(field, target)
+                    .ty
+                    .clone(),
+                Variants::Multiple { ref tag, .. } => {
+                    assert_eq!(field, 0);
+
+                    return TyLayout {
+                        layout: Layout::scalar(tag.clone(), target),
+                        ty: tag.value.ty(),
+                    };
+                }
+            },
         };
 
         layout_of(&ty, target)
