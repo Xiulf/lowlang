@@ -573,19 +573,33 @@ fn parse_const(
     }
 }
 
-fn parse_type(tokens: &[Token], i: usize) -> Result<(Type, usize), String> {
+fn parse_type(tokens: &[Token], i: usize) -> Result<(Ty, usize), String> {
+    let (ty, i) = parse_type_union(tokens, i)?;
+
+    Ok((Ty::new(ty), i))
+}
+
+fn parse_type_union(tokens: &[Token], i: usize) -> Result<(Type, usize), String> {
     let (ty, mut i) = parse_type_func(tokens, i)?;
-    let mut tys = vec![ty];
+    let mut tys = vec![Ty::new(ty)];
+    let mut tagged = false;
 
-    while let Token::Pipe = tokens[i] {
-        let (next, next_i) = parse_type_func(tokens, i + 1)?;
+    while i < tokens.len() {
+        match tokens[i] {
+            Token::Pipe if !tagged => {
+                let (next, next_i) = parse_type_func(tokens, i + 1)?;
 
-        tys.push(next);
-        i = next_i;
+                tys.push(Ty::new(next));
+                i = next_i;
+            }
+            _ => {
+                break;
+            }
+        }
     }
 
     if tys.len() == 1 {
-        Ok((tys.pop().unwrap(), i))
+        Ok((tys.remove(0).kind, i))
     } else {
         Ok((Type::Union(tys), i))
     }
@@ -621,7 +635,7 @@ fn parse_type_atom(tokens: &[Token], i: usize) -> Result<(Type, usize), String> 
     if let Token::Star = tokens[i] {
         let (to, i) = parse_type_atom(tokens, i + 1)?;
 
-        Ok((Type::Ptr(Box::new(to)), i))
+        Ok((Type::Ptr(Box::new(Ty::new(to))), i))
     } else if let Token::LParen = tokens[i] {
         let mut tys = Vec::new();
         let mut i = i + 1;

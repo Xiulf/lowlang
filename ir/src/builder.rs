@@ -36,7 +36,7 @@ impl<'ir> Builder<'ir> {
         block
     }
 
-    pub fn create_ret(&mut self, ty: Type) -> Local {
+    pub fn create_ret(&mut self, ty: Ty) -> Local {
         let local = self.body.locals.next_idx();
 
         self.body.locals.insert(
@@ -51,7 +51,7 @@ impl<'ir> Builder<'ir> {
         local
     }
 
-    pub fn create_arg(&mut self, ty: Type) -> Local {
+    pub fn create_arg(&mut self, ty: Ty) -> Local {
         let local = self.body.locals.next_idx();
 
         self.body.locals.insert(
@@ -66,7 +66,7 @@ impl<'ir> Builder<'ir> {
         local
     }
 
-    pub fn create_var(&mut self, ty: Type) -> Local {
+    pub fn create_var(&mut self, ty: Ty) -> Local {
         let local = self.body.locals.next_idx();
 
         self.body.locals.insert(
@@ -81,7 +81,7 @@ impl<'ir> Builder<'ir> {
         local
     }
 
-    pub fn create_tmp(&mut self, ty: Type) -> Local {
+    pub fn create_tmp(&mut self, ty: Ty) -> Local {
         let local = self.body.locals.next_idx();
 
         self.body.locals.insert(
@@ -100,11 +100,11 @@ impl<'ir> Builder<'ir> {
         &mut self.body.blocks[self.current_block]
     }
 
-    pub fn local_ty(&self, local: Local) -> Type {
+    pub fn local_ty(&self, local: Local) -> Ty {
         self.body.locals[local].ty.clone()
     }
 
-    pub fn placed(&mut self, op: Operand, ty: Type) -> Place {
+    pub fn placed(&mut self, op: Operand, ty: Ty) -> Place {
         match op {
             Operand::Place(place) => place,
             Operand::Const(_) => {

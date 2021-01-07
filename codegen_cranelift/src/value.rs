@@ -102,6 +102,8 @@ impl<'ctx> codegen::Value<'ctx> for Value<'ctx> {
         &self.layout
     }
 
+    // comment
+    #[track_caller]
     fn load_scalar(self, fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>) -> Self::Raw {
         match self.kind {
             ValueKind::Ref(ptr, None) => {
@@ -154,7 +156,13 @@ impl<'ctx> codegen::Value<'ctx> for Value<'ctx> {
 
     fn field(self, fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>, idx: usize) -> Self {
         match self.kind {
-            ValueKind::Val(_) => unimplemented!(),
+            ValueKind::Val(_) => {
+                if idx == 0 {
+                    self
+                } else {
+                    unreachable!();
+                }
+            }
             ValueKind::Ref(ptr, None) => {
                 let (field_ptr, field_layout) = gen_field(fx, ptr, None, self.layout, idx);
 

@@ -249,7 +249,7 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
         let ir = self.ir;
 
         for decl in &ir.decls {
-            if let ir::Type::Func(_) = &decl.ty {
+            if let ir::Type::Func(_) = &decl.ty.kind {
                 func_ids.insert(decl.id, B::declare_func(&mut self, decl));
             } else {
                 static_ids.insert(decl.id, B::declare_static(&mut self, decl));
@@ -259,7 +259,7 @@ impl<'ir, 'ctx, B: Backend<'ctx>> ModuleCtx<'ir, 'ctx, B> {
         for body in &ir.bodies {
             let decl = &ir.decls[body.decl];
 
-            if let ir::Type::Func(_) = &decl.ty {
+            if let ir::Type::Func(_) = &decl.ty.kind {
                 let func_id = func_ids.remove(&decl.id).unwrap();
                 let builder = B::create_builder(&mut self.backend, &mut self.ctx);
                 let mut fx = FunctionCtx::new(&mut self, builder, body);

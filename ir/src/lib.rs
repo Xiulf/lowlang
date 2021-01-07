@@ -29,7 +29,7 @@ pub struct Decl {
     pub id: DeclId,
     pub linkage: Linkage,
     pub name: String,
-    pub ty: Type,
+    pub ty: Ty,
     pub attrs: Attrs,
 }
 
@@ -92,7 +92,7 @@ index_vec::define_index_type! {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalData {
     pub id: Local,
-    pub ty: Type,
+    pub ty: Ty,
     pub kind: LocalKind,
 }
 
@@ -140,7 +140,7 @@ pub enum RValue {
     Use(Operand),
     AddrOf(Place),
     GetDiscr(Place),
-    Cast(Place, Type),
+    Cast(Place, Ty),
     Intrinsic(String, Vec<Operand>),
 }
 
@@ -166,12 +166,24 @@ pub enum PlaceElem {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Const {
-    Undefined(Type),
-    Scalar(u128, Type),
+    Undefined(Ty),
+    Scalar(u128, Ty),
     Addr(DeclId),
     Tuple(Vec<Const>),
     Ptr(Box<Const>),
-    Variant(usize, Vec<Const>, Type),
+    Variant(usize, Vec<Const>, Ty),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ty {
+    pub info: TyInfo,
+    pub kind: Type,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct TyInfo {
+    pub abi: Option<layout::Abi>,
+    pub valid_range: Option<std::ops::RangeInclusive<u128>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,18 +203,18 @@ pub enum Type {
     Type(String),
     Vwt(String),
     Opaque(String),
-    Ptr(Box<Type>),
-    Tuple(Vec<Type>),
-    Union(Vec<Type>),
-    Tagged(Vec<Type>),
+    Ptr(Box<Ty>),
+    Tuple(Vec<Ty>),
+    Union(Vec<Ty>),
+    Tagged(Vec<Ty>),
     Func(Signature),
-    Discr(Box<Type>),
+    Discr(Box<Ty>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
-    pub params: Vec<Type>,
-    pub rets: Vec<Type>,
+    pub params: Vec<Ty>,
+    pub rets: Vec<Ty>,
 }
 
 impl Body {
@@ -217,8 +229,8 @@ impl Body {
 
     pub fn gen_local(&self, gen: &str) -> Option<&LocalData> {
         self.locals.iter().find(|l| {
-            if let Type::Ptr(to) = &l.ty {
-                if let Type::Type(g) = &**to {
+            if let Type::Ptr(to) = &l.ty.kind {
+                if let Type::Type(g) = &to.kind {
                     g == gen
                 } else {
                     false
@@ -235,6 +247,33 @@ impl Body {
 
     pub fn rets(&self) -> impl Iterator<Item = &LocalData> {
         self.locals.iter().filter(|l| l.kind == LocalKind::Ret)
+    }
+}
+
+impl Ty {
+    pub fn new(kind: Type) -> Self {
+        Ty {
+            info: TyInfo::default(),
+            kind,
+        }
+    }
+
+    pub fn with_valid_range(mut self, range: std::ops::RangeInclusive<u128>) -> Self {
+        self.info.valid_range = Some(range);
+        self
+    }
+
+    pub fn with_abi(mut self, abi: layout::Abi) -> Self {
+        self.info.abi = Some(abi);
+        self
+    }
+}
+
+impl std::ops::Deref for Ty {
+    type Target = Type;
+
+    fn deref(&self) -> &Self::Target {
+        &self.kind
     }
 }
 
@@ -267,25 +306,25 @@ impl Place {
     }
 }
 
-pub fn operand_type(module: &Module, body: &Body, op: &Operand) -> Type {
+pub fn operand_type(module: &Module, body: &Body, op: &Operand) -> Ty {
     match op {
         Operand::Place(place) => place_type(body, place),
         Operand::Const(c) => const_type(module, c),
     }
 }
 
-pub fn place_type(body: &Body, place: &Place) -> Type {
+pub fn place_type(body: &Body, place: &Place) -> Ty {
     let mut ty = body.locals[place.local].ty.clone();
 
     for elem in &place.elems {
         match elem {
-            PlaceElem::Deref => match ty {
-                Type::Ptr(to) => ty = (*to).clone(),
+            PlaceElem::Deref => match ty.kind {
+                Type::Ptr(to) => ty = *to,
                 _ => unreachable!(),
             },
-            PlaceElem::Field(f) => match ty {
-                Type::Tuple(tys) => ty = tys[*f].clone(),
-                Type::Union(tys) => ty = tys[*f].clone(),
+            PlaceElem::Field(f) => match ty.kind {
+                Type::Tuple(mut tys) => ty = tys.swap_remove(*f),
+                Type::Union(mut tys) => ty = tys.swap_remove(*f),
                 _ => unreachable!(),
             },
             PlaceElem::Index(_) => unimplemented!(),
@@ -296,21 +335,23 @@ pub fn place_type(body: &Body, place: &Place) -> Type {
     ty
 }
 
-pub fn const_type(module: &Module, c: &Const) -> Type {
+pub fn const_type(module: &Module, c: &Const) -> Ty {
     match c {
         Const::Undefined(ty) => ty.clone(),
         Const::Scalar(_, ty) => ty.clone(),
         Const::Addr(decl) => {
             let ty = module.decls[*decl].ty.clone();
 
-            if let Type::Func(_) = ty {
+            if let Type::Func(_) = ty.kind {
                 ty
             } else {
-                Type::Ptr(Box::new(ty))
+                Ty::new(Type::Ptr(Box::new(ty)))
             }
         }
-        Const::Ptr(to) => Type::Ptr(Box::new(const_type(module, to))),
-        Const::Tuple(cs) => Type::Tuple(cs.iter().map(|c| const_type(module, c)).collect()),
+        Const::Ptr(to) => Ty::new(Type::Ptr(Box::new(const_type(module, to)))),
+        Const::Tuple(cs) => Ty::new(Type::Tuple(
+            cs.iter().map(|c| const_type(module, c)).collect(),
+        )),
         Const::Variant(_, _, ty) => ty.clone(),
     }
 }
@@ -331,15 +372,15 @@ impl Signature {
         rets: &[Place],
         module: &Module,
         body: &Body,
-    ) -> HashMap<String, Type> {
+    ) -> HashMap<String, Ty> {
         let mut res = HashMap::new();
 
-        fn rec(param: Type, arg: Type, res: &mut HashMap<String, Type>) {
-            match (param, arg) {
-                (Type::Opaque(t), arg) => {
+        fn rec(param: Ty, arg: Ty, res: &mut HashMap<String, Ty>) {
+            match (param.kind, &arg.kind) {
+                (Type::Opaque(t), _) => {
                     res.insert(t, arg);
                 }
-                (Type::Ptr(param), Type::Ptr(arg)) => rec(*param, *arg, res),
+                (Type::Ptr(param), Type::Ptr(arg)) => rec(*param, (**arg).clone(), res),
                 (_, _) => {}
             }
         }

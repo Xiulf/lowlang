@@ -63,7 +63,7 @@ impl VisitorMut for WitnessTransform {
             }
 
             for ty in gen {
-                let ty = ir::Type::Ptr(Box::new(ir::Type::Type(ty)));
+                let ty = ir::Ty::new(ir::Type::Ptr(Box::new(ir::Ty::new(ir::Type::Type(ty)))));
                 let local = body.locals.next_idx();
 
                 body.locals.insert(
@@ -84,10 +84,10 @@ impl VisitorMut for WitnessTransform {
         if let ir::Stmt::Call(_, func, args) = stmt {
             let func_ty = ir::operand_type(self.module(), self.body(), func);
 
-            if let ir::Type::Func(ir::Signature { params, .. }) = func_ty {
+            if let ir::Type::Func(ir::Signature { params, .. }) = func_ty.kind {
                 for param in params {
-                    if let ir::Type::Ptr(ref to) = param {
-                        if let ir::Type::Type(gen) = &**to {
+                    if let ir::Type::Ptr(ref to) = param.kind {
+                        if let ir::Type::Type(gen) = &to.kind {
                             let arg = if let Some(local) = self.body().gen_local(gen) {
                                 ir::Operand::Place(ir::Place {
                                     local: local.id,
@@ -105,8 +105,8 @@ impl VisitorMut for WitnessTransform {
         }
     }
 
-    fn visit_type(&mut self, ty: &mut ir::Type) {
-        if let ir::Type::Func(ir::Signature { params, rets }) = ty {
+    fn visit_type(&mut self, ty: &mut ir::Ty) {
+        if let ir::Type::Func(ir::Signature { params, rets }) = &mut ty.kind {
             let mut gen = IndexSet::new();
 
             for ty in params.iter_mut() {
@@ -120,14 +120,16 @@ impl VisitorMut for WitnessTransform {
             }
 
             for ty in gen {
-                params.push(ir::Type::Ptr(Box::new(ir::Type::Type(ty))));
+                params.push(ir::Ty::new(ir::Type::Ptr(Box::new(ir::Ty::new(
+                    ir::Type::Type(ty),
+                )))));
             }
         }
     }
 }
 
-fn collect_generic(ty: &ir::Type, gen: &mut IndexSet<String>) {
-    match ty {
+fn collect_generic(ty: &ir::Ty, gen: &mut IndexSet<String>) {
+    match &ty.kind {
         ir::Type::Opaque(name) => {
             gen.insert(name.clone());
         }

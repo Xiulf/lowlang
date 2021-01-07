@@ -177,7 +177,13 @@ impl<'ctx> codegen::Place<'ctx> for Place<'ctx> {
         let layout = self.layout.field(idx, &fx.target);
 
         match self.kind {
-            PlaceKind::Var(_) => unimplemented!(),
+            PlaceKind::Var(_) => {
+                if idx == 0 {
+                    return self;
+                } else {
+                    unreachable!();
+                }
+            }
             PlaceKind::VarPair(var1, var2) => match idx {
                 0 => {
                     return Place {

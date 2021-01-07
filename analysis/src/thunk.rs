@@ -72,7 +72,7 @@ impl Visitor for ThunkAnalyzer {
         if let ir::Stmt::Call(_, func, args) = stmt {
             let func_ty = ir::operand_type(self.module(), self.body(), func);
 
-            if let ir::Type::Func(ir::Signature { params, .. }) = func_ty {
+            if let ir::Type::Func(ir::Signature { params, .. }) = func_ty.kind {
                 for (param, arg) in params.iter().zip(args) {
                     if let ir::Operand::Const(ir::Const::Addr(decl)) = arg {
                         let arg_ty = ir::operand_type(self.module(), self.body(), arg);
@@ -108,7 +108,7 @@ impl Transform for ThunkTransform {
                     id,
                     name,
                     linkage: ir::Linkage::Local,
-                    ty: ir::Type::Func(thunk.into.clone()),
+                    ty: ir::Ty::new(ir::Type::Func(thunk.into.clone())),
                     attrs: ir::Attrs::default(),
                 },
             );

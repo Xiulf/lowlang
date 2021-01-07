@@ -58,7 +58,7 @@ macro_rules! define_visitor {
                 self.super_const(c);
             }
 
-            fn visit_type(&mut self, ty: &$($mut)? Type) {
+            fn visit_type(&mut self, ty: &$($mut)? Ty) {
                 self.super_type(ty);
             }
 
@@ -197,8 +197,8 @@ macro_rules! define_visitor {
                 }
             }
 
-            fn super_type(&mut self, ty: &$($mut)? Type) {
-                match ty {
+            fn super_type(&mut self, ty: &$($mut)? Ty) {
+                match &$($mut)? ty.kind {
                     Type::Ptr(ty) => self.visit_type(ty),
                     Type::Tuple(tys) => {
                         for ty in tys {

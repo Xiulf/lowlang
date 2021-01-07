@@ -1,9 +1,9 @@
-use crate::Type;
+use crate::{Ty, Type};
 use std::convert::{TryFrom, TryInto};
 use std::ops::{Add, Mul, RangeInclusive};
 use target_lexicon::{PointerWidth, Triple};
 
-pub fn layout_of(ty: &Type, target: &Triple) -> TyLayout {
+pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
     let scalar_unit = |value: Primitive| {
         let bits = value.size(target).bits();
 
@@ -13,7 +13,15 @@ pub fn layout_of(ty: &Type, target: &Triple) -> TyLayout {
         }
     };
 
-    let scalar = |value: Primitive| Layout::scalar(scalar_unit(value), target);
+    let scalar = |value: Primitive| {
+        let mut scalar = scalar_unit(value);
+
+        if let Some(valid_range) = &ty.info.valid_range {
+            scalar.valid_range = valid_range.clone();
+        }
+
+        Layout::scalar(scalar, target)
+    };
 
     let ptr_size = match target.pointer_width() {
         Ok(PointerWidth::U16) => Size::from_bits(16),
@@ -22,7 +30,7 @@ pub fn layout_of(ty: &Type, target: &Triple) -> TyLayout {
         Err(_) => Size::from_bits(64),
     };
 
-    let layout = match ty {
+    let mut layout = match &ty.kind {
         Type::U8 => scalar(Primitive::Int(Integer::I8, false)),
         Type::U16 => scalar(Primitive::Int(Integer::I16, false)),
         Type::U32 => scalar(Primitive::Int(Integer::I32, false)),
@@ -110,6 +118,10 @@ pub fn layout_of(ty: &Type, target: &Triple) -> TyLayout {
             }
         }
     };
+
+    if let Some(ref abi) = ty.info.abi {
+        layout.abi = abi.clone();
+    }
 
     TyLayout {
         ty: ty.clone(),
@@ -245,7 +257,7 @@ fn enum_layout(mut variants: Vec<Layout>, target: &Triple) -> Layout {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TyLayout {
-    pub ty: Type,
+    pub ty: Ty,
     pub layout: Layout,
 }
 
@@ -346,40 +358,40 @@ impl std::ops::Deref for TyLayout {
     }
 }
 
-pub fn ptr_sized_int(target: &Triple) -> Type {
+pub fn ptr_sized_int(target: &Triple) -> Ty {
     match target.pointer_width() {
-        Ok(PointerWidth::U16) => Type::I16,
-        Ok(PointerWidth::U32) => Type::I32,
-        Ok(PointerWidth::U64) => Type::I64,
-        Err(_) => Type::I64,
+        Ok(PointerWidth::U16) => Ty::new(Type::I16),
+        Ok(PointerWidth::U32) => Ty::new(Type::I32),
+        Ok(PointerWidth::U64) => Ty::new(Type::I64),
+        Err(_) => Ty::new(Type::I64),
     }
 }
 
-pub fn copy_fn_type(t: &String) -> Type {
-    Type::Func(crate::Signature {
+pub fn copy_fn_type(t: &String) -> Ty {
+    Ty::new(Type::Func(crate::Signature {
         params: vec![
-            Type::Ptr(Box::new(Type::Opaque(t.clone()))),
-            Type::Ptr(Box::new(Type::Opaque(t.clone()))),
-            Type::Ptr(Box::new(Type::Type(t.clone()))),
+            Ty::new(Type::Ptr(Box::new(Ty::new(Type::Opaque(t.clone()))))),
+            Ty::new(Type::Ptr(Box::new(Ty::new(Type::Opaque(t.clone()))))),
+            Ty::new(Type::Ptr(Box::new(Ty::new(Type::Type(t.clone()))))),
         ],
         rets: Vec::new(),
-    })
+    }))
 }
 
-pub fn drop_fn_type(t: &String) -> Type {
-    Type::Func(crate::Signature {
+pub fn drop_fn_type(t: &String) -> Ty {
+    Ty::new(Type::Func(crate::Signature {
         params: vec![
-            Type::Ptr(Box::new(Type::Opaque(t.clone()))),
-            Type::Ptr(Box::new(Type::Type(t.clone()))),
+            Ty::new(Type::Ptr(Box::new(Ty::new(Type::Opaque(t.clone()))))),
+            Ty::new(Type::Ptr(Box::new(Ty::new(Type::Type(t.clone()))))),
         ],
         rets: Vec::new(),
-    })
+    }))
 }
 
 impl TyLayout {
     pub fn unit() -> Self {
         TyLayout {
-            ty: Type::Tuple(Vec::new()),
+            ty: Ty::new(Type::Tuple(Vec::new())),
             layout: Layout {
                 size: Size::ZERO,
                 align: Align::from_bytes(1),
@@ -395,7 +407,7 @@ impl TyLayout {
     }
 
     pub fn pointee(&self, target: &Triple) -> Self {
-        if let Type::Ptr(to) = &self.ty {
+        if let Type::Ptr(to) = &self.ty.kind {
             layout_of(to, target)
         } else {
             unreachable!();
@@ -409,7 +421,7 @@ impl TyLayout {
     pub fn field(&self, field: usize, target: &Triple) -> Self {
         assert!(field < self.fields.count());
 
-        let ty = match &self.ty {
+        let ty = match &self.ty.kind {
             Type::U8
             | Type::U16
             | Type::U32
@@ -430,7 +442,7 @@ impl TyLayout {
                 0 => ptr_sized_int(target),
                 1 => ptr_sized_int(target),
                 2 => ptr_sized_int(target),
-                3 => Type::Ptr(Box::new(Type::Vwt(t.clone()))),
+                3 => Ty::new(Type::Ptr(Box::new(Ty::new(Type::Vwt(t.clone()))))),
                 _ => unreachable!(),
             },
             Type::Vwt(t) => match field {
@@ -749,6 +761,15 @@ impl Scalar {
     pub fn is_bool(&self) -> bool {
         self.valid_range == (0..=1) && matches!(self.value, Primitive::Int(Integer::I8, _))
     }
+
+    pub fn unit(value: Primitive, target: &Triple) -> Self {
+        let bits = value.size(target).bits();
+
+        Scalar {
+            value,
+            valid_range: 0..=(!0 >> (128 - bits)),
+        }
+    }
 }
 
 impl Primitive {
@@ -768,15 +789,15 @@ impl Primitive {
         Align::from_bytes(self.size(triple).bytes())
     }
 
-    pub fn ty(&self) -> Type {
+    pub fn ty(&self) -> Ty {
         match self {
-            Primitive::Int(Integer::I8, _) => Type::I8,
-            Primitive::Int(Integer::I16, _) => Type::I16,
-            Primitive::Int(Integer::I32, _) => Type::I32,
-            Primitive::Int(Integer::I64, _) => Type::I64,
-            Primitive::Int(Integer::I128, _) => Type::I128,
-            Primitive::F32 => Type::F32,
-            Primitive::F64 => Type::F64,
+            Primitive::Int(Integer::I8, _) => Ty::new(Type::I8),
+            Primitive::Int(Integer::I16, _) => Ty::new(Type::I16),
+            Primitive::Int(Integer::I32, _) => Ty::new(Type::I32),
+            Primitive::Int(Integer::I64, _) => Ty::new(Type::I64),
+            Primitive::Int(Integer::I128, _) => Ty::new(Type::I128),
+            Primitive::F32 => Ty::new(Type::F32),
+            Primitive::F64 => Ty::new(Type::F64),
             Primitive::Pointer => unreachable!(),
         }
     }

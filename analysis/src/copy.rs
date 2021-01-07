@@ -47,7 +47,7 @@ impl VisitorMut for CopyTransform {
             if let ir::RValue::Use(rhs_op) = rhs {
                 let lhs_ty = ir::place_type(self.body(), lhs);
 
-                if let ir::Type::Opaque(g) = lhs_ty {
+                if let ir::Type::Opaque(g) = lhs_ty.kind {
                     lhs.elems.pop().unwrap();
 
                     if let ir::Operand::Place(rhs_place) = rhs_op {
@@ -56,7 +56,7 @@ impl VisitorMut for CopyTransform {
 
                     let lhs_op = ir::Operand::Place(lhs.clone());
                     let mut builder = ir::Builder::new(self.body_mut());
-                    let local = builder.create_tmp(ir::Type::Tuple(Vec::new()));
+                    let local = builder.create_tmp(ir::Ty::new(ir::Type::Tuple(Vec::new())));
                     let typeinfo = self.body().gen_local(&g).unwrap();
                     let typeinfo = ir::Place::new(typeinfo.id).deref().field(0);
                     let typeinfo = ir::Operand::Place(typeinfo);

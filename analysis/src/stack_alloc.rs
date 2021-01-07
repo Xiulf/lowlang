@@ -48,7 +48,7 @@ impl Transform for StackAllocTransform {
                 let arg = ir::Operand::Place(ir::Place::new(alloc.local));
                 let rvalue = ir::RValue::Intrinsic(String::from("stack_free"), vec![arg]);
                 let mut builder = ir::Builder::new(body);
-                let tmp = builder.create_tmp(ir::Type::Tuple(Vec::new()));
+                let tmp = builder.create_tmp(ir::Ty::new(ir::Type::Tuple(Vec::new())));
                 let block = &mut body.blocks[alloc.loc.block];
 
                 block.stmts.insert(
@@ -88,8 +88,8 @@ impl Visitor for StackAllocAnalyzer {
     fn visit_init(&mut self, local: ir::Local, loc: ir::Location) {
         let data = &unsafe { &*self.body }.locals[local];
 
-        if let ir::Type::Ptr(ty) = &data.ty {
-            if let ir::Type::Opaque(ty) = &**ty {
+        if let ir::Type::Ptr(ty) = &data.ty.kind {
+            if let ir::Type::Opaque(ty) = &ty.kind {
                 self.allocs.push(Alloc {
                     local,
                     loc,
@@ -103,8 +103,8 @@ impl Visitor for StackAllocAnalyzer {
     fn visit_drop(&mut self, local: ir::Local, loc: ir::Location) {
         let data = &unsafe { &*self.body }.locals[local];
 
-        if let ir::Type::Ptr(ty) = &data.ty {
-            if let ir::Type::Opaque(ty) = &**ty {
+        if let ir::Type::Ptr(ty) = &data.ty.kind {
+            if let ir::Type::Opaque(ty) = &ty.kind {
                 self.allocs.push(Alloc {
                     local,
                     loc,

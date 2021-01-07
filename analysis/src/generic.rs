@@ -58,10 +58,10 @@ impl GenericFixer {
     fn fix_operand(&mut self, op: &mut ir::Operand, loc: ir::Location) {
         let op_ty = ir::operand_type(self.module(), self.body(), op);
 
-        if !matches!(op_ty, ir::Type::Opaque(_)) {
+        if !matches!(op_ty.kind, ir::Type::Opaque(_)) {
             let val = self.placed(op.clone(), loc);
             let mut builder = ir::Builder::new(self.body_mut());
-            let local = builder.create_tmp(ir::Type::Ptr(Box::new(op_ty)));
+            let local = builder.create_tmp(ir::Ty::new(ir::Type::Ptr(Box::new(op_ty))));
             let place = ir::Place::new(local);
 
             self.insert.push((
@@ -73,10 +73,10 @@ impl GenericFixer {
         }
     }
 
-    fn fix_operand2(&mut self, op: &mut ir::Operand, loc: ir::Location, ty: ir::Type) {
+    fn fix_operand2(&mut self, op: &mut ir::Operand, loc: ir::Location, ty: ir::Ty) {
         let val = self.placed(op.clone(), loc);
         let mut builder = ir::Builder::new(self.body_mut());
-        let ty = ir::Type::Ptr(Box::new(ty));
+        let ty = ir::Ty::new(ir::Type::Ptr(Box::new(ty)));
         let local = builder.create_tmp(ty.clone());
         let place = ir::Place::new(local);
 
@@ -139,9 +139,9 @@ impl VisitorMut for GenericFixer {
     }
 
     fn visit_local(&mut self, local: &mut ir::LocalData) {
-        match (local.kind, &local.ty) {
+        match (local.kind, &local.ty.kind) {
             (ir::LocalKind::Ret, ir::Type::Opaque(_)) => {
-                local.ty = ir::Type::Ptr(Box::new(local.ty.clone()));
+                local.ty = ir::Ty::new(ir::Type::Ptr(Box::new(local.ty.clone())));
                 local.kind = ir::LocalKind::Arg;
             }
             _ => self.super_local(local),
@@ -152,7 +152,7 @@ impl VisitorMut for GenericFixer {
         if let ir::Stmt::Assign(lhs, ir::RValue::Use(ir::Operand::Place(rhs))) = stmt {
             let lhs_ty = ir::place_type(self.body(), lhs);
 
-            if let ir::Type::Opaque(_) = lhs_ty {
+            if let ir::Type::Opaque(_) = lhs_ty.kind {
                 lhs.elems.push(ir::PlaceElem::Deref);
                 rhs.elems.push(ir::PlaceElem::Deref);
             }
@@ -162,27 +162,27 @@ impl VisitorMut for GenericFixer {
             if let ir::Type::Func(ir::Signature {
                 params: param_tys,
                 rets: ret_tys,
-            }) = func_ty
+            }) = func_ty.kind
             {
                 for (i, param_ty) in param_tys.iter().enumerate() {
-                    if let ir::Type::Opaque(_) = param_ty {
+                    if let ir::Type::Opaque(_) = param_ty.kind {
                         self.fix_operand(&mut args[i], loc);
                     } else if let ir::Type::Opaque(_) =
-                        ir::operand_type(self.module(), self.body(), &args[i])
+                        ir::operand_type(self.module(), self.body(), &args[i]).kind
                     {
                         self.fix_operand2(&mut args[i], loc, param_ty.clone());
                     }
                 }
 
                 for (i, ret_ty) in ret_tys.iter().enumerate().rev() {
-                    if let ir::Type::Opaque(_) = ret_ty {
+                    if let ir::Type::Opaque(_) = ret_ty.kind {
                         let place = rets.remove(i);
 
                         args.insert(0, ir::Operand::Place(place));
                         self.fix_operand(&mut args[0], loc);
-                    } else if let ir::Type::Opaque(_) = ir::place_type(self.body(), &rets[i]) {
+                    } else if let ir::Type::Opaque(_) = ir::place_type(self.body(), &rets[i]).kind {
                         let mut builder = ir::Builder::new(self.body_mut());
-                        let ty = ir::Type::Ptr(Box::new(ret_ty.clone()));
+                        let ty = ir::Ty::new(ir::Type::Ptr(Box::new(ret_ty.clone())));
                         let local = builder.create_tmp(ty.clone());
                         let place = ir::Place::new(local);
 
@@ -198,17 +198,19 @@ impl VisitorMut for GenericFixer {
         }
     }
 
-    fn visit_type(&mut self, ty: &mut ir::Type) {
-        if let ir::Type::Opaque(name) = ty {
-            *ty = ir::Type::Ptr(Box::new(ir::Type::Opaque(name.clone())));
-        } else if let ir::Type::Func(ir::Signature { params, rets }) = ty {
+    fn visit_type(&mut self, ty: &mut ir::Ty) {
+        if let ir::Type::Opaque(name) = &ty.kind {
+            *ty = ir::Ty::new(ir::Type::Ptr(Box::new(ir::Ty::new(ir::Type::Opaque(
+                name.clone(),
+            )))));
+        } else if let ir::Type::Func(ir::Signature { params, rets }) = &mut ty.kind {
             for ty in params.iter_mut() {
                 self.visit_type(ty);
             }
 
             let generic = rets
                 .drain_filter(|r| {
-                    if let ir::Type::Opaque(_) = r {
+                    if let ir::Type::Opaque(_) = r.kind {
                         true
                     } else {
                         false
@@ -217,7 +219,7 @@ impl VisitorMut for GenericFixer {
                 .collect::<Vec<_>>();
 
             for ty in generic.into_iter().rev() {
-                params.insert(0, ir::Type::Ptr(Box::new(ty)));
+                params.insert(0, ir::Ty::new(ir::Type::Ptr(Box::new(ty))));
             }
         } else {
             self.super_type(ty);

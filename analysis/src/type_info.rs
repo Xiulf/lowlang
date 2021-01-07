@@ -15,7 +15,7 @@ pub struct TypeInfoTransform<'a> {
 }
 
 pub struct TypeInfo {
-    ty: ir::Type,
+    ty: ir::Ty,
     ops: Vec<*mut ir::Const>,
 }
 
@@ -71,7 +71,17 @@ impl<'a> Visitor for TypeInfoAnalyzer<'a> {
 
             for arg in args {
                 if let ir::Operand::Const(
-                    ref c @ ir::Const::Undefined(ir::Type::Ptr(box ir::Type::Type(ref t))),
+                    ref
+                    c
+                    @
+                    ir::Const::Undefined(ir::Ty {
+                        kind:
+                            ir::Type::Ptr(box ir::Ty {
+                                kind: ir::Type::Type(ref t),
+                                ..
+                            }),
+                        ..
+                    }),
                 ) = arg
                 {
                     let ty = tys[t].clone();
@@ -95,13 +105,13 @@ impl<'a> TypeInfoTransform<'a> {
         target: &'a target_lexicon::Triple,
         module: &mut ir::Module,
         decl: ir::DeclId,
-        ty: ir::Type,
+        ty: ir::Ty,
     ) {
         let bodyid = module.bodies.next_idx();
         let mut body = ir::Body::new(bodyid, decl);
         let mut builder = ir::Builder::new(&mut body);
         let layout = ir::layout::layout_of(&ty, target);
-        let ret = builder.create_ret(ir::Type::Type(String::new()));
+        let ret = builder.create_ret(ir::Ty::new(ir::Type::Type(String::new())));
         let place = ir::Place::new(ret);
         let entry = builder.create_block();
 
@@ -148,7 +158,7 @@ impl<'a> Transform for TypeInfoTransform<'a> {
                     id: decl,
                     name: format!("__type_info_{}", decl.index()),
                     linkage: ir::Linkage::Hidden,
-                    ty: ir::Type::Type(String::new()),
+                    ty: ir::Ty::new(ir::Type::Type(String::new())),
                     attrs: ir::Attrs::default(),
                 },
             );

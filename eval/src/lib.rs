@@ -186,14 +186,14 @@ impl<'ir> EvalCtx<'ir> {
     }
 }
 
-fn init_undefined(ty: Type, target: &target_lexicon::Triple) -> Const {
-    match ty {
+fn init_undefined(ty: Ty, target: &target_lexicon::Triple) -> Const {
+    match ty.kind {
         Type::Tuple(tys) => Const::Tuple(tys.into_iter().map(|t| Const::Undefined(t)).collect()),
         Type::Type(t) => Const::Tuple(vec![
             Const::Undefined(layout::ptr_sized_int(target)),
             Const::Undefined(layout::ptr_sized_int(target)),
             Const::Undefined(layout::ptr_sized_int(target)),
-            Const::Undefined(Type::Ptr(Box::new(Type::Vwt(t)))),
+            Const::Undefined(ir::Ty::new(Type::Ptr(Box::new(ir::Ty::new(Type::Vwt(t)))))),
         ]),
         Type::Vwt(t) => Const::Tuple(vec![
             Const::Undefined(layout::copy_fn_type(&t)),

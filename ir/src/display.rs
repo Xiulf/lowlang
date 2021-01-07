@@ -342,6 +342,12 @@ impl Display for LocalKind {
     }
 }
 
+impl Display for Ty {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        self.kind.fmt(f)
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {

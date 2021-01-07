@@ -148,6 +148,21 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
                         value::Value::new_val(global, layout)
                     }
                 }
+                ir::Const::Variant(idx, cs, ty) => {
+                    let layout = ir::layout::layout_of(ty, &fx.target);
+                    let place = place::Place::new_stack(fx, layout);
+                    let as_variant = place.clone().downcast_variant(fx, *idx);
+
+                    for (i, c) in cs.iter().enumerate() {
+                        let place = as_variant.clone().field(fx, i);
+
+                        Self::trans_const(fx, c, Some(place));
+                    }
+
+                    Self::trans_set_discr(fx, place.clone(), *idx as u128);
+
+                    place.to_value(fx)
+                }
                 _ => unimplemented!(),
             }
         }
@@ -405,7 +420,8 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
             ir::Term::Switch(op, vals, blocks) => {
                 let mut switch = clif::Switch::new();
                 let otherwise = fx.blocks[blocks.last().unwrap()];
-                let val = Self::trans_op(fx, op, None).load_scalar(fx);
+                let val = Self::trans_op(fx, op, None);
+                let val = val.load_scalar(fx);
 
                 for (val, block) in vals.iter().zip(blocks) {
                     switch.set_entry(*val, fx.blocks[block]);
