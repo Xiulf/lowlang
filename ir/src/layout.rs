@@ -45,6 +45,12 @@ pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
         Type::F32 => scalar(Primitive::F32),
         Type::F64 => scalar(Primitive::F64),
         Type::Ptr(_) => scalar(Primitive::Pointer),
+        Type::Box(_) => {
+            let mut scalar = scalar_unit(Primitive::Pointer);
+
+            scalar.valid_range = 1..=*scalar.valid_range.end();
+            Layout::scalar(scalar, target)
+        }
         Type::Func(_) => {
             let mut ptr = scalar_unit(Primitive::Pointer);
 
@@ -410,6 +416,8 @@ impl TyLayout {
     pub fn pointee(&self, target: &Triple) -> Self {
         if let Type::Ptr(to) = &self.ty.kind {
             layout_of(to, target)
+        } else if let Type::Box(to) = &self.ty.kind {
+            layout_of(to, target)
         } else {
             unreachable!();
         }
@@ -436,6 +444,7 @@ impl TyLayout {
             | Type::F32
             | Type::F64
             | Type::Ptr(_)
+            | Type::Box(_)
             | Type::Func(_)
             | Type::Opaque(_)
             | Type::Discr(_)

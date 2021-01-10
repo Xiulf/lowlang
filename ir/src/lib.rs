@@ -204,6 +204,7 @@ pub enum Type {
     Vwt(String),
     Opaque(String),
     Ptr(Box<Ty>),
+    Box(Box<Ty>),
     Tuple(Vec<Ty>),
     Union(Vec<Ty>),
     Tagged(Vec<Ty>),
@@ -316,21 +317,38 @@ pub fn operand_type(module: &Module, body: &Body, op: &Operand) -> Ty {
 
 pub fn place_type(body: &Body, place: &Place) -> Ty {
     let mut ty = body.locals[place.local].ty.clone();
+    let mut i = 0;
 
-    for elem in &place.elems {
+    while i < place.elems.len() {
+        let elem = &place.elems[i];
+
         match elem {
             PlaceElem::Deref => match ty.kind {
                 Type::Ptr(to) => ty = *to,
+                Type::Box(to) => ty = *to,
                 _ => unreachable!(),
             },
             PlaceElem::Field(f) => match ty.kind {
                 Type::Tuple(mut tys) => ty = tys.swap_remove(*f),
                 Type::Union(mut tys) => ty = tys.swap_remove(*f),
+                Type::Box(to) => {
+                    ty = *to;
+                    continue;
+                }
                 _ => unreachable!(),
             },
             PlaceElem::Index(_) => unimplemented!(),
-            PlaceElem::Downcast(_) => continue,
+            PlaceElem::Downcast(v) => match ty.kind {
+                Type::Tagged(mut tys) => ty = tys.swap_remove(*v),
+                Type::Box(to) => {
+                    ty = *to;
+                    continue;
+                }
+                _ => unreachable!(),
+            },
         }
+
+        i += 1;
     }
 
     ty
@@ -383,6 +401,10 @@ impl Ty {
             Type::Ptr(to) => Ty {
                 info: self.info.clone(),
                 kind: Type::Ptr(Box::new(to.replace(i + 1, with))),
+            },
+            Type::Box(to) => Ty {
+                info: self.info.clone(),
+                kind: Type::Box(Box::new(to.replace(i + 1, with))),
             },
             Type::Tuple(tys) => Ty {
                 info: self.info.clone(),

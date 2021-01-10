@@ -366,6 +366,7 @@ impl Display for Type {
             Type::Type(t) => write!(f, "\x1B[0;33mtype {}\x1B[0m", t),
             Type::Vwt(t) => write!(f, "\x1B[0;33mvwt {}\x1B[0m", t),
             Type::Ptr(to) => write!(f, "*{}", to),
+            Type::Box(to) => write!(f, "&{}", to),
             Type::Tuple(tys) => write!(
                 f,
                 "({})",

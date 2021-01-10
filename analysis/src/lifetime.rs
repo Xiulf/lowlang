@@ -5,6 +5,7 @@ use transform::Transform;
 
 pub struct LifetimeAnalyzer {
     alive: HashSet<ir::Local>,
+    blocks: HashMap<ir::Block, HashSet<ir::Local>>,
     ties: HashMap<ir::Local, ir::Local>,
     annotations: Vec<Annotation>,
 }
@@ -23,6 +24,7 @@ impl LifetimeAnalyzer {
     pub fn new() -> Self {
         LifetimeAnalyzer {
             alive: HashSet::new(),
+            blocks: HashMap::new(),
             ties: HashMap::new(),
             annotations: Vec::new(),
         }
@@ -69,8 +71,10 @@ impl Visitor for LifetimeAnalyzer {
         let root = body.blocks.first().unwrap().id;
 
         self.alive.clear();
+        self.blocks.clear();
         self.ties.clear();
         self.find_inits(body, Vec::new(), root);
+        println!();
     }
 }
 
@@ -162,6 +166,17 @@ impl LifetimeAnalyzer {
         block: ir::Block,
         next_block: ir::Block,
     ) {
+        if let Some(alive) = self.blocks.get(&block) {
+            self.alive.extend(alive.iter().copied());
+
+            if let Some(next) = prev.pop() {
+                self.find_drops(body, prev, next, block);
+            }
+
+            return;
+        }
+
+        println!("find_drops {}", block);
         let data = &body.blocks[block];
 
         match &data.term {
@@ -217,6 +232,7 @@ impl LifetimeAnalyzer {
         }
 
         self.reverse_anns(start);
+        self.blocks.insert(block, self.alive.clone());
 
         if let Some(next) = prev.pop() {
             self.find_drops(body, prev, next, block);
@@ -238,6 +254,10 @@ impl LifetimeAnalyzer {
     }
 
     fn place_lifetime(&mut self, place: &ir::Place, loc: ir::Location, state: bool) {
+        if !state {
+            println!("{}: {}", place.local, self.alive.contains(&place.local));
+        }
+
         if !self.alive.contains(&place.local) {
             self.alive.insert(place.local);
             self.annotations.push(Annotation {
