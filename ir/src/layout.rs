@@ -31,6 +31,7 @@ pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
     };
 
     let mut layout = match &ty.kind {
+        Type::Recurse(..) => unreachable!(),
         Type::U8 => scalar(Primitive::Int(Integer::I8, false)),
         Type::U16 => scalar(Primitive::Int(Integer::I16, false)),
         Type::U32 => scalar(Primitive::Int(Integer::I32, false)),
@@ -437,7 +438,8 @@ impl TyLayout {
             | Type::Ptr(_)
             | Type::Func(_)
             | Type::Opaque(_)
-            | Type::Discr(_) => unreachable!(),
+            | Type::Discr(_)
+            | Type::Recurse(_) => unreachable!(),
             Type::Type(t) => match field {
                 0 => ptr_sized_int(target),
                 1 => ptr_sized_int(target),

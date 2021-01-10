@@ -209,6 +209,7 @@ pub enum Type {
     Tagged(Vec<Ty>),
     Func(Signature),
     Discr(Box<Ty>),
+    Recurse(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,6 +362,60 @@ impl Type {
         match self {
             Type::Func(sig) => sig.clone(),
             _ => unreachable!(),
+        }
+    }
+}
+
+impl Ty {
+    pub fn access(&self) -> Self {
+        let top = self.clone();
+
+        self.replace(0, top)
+    }
+
+    pub fn replace(&self, i: usize, with: Self) -> Self {
+        match &self.kind {
+            Type::Recurse(j) if *j == i => with,
+            Type::Recurse(j) => Ty {
+                info: self.info.clone(),
+                kind: Type::Recurse(*j - 1),
+            },
+            Type::Ptr(to) => Ty {
+                info: self.info.clone(),
+                kind: Type::Ptr(Box::new(to.replace(i + 1, with))),
+            },
+            Type::Tuple(tys) => Ty {
+                info: self.info.clone(),
+                kind: Type::Tuple(tys.iter().map(|t| t.replace(i + 1, with.clone())).collect()),
+            },
+            Type::Union(tys) => Ty {
+                info: self.info.clone(),
+                kind: Type::Union(tys.iter().map(|t| t.replace(i + 1, with.clone())).collect()),
+            },
+            Type::Tagged(tys) => Ty {
+                info: self.info.clone(),
+                kind: Type::Tagged(tys.iter().map(|t| t.replace(i + 1, with.clone())).collect()),
+            },
+            Type::Discr(to) => Ty {
+                info: self.info.clone(),
+                kind: Type::Discr(Box::new(to.replace(i + 1, with))),
+            },
+            Type::Func(sig) => Ty {
+                info: self.info.clone(),
+                kind: Type::Func(Signature {
+                    params: sig
+                        .params
+                        .iter()
+                        .map(|t| t.replace(i + 1, with.clone()))
+                        .collect(),
+                    rets: sig
+                        .rets
+                        .iter()
+                        .map(|t| t.replace(i + 1, with.clone()))
+                        .collect(),
+                }),
+            },
+            _ => self.clone(),
         }
     }
 }

@@ -393,6 +393,7 @@ impl Display for Type {
             Type::Opaque(name) => write!(f, "\x1B[0;33m{}\x1B[0m", name),
             Type::Func(sig) => sig.fmt(f),
             Type::Discr(ty) => write!(f, "\x1B[0;33mdiscr\x1B[0m {}", ty),
+            Type::Recurse(i) => write!(f, "\x1B[0;33m\\{}\x1B[0m", i),
         }
     }
 }
