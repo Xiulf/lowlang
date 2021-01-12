@@ -116,7 +116,13 @@ pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
             enum_layout(lyts, target)
         }
         Type::Discr(ty) => {
-            let layout = layout_of(ty, target);
+            let mut ty = ty.access();
+
+            while let Type::Box(to) = &ty.kind {
+                ty = to.access();
+            }
+
+            let layout = layout_of(&ty, target);
 
             if let Variants::Multiple { tag, .. } = &layout.variants {
                 Layout::scalar(tag.clone(), target)

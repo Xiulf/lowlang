@@ -191,6 +191,11 @@ impl<'ctx> codegen::Value<'ctx> for Value<'ctx> {
         let ptr = self.load_scalar(fx);
 
         if is_box {
+            use crate::clif::Module;
+            let ptr_type = fx.module.target_config().pointer_type();
+            let ptr = Pointer::addr(ptr);
+            let ptr = ptr.load(fx, ptr_type, crate::clif::MemFlags::trusted());
+
             Value::new_ref(Pointer::addr(ptr), pointee)
         } else {
             Value::new_val(ptr, pointee)

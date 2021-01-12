@@ -259,7 +259,11 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
                 place.store(fx, val);
             }
             ir::RValue::GetDiscr(val) => {
-                let val = Self::trans_place(fx, val).to_value(fx);
+                let mut val = Self::trans_place(fx, val).to_value(fx);
+
+                while let ir::Type::Box(_) = &val.layout.ty.kind {
+                    val = val.deref(fx);
+                }
 
                 if let ir::layout::Abi::Uninhabited = val.layout.abi {
                     unreachable!();

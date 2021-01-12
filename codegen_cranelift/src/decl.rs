@@ -53,8 +53,8 @@ impl<'ctx> DeclMethods<'ctx> for ClifBackend<'ctx> {
         fx.ctx.compute_cfg();
         fx.ctx.compute_domtree();
 
-        // println!("{}", fx.module.declarations().get_function_decl(func).name);
-        // println!("{}", fx.bcx.func);
+        println!("{}", fx.module.declarations().get_function_decl(func).name);
+        println!("{}", fx.bcx.func);
 
         fx.mcx
             .ctx
