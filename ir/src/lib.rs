@@ -1,5 +1,8 @@
+#![feature(iterator_fold_self)]
+
 pub mod builder;
 mod display;
+pub mod graph;
 pub mod layout;
 pub(crate) mod lexer;
 pub mod parser;

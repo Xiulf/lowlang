@@ -23,3 +23,31 @@ fn @identity {
     _0 = _2
     return
 }
+
+
+
+
+
+fn @test {
+    ret _0 :: (() / ())
+    arg _1 :: (() / ())
+    arg _2 :: (() / ())
+    tmp _3 :: discr (() / ())
+    tmp _4 :: discr (() / ())
+    tmp _5 :: (() / ())
+%0:
+    _3 = get_discr _1
+    _4 = get_discr _1
+    switch _3 [0: %3, otherwise %2]
+%1:
+    _0 = _5
+    return
+%2:
+    switch _4 [1: %4, otherwise %1]
+%3:
+    _5 = 0() :: (() / ())
+    jump %1
+%4:
+    _5 = _2
+    jump %1
+}

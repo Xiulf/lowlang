@@ -1,11 +1,12 @@
 use crate::Analyzer;
+use ir::graph::Diamond;
 use ir::visitor::Visitor;
 use std::collections::{HashMap, HashSet};
 use transform::Transform;
 
 pub struct LifetimeAnalyzer {
     alive: HashSet<ir::Local>,
-    blocks: HashMap<ir::Block, HashSet<ir::Local>>,
+    dead: HashSet<ir::Local>,
     ties: HashMap<ir::Local, ir::Local>,
     annotations: Vec<Annotation>,
 }
@@ -24,7 +25,7 @@ impl LifetimeAnalyzer {
     pub fn new() -> Self {
         LifetimeAnalyzer {
             alive: HashSet::new(),
-            blocks: HashMap::new(),
+            dead: HashSet::new(),
             ties: HashMap::new(),
             annotations: Vec::new(),
         }
@@ -68,22 +69,62 @@ impl Transform for LifetimeAnnotator {
 
 impl Visitor for LifetimeAnalyzer {
     fn visit_body(&mut self, body: &ir::Body) {
-        let root = body.blocks.first().unwrap().id;
-
         self.alive.clear();
-        self.blocks.clear();
+        self.dead.clear();
         self.ties.clear();
-        self.find_inits(body, Vec::new(), root);
+
+        let dias = body.diamonds().collect::<Vec<_>>();
+
+        for (i, &dia) in dias.iter().enumerate() {
+            self.find_inits(body, dia, &dias[i + 1..]);
+        }
+
+        for (i, &dia) in dias.iter().enumerate().rev() {
+            self.find_drops(body, dia, &dias[..i]);
+        }
+
         println!();
     }
 }
 
 impl LifetimeAnalyzer {
-    fn reverse_anns(&mut self, start: usize) {
-        self.annotations[start..].reverse();
+    fn find_inits(&mut self, body: &ir::Body, dia: Diamond, dias: &[Diamond]) {
+        match dia {
+            Diamond::Closed { start, end } => {
+                let mut vars = HashSet::new();
+                let mut after = HashSet::new();
+
+                Self::find_vars(body, dia, false, &mut vars);
+                Self::find_vars(body, dias[0], true, &mut after);
+
+                let both = vars.intersection(&after);
+
+                for &local in both {
+                    self.alive.insert(local);
+                    self.annotations.push(Annotation {
+                        local,
+                        state: true,
+                        loc: ir::Location {
+                            body: body.id,
+                            block: start,
+                            stmt: 0,
+                        },
+                    });
+                }
+
+                self.find_inits_block(body, start, Some(end));
+            }
+            Diamond::Open { start } => {
+                self.find_inits_block(body, start, None);
+            }
+        }
     }
 
-    fn find_inits(&mut self, body: &ir::Body, mut prev: Vec<ir::Block>, block: ir::Block) {
+    fn find_inits_block(&mut self, body: &ir::Body, block: ir::Block, end: Option<ir::Block>) {
+        if Some(block) == end {
+            return;
+        }
+
         let data = &body.blocks[block];
 
         for (i, stmt) in data.stmts.iter().enumerate() {
@@ -94,19 +135,11 @@ impl LifetimeAnalyzer {
             };
 
             match stmt {
-                ir::Stmt::Init(local) => {
-                    self.alive.insert(*local);
-                }
+                ir::Stmt::Init(_) => {}
                 ir::Stmt::Drop(_) => {}
                 ir::Stmt::Assign(place, rvalue) => {
                     self.place_lifetime(place, loc, true);
                     self.rvalue_lifetime(rvalue, loc, true);
-
-                    if let ir::RValue::AddrOf(rhs) = rvalue {
-                        if place.elems.is_empty() && rhs.elems.is_empty() {
-                            self.ties.insert(place.local, rhs.local);
-                        }
-                    }
                 }
                 ir::Stmt::SetDiscr(place, _) => {
                     self.place_lifetime(place, loc, true);
@@ -125,11 +158,8 @@ impl LifetimeAnalyzer {
             }
         }
 
-        let succ = match &data.term {
-            ir::Term::Abort => Vec::new(),
-            ir::Term::Return => Vec::new(),
-            ir::Term::Jump(next) => vec![*next],
-            ir::Term::Switch(op, _, next) => {
+        match &data.term {
+            ir::Term::Switch(op, _, _) => {
                 self.op_lifetime(
                     op,
                     ir::Location {
@@ -139,61 +169,39 @@ impl LifetimeAnalyzer {
                     },
                     true,
                 );
-
-                next.clone()
             }
-        };
+            _ => {}
+        }
+    }
 
-        if succ.is_empty() {
-            let alive = HashSet::with_capacity(self.alive.len());
-            let alive = std::mem::replace(&mut self.alive, alive);
-
-            self.find_drops(body, prev, block, block);
-            self.alive = alive;
-        } else {
-            prev.push(block);
-
-            for next in succ {
-                self.find_inits(body, prev.clone(), next);
+    fn find_drops(&mut self, body: &ir::Body, dia: Diamond, dias: &[Diamond]) {
+        match dia {
+            Diamond::Closed { .. } => {
+                println!("find_drops: {:?}", dia);
+            }
+            Diamond::Open { start } => {
+                self.find_drops_block(body, start, None);
             }
         }
     }
 
-    fn find_drops(
-        &mut self,
-        body: &ir::Body,
-        mut prev: Vec<ir::Block>,
-        block: ir::Block,
-        next_block: ir::Block,
-    ) {
-        if let Some(alive) = self.blocks.get(&block) {
-            self.alive.extend(alive.iter().copied());
-
-            if let Some(next) = prev.pop() {
-                self.find_drops(body, prev, next, block);
-            }
-
-            return;
-        }
-
-        println!("find_drops {}", block);
+    fn find_drops_block(&mut self, body: &ir::Body, block: ir::Block, end: Option<ir::Block>) {
         let data = &body.blocks[block];
+        let alive = std::mem::replace(&mut self.alive, HashSet::new());
 
         match &data.term {
-            ir::Term::Abort => {}
-            ir::Term::Return => {}
-            ir::Term::Jump(_) => {}
             ir::Term::Switch(op, _, _) => {
                 self.op_lifetime(
                     op,
                     ir::Location {
                         body: body.id,
-                        block: next_block,
+                        block: end.unwrap(),
                         stmt: 0,
                     },
                     false,
                 );
             }
+            _ => {}
         }
 
         let start = self.annotations.len();
@@ -207,9 +215,7 @@ impl LifetimeAnalyzer {
 
             match stmt {
                 ir::Stmt::Init(_) => {}
-                ir::Stmt::Drop(local) => {
-                    self.alive.insert(*local);
-                }
+                ir::Stmt::Drop(_) => {}
                 ir::Stmt::Assign(place, rvalue) => {
                     self.place_lifetime(place, loc, false);
                     self.rvalue_lifetime(rvalue, loc, false);
@@ -232,11 +238,93 @@ impl LifetimeAnalyzer {
         }
 
         self.reverse_anns(start);
-        self.blocks.insert(block, self.alive.clone());
 
-        if let Some(next) = prev.pop() {
-            self.find_drops(body, prev, next, block);
+        let _ = std::mem::replace(&mut self.alive, alive);
+    }
+
+    fn find_vars(body: &ir::Body, dia: Diamond, all: bool, vars: &mut HashSet<ir::Local>) {
+        match dia {
+            Diamond::Closed { start, end } => {
+                Self::find_vars_block(body, start, if all { None } else { Some(end) }, vars);
+            }
+            Diamond::Open { start } => Self::find_vars_block(body, start, None, vars),
         }
+    }
+
+    fn find_vars_block(
+        body: &ir::Body,
+        block: ir::Block,
+        end: Option<ir::Block>,
+        vars: &mut HashSet<ir::Local>,
+    ) {
+        if Some(block) == end {
+            return;
+        }
+
+        let data = &body.blocks[block];
+
+        for stmt in &data.stmts {
+            match stmt {
+                ir::Stmt::Init(_) => {}
+                ir::Stmt::Drop(_) => {}
+                ir::Stmt::Assign(place, rvalue) => {
+                    Self::find_vars_place(place, vars);
+                    Self::find_vars_rvalue(rvalue, vars);
+                }
+                ir::Stmt::SetDiscr(place, _) => {
+                    Self::find_vars_place(place, vars);
+                }
+                ir::Stmt::Call(rets, func, args) => {
+                    for ret in rets {
+                        Self::find_vars_place(ret, vars);
+                    }
+
+                    Self::find_vars_op(func, vars);
+
+                    for arg in args {
+                        Self::find_vars_op(arg, vars);
+                    }
+                }
+            }
+        }
+
+        for next in data.successors() {
+            Self::find_vars_block(body, next, end, vars);
+        }
+    }
+
+    fn find_vars_place(place: &ir::Place, vars: &mut HashSet<ir::Local>) {
+        vars.insert(place.local);
+
+        for elem in &place.elems {
+            if let ir::PlaceElem::Index(op) = elem {
+                Self::find_vars_op(op, vars);
+            }
+        }
+    }
+
+    fn find_vars_op(op: &ir::Operand, vars: &mut HashSet<ir::Local>) {
+        if let ir::Operand::Place(place) = op {
+            Self::find_vars_place(place, vars);
+        }
+    }
+
+    fn find_vars_rvalue(rvalue: &ir::RValue, vars: &mut HashSet<ir::Local>) {
+        match rvalue {
+            ir::RValue::Use(op) => Self::find_vars_op(op, vars),
+            ir::RValue::AddrOf(place) => Self::find_vars_place(place, vars),
+            ir::RValue::GetDiscr(place) => Self::find_vars_place(place, vars),
+            ir::RValue::Cast(place, _) => Self::find_vars_place(place, vars),
+            ir::RValue::Intrinsic(_, args) => {
+                for arg in args {
+                    Self::find_vars_op(arg, vars);
+                }
+            }
+        }
+    }
+
+    fn reverse_anns(&mut self, start: usize) {
+        self.annotations[start..].reverse();
     }
 
     fn rvalue_lifetime(&mut self, rvalue: &ir::RValue, loc: ir::Location, state: bool) {
@@ -254,10 +342,6 @@ impl LifetimeAnalyzer {
     }
 
     fn place_lifetime(&mut self, place: &ir::Place, loc: ir::Location, state: bool) {
-        if !state {
-            println!("{}: {}", place.local, self.alive.contains(&place.local));
-        }
-
         if !self.alive.contains(&place.local) {
             self.alive.insert(place.local);
             self.annotations.push(Annotation {
