@@ -75,10 +75,39 @@ impl<'ctx> ConstMethods<'ctx> for ClifBackend<'ctx> {
                     }
                     _ => unimplemented!(),
                 },
-                ir::Const::Variant(idx, cs, _) if cs.is_empty() => {
-                    bytes.extend(&idx.to_ne_bytes()[..layout.size.bytes() as usize])
+                ir::Const::Variant(idx, cs, _) => match &layout.variants {
+                    ir::layout::Variants::Multiple { tag_encoding, tag_field, .. } => {
+                        if let ir::layout::FieldsShape::Arbitrary { offsets } = &layout.fields {
+                            match tag_encoding {
+                                ir::layout::TagEncoding::Direct => {
+                                    assert_eq!(*tag_field, 0);
+
+                                    let tag_layout = layout.field(0, &mcx.target);
+                                    let variant = layout.variant(*idx);
+                                    let mut i = tag_layout.size.bytes();
+
+                                    rec(mcx, dcx, &ir::Const::Scalar(*idx as u128, tag_layout.ty.clone()), tag_layout, bytes);
+
+                                    for (j, (c, offset)) in cs.iter().zip(offsets.iter().skip(1)).enumerate() {
+                                        bytes.extend(vec![0; (offset.bytes() - i) as usize]);
+                                        i = offset.bytes();
+
+                                        let field = variant.field(j, &mcx.target);
+
+                                        i += field.size.bytes();
+                                        rec(mcx, dcx, c, field, bytes);
+                                    }
+                                },
+                                ir::layout::TagEncoding::Niche { .. } => unreachable!(),
+                            }
+                        }
+                    },
+                    _ => unreachable!(),
                 }
-                ir::Const::Variant(_, _, _) => unimplemented!(),
+                // ir::Const::Variant(idx, cs, _) if cs.is_empty() => {
+                //     bytes.extend(&idx.to_ne_bytes()[..layout.size.bytes() as usize])
+                // }
+                // ir::Const::Variant(_, _, _) => unimplemented!(),
             }
         }
 

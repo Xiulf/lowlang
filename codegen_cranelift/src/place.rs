@@ -174,6 +174,10 @@ impl<'ctx> codegen::Place<'ctx> for Place<'ctx> {
     }
 
     fn field(self, fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>, idx: usize) -> Self {
+        if let ir::Type::Box(_) = self.layout.ty.kind {
+            return self.deref(fx).field(fx, idx);
+        }
+
         let layout = self.layout.field(idx, &fx.target);
 
         match self.kind {
@@ -351,6 +355,10 @@ impl<'ctx> codegen::Place<'ctx> for Place<'ctx> {
         fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>,
         variant: usize,
     ) -> Self {
+        if let ir::Type::Box(_) = self.layout.ty.kind {
+            return self.deref(fx).downcast_variant(fx, variant);
+        }
+
         let layout = self.layout.variant(variant);
 
         Place {

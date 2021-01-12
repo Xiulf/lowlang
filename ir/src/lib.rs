@@ -326,12 +326,12 @@ pub fn place_type(body: &Body, place: &Place) -> Ty {
         let elem = &place.elems[i];
 
         match elem {
-            PlaceElem::Deref => match ty.kind {
+            PlaceElem::Deref => match ty.access().kind {
                 Type::Ptr(to) => ty = *to,
                 Type::Box(to) => ty = *to,
                 _ => unreachable!(),
             },
-            PlaceElem::Field(f) => match ty.kind {
+            PlaceElem::Field(f) => match ty.access().kind {
                 Type::Tuple(mut tys) => ty = tys.swap_remove(*f),
                 Type::Union(mut tys) => ty = tys.swap_remove(*f),
                 Type::Box(to) => {
@@ -341,7 +341,7 @@ pub fn place_type(body: &Body, place: &Place) -> Ty {
                 _ => unreachable!(),
             },
             PlaceElem::Index(_) => unimplemented!(),
-            PlaceElem::Downcast(v) => match ty.kind {
+            PlaceElem::Downcast(v) => match ty.access().kind {
                 Type::Tagged(mut tys) => ty = tys.swap_remove(*v),
                 Type::Box(to) => {
                     ty = *to;
@@ -397,10 +397,10 @@ impl Ty {
     pub fn replace(&self, i: usize, with: Self) -> Self {
         match &self.kind {
             Type::Recurse(j) if *j == i => with,
-            Type::Recurse(j) => Ty {
-                info: self.info.clone(),
-                kind: Type::Recurse(*j - 1),
-            },
+            // Type::Recurse(j) => Ty {
+            //     info: self.info.clone(),
+            //     kind: Type::Recurse(*j - 1),
+            // },
             Type::Ptr(to) => Ty {
                 info: self.info.clone(),
                 kind: Type::Ptr(Box::new(to.replace(i + 1, with))),

@@ -6,7 +6,6 @@ use transform::Transform;
 
 pub struct LifetimeAnalyzer {
     alive: HashSet<ir::Local>,
-    dead: HashSet<ir::Local>,
     ties: HashMap<ir::Local, ir::Local>,
     annotations: Vec<Annotation>,
 }
@@ -25,7 +24,6 @@ impl LifetimeAnalyzer {
     pub fn new() -> Self {
         LifetimeAnalyzer {
             alive: HashSet::new(),
-            dead: HashSet::new(),
             ties: HashMap::new(),
             annotations: Vec::new(),
         }
@@ -70,7 +68,6 @@ impl Transform for LifetimeAnnotator {
 impl Visitor for LifetimeAnalyzer {
     fn visit_body(&mut self, body: &ir::Body) {
         self.alive.clear();
-        self.dead.clear();
         self.ties.clear();
 
         let dias = body.diamonds().collect::<Vec<_>>();
@@ -79,11 +76,15 @@ impl Visitor for LifetimeAnalyzer {
             self.find_inits(body, dia, &dias[i + 1..]);
         }
 
-        for (i, &dia) in dias.iter().enumerate().rev() {
-            self.find_drops(body, dia, &dias[..i]);
+        self.alive.clear();
+
+        let start = self.annotations.len();
+
+        for &dia in dias.iter().rev() {
+            self.find_drops(body, dia);
         }
 
-        println!();
+        self.reverse_anns(start);
     }
 }
 
@@ -174,10 +175,34 @@ impl LifetimeAnalyzer {
         }
     }
 
-    fn find_drops(&mut self, body: &ir::Body, dia: Diamond, dias: &[Diamond]) {
+    fn find_drops(&mut self, body: &ir::Body, dia: Diamond) {
         match dia {
-            Diamond::Closed { .. } => {
-                println!("find_drops: {:?}", dia);
+            Diamond::Closed { start, end } => {
+                let mut in_dia = HashSet::new();
+                let mut before = HashSet::new();
+
+                Self::find_vars_block_single(body, start, &mut before);
+
+                for block in body.blocks[start].successors() {
+                    Self::find_vars_block(body, block, Some(end), &mut in_dia);
+                }
+
+                let both = before.intersection(&in_dia);
+
+                for &local in both {
+                    self.alive.insert(local);
+                    self.annotations.push(Annotation {
+                        local,
+                        state: false,
+                        loc: ir::Location {
+                            body: body.id,
+                            block: end,
+                            stmt: 0,
+                        },
+                    });
+                }
+
+                self.find_drops_block(body, start, Some(end));
             }
             Diamond::Open { start } => {
                 self.find_drops_block(body, start, None);
@@ -187,7 +212,7 @@ impl LifetimeAnalyzer {
 
     fn find_drops_block(&mut self, body: &ir::Body, block: ir::Block, end: Option<ir::Block>) {
         let data = &body.blocks[block];
-        let alive = std::mem::replace(&mut self.alive, HashSet::new());
+        // let start = self.annotations.len();
 
         match &data.term {
             ir::Term::Switch(op, _, _) => {
@@ -203,8 +228,6 @@ impl LifetimeAnalyzer {
             }
             _ => {}
         }
-
-        let start = self.annotations.len();
 
         for (i, stmt) in data.stmts.iter().enumerate().rev() {
             let loc = ir::Location {
@@ -237,9 +260,7 @@ impl LifetimeAnalyzer {
             }
         }
 
-        self.reverse_anns(start);
-
-        let _ = std::mem::replace(&mut self.alive, alive);
+        // self.reverse_anns(start);
     }
 
     fn find_vars(body: &ir::Body, dia: Diamond, all: bool, vars: &mut HashSet<ir::Local>) {
@@ -261,6 +282,14 @@ impl LifetimeAnalyzer {
             return;
         }
 
+        Self::find_vars_block_single(body, block, vars);
+
+        for next in body.blocks[block].successors() {
+            Self::find_vars_block(body, next, end, vars);
+        }
+    }
+
+    fn find_vars_block_single(body: &ir::Body, block: ir::Block, vars: &mut HashSet<ir::Local>) {
         let data = &body.blocks[block];
 
         for stmt in &data.stmts {
@@ -288,8 +317,8 @@ impl LifetimeAnalyzer {
             }
         }
 
-        for next in data.successors() {
-            Self::find_vars_block(body, next, end, vars);
+        if let ir::Term::Switch(op, _, _) = &data.term {
+            Self::find_vars_op(op, vars);
         }
     }
 

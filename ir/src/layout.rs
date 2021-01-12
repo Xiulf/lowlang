@@ -30,7 +30,7 @@ pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
         Err(_) => Size::from_bits(64),
     };
 
-    let mut layout = match &ty.kind {
+    let mut layout = match &ty.access().kind {
         Type::Recurse(..) => unreachable!(),
         Type::U8 => scalar(Primitive::Int(Integer::I8, false)),
         Type::U16 => scalar(Primitive::Int(Integer::I16, false)),
@@ -414,9 +414,11 @@ impl TyLayout {
     }
 
     pub fn pointee(&self, target: &Triple) -> Self {
-        if let Type::Ptr(to) = &self.ty.kind {
+        let ty = self.ty.access();
+
+        if let Type::Ptr(to) = &ty.kind {
             layout_of(to, target)
-        } else if let Type::Box(to) = &self.ty.kind {
+        } else if let Type::Box(to) = &ty.kind {
             layout_of(to, target)
         } else {
             unreachable!();
@@ -430,7 +432,7 @@ impl TyLayout {
     pub fn field(&self, field: usize, target: &Triple) -> Self {
         assert!(field < self.fields.count());
 
-        let ty = match &self.ty.kind {
+        let ty = match &self.ty.access().kind {
             Type::U8
             | Type::U16
             | Type::U32

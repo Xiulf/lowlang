@@ -31,5 +31,5 @@ pub fn mandatory(module: &mut ir::Module, target: &target_lexicon::Triple) {
     analyze(copy::CopyAnalyzer, module);
     analyze(type_info::TypeInfoAnalyzer::new(target), module);
     analyze(lifetime::LifetimeAnalyzer::new(), module);
-    analyze(stack_alloc::StackAllocAnalyzer::new(), module);
+    analyze(stack_alloc::AllocAnalyzer::new(target), module);
 }

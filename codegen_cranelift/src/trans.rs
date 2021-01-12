@@ -118,6 +118,17 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
 
                     into.to_value(fx)
                 }
+                ir::Const::Ptr(to) => {
+                    let to_layout = layout.pointee(&fx.target);
+                    let data = Self::alloc_const(fx.mcx, to, to_layout, None);
+                    let ptr_ty = fx.module.target_config().pointer_type();
+                    let global = fx.mcx.module.declare_data_in_func(data, &mut fx.bcx.func);
+                    let global = fx.bcx.ins().global_value(ptr_ty, global);
+                    let val = value::Value::new_val(global, layout);
+
+                    into.store(fx, val.clone());
+                    val
+                }
                 _ => unimplemented!(),
             }
         } else {
@@ -163,6 +174,15 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
 
                     place.to_value(fx)
                 }
+                ir::Const::Ptr(to) => {
+                    let to_layout = layout.pointee(&fx.target);
+                    let data = Self::alloc_const(fx.mcx, to, to_layout, None);
+                    let ptr_ty = fx.module.target_config().pointer_type();
+                    let global = fx.mcx.module.declare_data_in_func(data, &mut fx.bcx.func);
+                    let global = fx.bcx.ins().global_value(ptr_ty, global);
+
+                    value::Value::new_val(global, layout)
+                }
                 _ => unimplemented!(),
             }
         }
@@ -173,6 +193,12 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
         place: place::Place<'ctx>,
         val: u128,
     ) {
+        if let ir::Type::Box(_) = place.layout.ty.kind {
+            let place = place.deref(fx);
+
+            return Self::trans_set_discr(fx, place, val);
+        }
+
         match place.layout.variants.clone() {
             ir::layout::Variants::Single { index } => {
                 assert_eq!(index, val as usize);
@@ -369,6 +395,32 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
                     }),
                     (simple "ptr_offset"(otr, offset) => iadd),
                     (complex "stack_alloc"(n) => {
+                        let mut malloc = fx.module.make_signature();
+                        let ptr_type = fx.module.target_config().pointer_type();
+
+                        malloc.returns.push(clif::AbiParam::new(ptr_type));
+                        malloc.params.push(clif::AbiParam::new(ptr_type));
+
+                        let malloc = fx.mcx.module.declare_function("malloc", clif::Linkage::Import, &malloc).unwrap();
+                        let malloc = fx.mcx.module.declare_func_in_func(malloc, &mut fx.bcx.func);
+                        let inst = fx.bcx.ins().call(malloc, &[n]);
+                        let val = fx.bcx.inst_results(inst)[0];
+
+                        value::Value::new_val(val, place.layout.clone())
+                    }),
+                    (complex "box_free"(ptr) => {
+                        let mut free = fx.module.make_signature();
+                        let ptr_type = fx.module.target_config().pointer_type();
+
+                        free.params.push(clif::AbiParam::new(ptr_type));
+
+                        let free = fx.mcx.module.declare_function("free", clif::Linkage::Import, &free).unwrap();
+                        let free = fx.mcx.module.declare_func_in_func(free, &mut fx.bcx.func);
+
+                        fx.bcx.ins().call(free, &[ptr]);
+                        value::Value::new_unit()
+                    }),
+                    (complex "box_alloc"(n) => {
                         let mut malloc = fx.module.make_signature();
                         let ptr_type = fx.module.target_config().pointer_type();
 
