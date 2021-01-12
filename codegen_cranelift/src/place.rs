@@ -151,8 +151,21 @@ impl<'ctx> codegen::Place<'ctx> for Place<'ctx> {
 
     fn deref(self, fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>) -> Self {
         let pointee = self.layout.pointee(&fx.target);
+        let is_box = matches!(self.layout.ty.kind, ir::Type::Box(_));
 
-        Self::new_ref(Pointer::addr(self.to_value(fx).load_scalar(fx)), pointee)
+        if is_box {
+            use crate::clif::Module;
+            let val = self.to_value(fx).load_scalar(fx);
+            let ptr = Pointer::addr(val);
+            let ptr_type = fx.module.target_config().pointer_type();
+
+            Self::new_ref(
+                Pointer::addr(ptr.load(fx, ptr_type, crate::clif::MemFlags::trusted())),
+                pointee,
+            )
+        } else {
+            Self::new_ref(Pointer::addr(self.to_value(fx).load_scalar(fx)), pointee)
+        }
     }
 
     fn index(

@@ -408,7 +408,7 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
 
                         value::Value::new_val(val, place.layout.clone())
                     }),
-                    (complex "box_free"(ptr) => {
+                    (complex "stack_free"(ptr) => {
                         let mut free = fx.module.make_signature();
                         let ptr_type = fx.module.target_config().pointer_type();
 
@@ -431,10 +431,19 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
                         let malloc = fx.mcx.module.declare_func_in_func(malloc, &mut fx.bcx.func);
                         let inst = fx.bcx.ins().call(malloc, &[n]);
                         let val = fx.bcx.inst_results(inst)[0];
+                        let n = fx.bcx.ins().iconst(ptr_type, ptr_type.bytes() as i64 * 3);
+                        let inst = fx.bcx.ins().call(malloc, &[n]);
+                        let ptr = fx.bcx.inst_results(inst)[0];
+                        let one = fx.bcx.ins().iconst(ptr_type, 1);
+                        let zero = fx.bcx.ins().iconst(ptr_type, 0);
 
-                        value::Value::new_val(val, place.layout.clone())
+                        fx.bcx.ins().store(clif::MemFlags::trusted(), val, ptr, 0);
+                        fx.bcx.ins().store(clif::MemFlags::trusted(), one, ptr, ptr_type.bytes() as i32);
+                        fx.bcx.ins().store(clif::MemFlags::trusted(), zero, ptr, ptr_type.bytes() as i32);
+
+                        value::Value::new_val(ptr, place.layout.clone())
                     }),
-                    (complex "stack_free"(ptr) => {
+                    (complex "box_free"(ptr) => {
                         let mut free = fx.module.make_signature();
                         let ptr_type = fx.module.target_config().pointer_type();
 
@@ -442,8 +451,36 @@ impl<'ctx> TransMethods<'ctx> for ClifBackend<'ctx> {
 
                         let free = fx.mcx.module.declare_function("free", clif::Linkage::Import, &free).unwrap();
                         let free = fx.mcx.module.declare_func_in_func(free, &mut fx.bcx.func);
+                        let strong_count = fx.bcx.ins().load(ptr_type, clif::MemFlags::trusted(), ptr, ptr_type.bytes() as i32);
+                        let strong_count = fx.bcx.ins().irsub_imm(strong_count, 1);
+                        let if_zero = fx.bcx.create_block();
+                        let if_else = fx.bcx.create_block();
+                        let exit = fx.bcx.create_block();
 
+                        fx.bcx.ins().brz(strong_count, if_zero, &[]);
+                        fx.bcx.ins().jump(if_else, &[]);
+
+                        fx.bcx.switch_to_block(if_zero);
+
+                        let val = fx.bcx.ins().load(ptr_type, clif::MemFlags::trusted(), ptr, 0);
+
+                        fx.bcx.ins().call(free, &[val]);
                         fx.bcx.ins().call(free, &[ptr]);
+                        fx.bcx.ins().jump(exit, &[]);
+
+                        fx.bcx.switch_to_block(if_else);
+                        fx.bcx.ins().store(clif::MemFlags::trusted(), strong_count, ptr, ptr_type.bytes() as i32);
+                        fx.bcx.ins().jump(exit, &[]);
+
+                        fx.bcx.switch_to_block(exit);
+                        value::Value::new_unit()
+                    }),
+                    (complex "box_copy"(ptr) => {
+                        let ptr_type = fx.module.target_config().pointer_type();
+                        let strong_count = fx.bcx.ins().load(ptr_type, clif::MemFlags::trusted(), ptr, ptr_type.bytes() as i32);
+                        let strong_count = fx.bcx.ins().iadd_imm(strong_count, 1);
+
+                        fx.bcx.ins().store(clif::MemFlags::trusted(), strong_count, ptr, ptr_type.bytes() as i32);
                         value::Value::new_unit()
                     }),
                 ]);

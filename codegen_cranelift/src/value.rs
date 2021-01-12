@@ -187,9 +187,14 @@ impl<'ctx> codegen::Value<'ctx> for Value<'ctx> {
 
     fn deref(self, fx: &mut FunctionCtx<'_, 'ctx, '_, ClifBackend<'ctx>>) -> Self {
         let pointee = self.layout.pointee(&fx.target);
+        let is_box = matches!(self.layout.ty.kind, ir::Type::Box(_));
         let ptr = self.load_scalar(fx);
 
-        Value::new_val(ptr, pointee)
+        if is_box {
+            Value::new_ref(Pointer::addr(ptr), pointee)
+        } else {
+            Value::new_val(ptr, pointee)
+        }
     }
 }
 
