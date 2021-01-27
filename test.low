@@ -1,27 +1,22 @@
-export def @0 main :: (i32, **u8) -> (i32)
-local  def @1 print_args :: (i32, **u8) -> ()
-import def @2 puts :: (**u8) -> (i32)
+export def @0 main :: (i32, ptr ptr u8) -> (i32)
+local  def @1 print_args :: (i32, ptr ptr u8) -> ()
+import def @2 puts :: (ptr u8) -> (i32)
 
 def @0 {
 block0(v0, v1):
-    v2 = const @1 (i32, **u8) -> ()
-    call v2(v0, v1)
-    v3 = const 0 i32
-    return v3
+    call @1 v0 v1
+    return 0
 }
 
 def @1 {
 block0(v0, v1):
-    v2 = const 0 i32
-    v3 = eq v0 v2
-    brnz v3 block1
+    brnz v0 block1
     return
 
 block1:
-    v4 = const @2 (**u8) -> (i32)
-    v5 = call v3(v1)
-    v6 = const 1 i32
-    v7 = sub v0 v6
-    v8 = offset v1 v6
-    br block0(v7, v8)
+    v2 = load v1
+    v3 = call @2 v2
+    v4 = sub v0 1
+    v5 = offset v1 1
+    br block0(v4, v5)
 }
