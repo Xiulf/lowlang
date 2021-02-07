@@ -45,5 +45,7 @@ fn main() {
 
     builder.br(entry, vec![argc, argv]);
 
-    println!("{}", module);
+    // println!("{}", module);
+
+    codegen::run(&module);
 }

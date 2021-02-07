@@ -34,36 +34,6 @@ impl Module {
     }
 }
 
-impl Instr {
-    pub fn new(name: impl Into<String>) -> Self {
-        Instr {
-            name: name.into(),
-            outputs: Vec::new(),
-            args: Vec::new(),
-        }
-    }
-
-    pub fn out(mut self, out: Var) -> Self {
-        self.outputs.push(out);
-        self
-    }
-
-    pub fn outs(mut self, outputs: Vec<Var>) -> Self {
-        self.outputs.extend(outputs);
-        self
-    }
-
-    pub fn arg(mut self, arg: impl Into<Operand>) -> Self {
-        self.args.push(arg.into());
-        self
-    }
-
-    pub fn args(mut self, args: Vec<Operand>) -> Self {
-        self.args.extend(args);
-        self
-    }
-}
-
 impl Type {
     pub fn ptr(self) -> Self {
         Type::Ptr(Box::new(self))
@@ -107,14 +77,6 @@ pub struct InstBuilder<'ir> {
     block: Block,
 }
 
-pub trait ConstOrVar: Into<Operand> {}
-
-impl ConstOrVar for Const {
-}
-
-impl ConstOrVar for Var {
-}
-
 pub trait ToOperandVec {
     fn to_operand_vec(self) -> Vec<Operand>;
 }
@@ -131,7 +93,7 @@ impl ToOperandVec for &[Operand] {
     }
 }
 
-impl<T: ConstOrVar> ToOperandVec for T {
+impl<T: Into<Operand>> ToOperandVec for T {
     fn to_operand_vec(self) -> Vec<Operand> {
         vec![self.into()]
     }
@@ -142,7 +104,7 @@ macro_rules! impl_to_op_vec {
     ($a:ident, $($v:ident,)*) => {
         impl_to_op_vec!($($v,)*);
 
-        impl<$a: ConstOrVar $(,$v: ConstOrVar)*> ToOperandVec for ($a, $($v,)*) {
+        impl<$a: Into<Operand> $(,$v: Into<Operand>)*> ToOperandVec for ($a, $($v,)*) {
             #[allow(non_snake_case)]
             fn to_operand_vec(self) -> Vec<Operand> {
                 let ($a, $($v,)*) = self;
@@ -206,18 +168,17 @@ impl<'ir> InstBuilder<'ir> {
         self.block().term = Term::Br(to, args);
     }
 
-    pub fn brnz(&mut self, val: impl ConstOrVar, to: Block) {
-        self.block().instrs.push(Instr::new("brnz").arg(val).arg(to));
+    pub fn brif(&mut self, val: impl Into<Operand>, then: Block, else_: Block, args: Vec<Var>) {
+        self.block().term = Term::BrIf(val.into(), then, else_, args);
     }
 
-    pub fn brz(&mut self, val: impl ConstOrVar, to: Block) {
-        self.block().instrs.push(Instr::new("brz").arg(val).arg(to));
-    }
-
-    pub fn const_(&mut self, c: Const, ty: Type) -> Var {
+    pub fn const_(&mut self, const_: Const, ty: Type) -> Var {
         let var = self.create_var(ty.clone());
 
-        self.block().instrs.push(Instr::new("const").arg(c).arg(ty).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Const { res: var, const_ },
+        });
+
         var
     }
 
@@ -231,12 +192,17 @@ impl<'ir> InstBuilder<'ir> {
 
         let var = self.create_var(pointee);
 
-        self.block().instrs.push(Instr::new("load").arg(ptr).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Load { res: var, ptr },
+        });
+
         var
     }
 
-    pub fn store(&mut self, ptr: Var, val: impl ConstOrVar) {
-        self.block().instrs.push(Instr::new("store").arg(ptr).arg(val));
+    pub fn store(&mut self, ptr: Var, val: impl Into<Operand>) {
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Store { ptr, val: val.into() },
+        });
     }
 
     pub fn load_field(&mut self, val: Var, idx: usize) -> Var {
@@ -257,14 +223,14 @@ impl<'ir> InstBuilder<'ir> {
 
         let var = self.create_var(field_ty);
 
-        self.block()
-            .instrs
-            .push(Instr::new("load_field").arg(val).arg(Const::Scalar(idx as u128)).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::LoadField { res: var, val, field: idx },
+        });
 
         var
     }
 
-    pub fn call(&mut self, func: impl ConstOrVar, args: impl ToOperandVec) -> Vec<Var> {
+    pub fn call(&mut self, func: impl Into<Operand>, args: impl ToOperandVec) -> Vec<Var> {
         let func: Operand = func.into();
         let mut func_ty = match func {
             | Operand::Var(v) => &self.body.vars[v].ty,
@@ -288,103 +254,271 @@ impl<'ir> InstBuilder<'ir> {
         let rets = sig.rets.into_iter().map(|r| self.create_var(r)).collect::<Vec<_>>();
         let args = args.to_operand_vec();
 
-        self.block().instrs.push(Instr::new("call").arg(func).args(args).outs(rets.clone()));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Call {
+                rets: rets.clone(),
+                func: func.into(),
+                args,
+            },
+        });
+
         rets
     }
 
-    pub fn offset(&mut self, ptr: Var, by: impl ConstOrVar) -> Var {
+    pub fn offset(&mut self, ptr: Var, by: impl Into<Operand>) -> Var {
         let ptr_ty = self.body.vars[ptr].ty.clone();
         let var = self.create_var(ptr_ty);
 
-        self.block().instrs.push(Instr::new("offset").arg(ptr).arg(by).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Offset { res: var, ptr, by: by.into() },
+        });
+
         var
     }
 
-    pub fn add(&mut self, l: Var, r: impl ConstOrVar) -> Var {
+    pub fn add(&mut self, l: Var, r: impl Into<Operand>) -> Var {
         let l_ty = self.body.vars[l].ty.clone();
         let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("add").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Add {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn sub(&mut self, l: Var, r: impl ConstOrVar) -> Var {
+    pub fn sub(&mut self, l: Var, r: impl Into<Operand>) -> Var {
         let l_ty = self.body.vars[l].ty.clone();
         let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("sub").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Sub {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn mul(&mut self, l: Var, r: impl ConstOrVar) -> Var {
+    pub fn mul(&mut self, l: Var, r: impl Into<Operand>) -> Var {
         let l_ty = self.body.vars[l].ty.clone();
         let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("mul").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Mul {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn div(&mut self, l: Var, r: impl ConstOrVar) -> Var {
+    pub fn div(&mut self, l: Var, r: impl Into<Operand>) -> Var {
         let l_ty = self.body.vars[l].ty.clone();
         let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("div").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Div {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn rem(&mut self, l: Var, r: impl ConstOrVar) -> Var {
+    pub fn rem(&mut self, l: Var, r: impl Into<Operand>) -> Var {
         let l_ty = self.body.vars[l].ty.clone();
         let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("rem").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Rem {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn eq(&mut self, l: Var, r: impl ConstOrVar) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+    pub fn shl(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let l_ty = self.body.vars[l].ty.clone();
+        let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("eq").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Shl {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn ne(&mut self, l: Var, r: impl ConstOrVar) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+    pub fn shr(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let l_ty = self.body.vars[l].ty.clone();
+        let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("ne").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Shr {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn lt(&mut self, l: Var, r: impl ConstOrVar) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+    pub fn and(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let l_ty = self.body.vars[l].ty.clone();
+        let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("lt").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::And {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn le(&mut self, l: Var, r: impl ConstOrVar) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+    pub fn or(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let l_ty = self.body.vars[l].ty.clone();
+        let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("le").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Or {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn gt(&mut self, l: Var, r: impl ConstOrVar) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+    pub fn xor(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let l_ty = self.body.vars[l].ty.clone();
+        let var = self.create_var(l_ty);
 
-        self.block().instrs.push(Instr::new("gt").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Xor {
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 
-    pub fn ge(&mut self, l: Var, r: impl ConstOrVar) -> Var {
+    pub fn eq(&mut self, l: Var, r: impl Into<Operand>) -> Var {
         let bool_ty = Type::Int(1, false);
         let var = self.create_var(bool_ty);
 
-        self.block().instrs.push(Instr::new("ge").arg(l).arg(r).out(var));
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Cmp {
+                cc: CondCode::Equal,
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
+        var
+    }
+
+    pub fn ne(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let bool_ty = Type::Int(1, false);
+        let var = self.create_var(bool_ty);
+
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Cmp {
+                cc: CondCode::NotEqual,
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
+        var
+    }
+
+    pub fn lt(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let bool_ty = Type::Int(1, false);
+        let var = self.create_var(bool_ty);
+
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Cmp {
+                cc: CondCode::Less,
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
+        var
+    }
+
+    pub fn le(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let bool_ty = Type::Int(1, false);
+        let var = self.create_var(bool_ty);
+
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Cmp {
+                cc: CondCode::LessEqual,
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
+        var
+    }
+
+    pub fn gt(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let bool_ty = Type::Int(1, false);
+        let var = self.create_var(bool_ty);
+
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Cmp {
+                cc: CondCode::Greater,
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
+        var
+    }
+
+    pub fn ge(&mut self, l: Var, r: impl Into<Operand>) -> Var {
+        let bool_ty = Type::Int(1, false);
+        let var = self.create_var(bool_ty);
+
+        self.block().instrs.push(Instr {
+            kind: InstrKind::Cmp {
+                cc: CondCode::GreaterEqual,
+                res: var,
+                lhs: l,
+                rhs: r.into(),
+            },
+        });
+
         var
     }
 }
