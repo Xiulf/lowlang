@@ -1,9 +1,13 @@
 [package]
-name = "ir"
+name = "codegen_clif"
 version = "0.1.0"
 authors = ["Cyberduc-k <tttymo@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+ir = { path = "../ir" }
 index_vec = "0.1.2"
+cranelift = { version = "0.69.0" }
+cranelift-module = { version = "0.69.0" }
+cranelift-object = { version = "0.69.0" }
 target-lexicon = { version = "0.11.0" }

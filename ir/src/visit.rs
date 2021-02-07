@@ -52,7 +52,7 @@ macro_rules! make_visitor {
             fn visit_var(&mut self, var: &$($mut)? Var) {
             }
 
-            fn visit_type(&mut self, ty: &$($mut)? Type) {
+            fn visit_type(&mut self, ty: &$($mut)? Ty) {
                 self.super_type(ty);
             }
 
@@ -127,15 +127,15 @@ macro_rules! make_visitor {
             }
 
             fn super_instr(&mut self, decl: &$($mut)? Instr) {
-                let Instr { outputs, args, .. } = decl;
-
-                for out in outputs {
-                    self.visit_var(out);
-                }
-
-                for arg in args {
-                    self.visit_operand(arg);
-                }
+                // let Instr { outputs, args, .. } = decl;
+                //
+                // for out in outputs {
+                //     self.visit_var(out);
+                // }
+                //
+                // for arg in args {
+                //     self.visit_operand(arg);
+                // }
             }
 
             fn super_term(&mut self, decl: &$($mut)? Term) {
@@ -145,6 +145,13 @@ macro_rules! make_visitor {
                             self.visit_var(var);
                         }
                     }
+                    Term::BrIf(cond, _, _, vars) => {
+                        self.visit_operand(cond);
+
+                        for var in vars {
+                            self.visit_var(var);
+                        }
+                    },
                     Term::Return(ops) => {
                         for op in ops {
                             self.visit_operand(op);
@@ -159,16 +166,14 @@ macro_rules! make_visitor {
                 match decl {
                     Operand::Var(v) => self.visit_var(v),
                     Operand::Const(c) => self.visit_const(c),
-                    Operand::Type(t) => self.visit_type(t),
-                    Operand::Block(_) => {},
                 }
             }
 
             fn super_const(&mut self, decl: &$($mut)? Const) {
             }
 
-            fn super_type(&mut self, decl: &$($mut)? Type) {
-                match decl {
+            fn super_type(&mut self, decl: &$($mut)? Ty) {
+                match &$($mut)? decl.kind {
                     Type::Ptr(to) => self.visit_type(to),
                     Type::Box(to) => self.visit_type(to),
                     Type::Tuple(tys) => {

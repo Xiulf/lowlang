@@ -1,7 +1,7 @@
 use crate::*;
 
 impl Module {
-    pub fn declare(&mut self, name: impl Into<String>, linkage: Linkage, ty: Type) -> DefId {
+    pub fn declare(&mut self, name: impl Into<String>, linkage: Linkage, ty: Ty) -> DefId {
         let id = self.defs.next_idx();
 
         self.defs.push(Decl {
@@ -34,22 +34,22 @@ impl Module {
     }
 }
 
-impl Type {
+impl Ty {
     pub fn ptr(self) -> Self {
-        Type::Ptr(Box::new(self))
+        Ty::new(Type::Ptr(Box::new(self)))
     }
 
-    pub const BOOL: Type = Type::Int(1, false);
-    pub const U8: Type = Type::Int(8, false);
-    pub const U16: Type = Type::Int(16, false);
-    pub const U32: Type = Type::Int(32, false);
-    pub const U64: Type = Type::Int(64, false);
-    pub const U128: Type = Type::Int(128, false);
-    pub const I8: Type = Type::Int(8, true);
-    pub const I16: Type = Type::Int(16, true);
-    pub const I32: Type = Type::Int(32, true);
-    pub const I64: Type = Type::Int(64, true);
-    pub const I128: Type = Type::Int(128, true);
+    pub const BOOL: Self = Ty::new(Type::Int(1, false));
+    pub const U8: Self = Ty::new(Type::Int(8, false));
+    pub const U16: Self = Ty::new(Type::Int(16, false));
+    pub const U32: Self = Ty::new(Type::Int(32, false));
+    pub const U64: Self = Ty::new(Type::Int(64, false));
+    pub const U128: Self = Ty::new(Type::Int(128, false));
+    pub const I8: Self = Ty::new(Type::Int(8, true));
+    pub const I16: Self = Ty::new(Type::Int(16, true));
+    pub const I32: Self = Ty::new(Type::Int(32, true));
+    pub const I64: Self = Ty::new(Type::Int(64, true));
+    pub const I128: Self = Ty::new(Type::Int(128, true));
 }
 
 impl Signature {
@@ -60,12 +60,12 @@ impl Signature {
         }
     }
 
-    pub fn param(mut self, ty: Type) -> Self {
+    pub fn param(mut self, ty: Ty) -> Self {
         self.params.push(ty);
         self
     }
 
-    pub fn ret(mut self, ty: Type) -> Self {
+    pub fn ret(mut self, ty: Ty) -> Self {
         self.rets.push(ty);
         self
     }
@@ -137,7 +137,7 @@ impl<'ir> InstBuilder<'ir> {
         self.block = block;
     }
 
-    pub fn add_param(&mut self, ty: Type) -> Var {
+    pub fn add_param(&mut self, ty: Ty) -> Var {
         let param = self.create_var(ty);
 
         self.block().params.push(param);
@@ -148,7 +148,7 @@ impl<'ir> InstBuilder<'ir> {
         &mut self.body.blocks[self.block]
     }
 
-    fn create_var(&mut self, ty: Type) -> Var {
+    fn create_var(&mut self, ty: Ty) -> Var {
         let id = self.body.vars.next_idx();
 
         self.body.vars.push(Variable { id, ty });
@@ -172,8 +172,8 @@ impl<'ir> InstBuilder<'ir> {
         self.block().term = Term::BrIf(val.into(), then, else_, args);
     }
 
-    pub fn const_(&mut self, const_: Const, ty: Type) -> Var {
-        let var = self.create_var(ty.clone());
+    pub fn const_(&mut self, const_: Const, ty: Ty) -> Var {
+        let var = self.create_var(ty);
 
         self.block().instrs.push(Instr {
             kind: InstrKind::Const { res: var, const_ },
@@ -184,7 +184,7 @@ impl<'ir> InstBuilder<'ir> {
 
     pub fn load(&mut self, ptr: Var) -> Var {
         let ptr_ty = &self.body.vars[ptr].ty;
-        let pointee = if let Type::Ptr(to) = ptr_ty {
+        let pointee = if let Type::Ptr(to) = &ptr_ty.kind {
             (**to).clone()
         } else {
             panic!("cannot load a non-pointer type");
@@ -207,9 +207,9 @@ impl<'ir> InstBuilder<'ir> {
 
     pub fn load_field(&mut self, val: Var, idx: usize) -> Var {
         let val_ty = &self.body.vars[val].ty;
-        let field_ty = if let Type::Tuple(tys) = val_ty {
+        let field_ty = if let Type::Tuple(tys) = &val_ty.kind {
             tys[idx].clone()
-        } else if let Type::Def(def) = val_ty {
+        } else if let Type::Def(def) = &val_ty.kind {
             let typedef = &self.module.types[def];
 
             if typedef.variants.len() == 1 {
@@ -241,11 +241,11 @@ impl<'ir> InstBuilder<'ir> {
             | _ => unreachable!(),
         };
 
-        while let Type::Forall(_, ret) = func_ty {
+        while let Type::Forall(_, ret) = &func_ty.kind {
             func_ty = &**ret;
         }
 
-        let sig = if let Type::Func(sig) = func_ty {
+        let sig = if let Type::Func(sig) = &func_ty.kind {
             sig.clone()
         } else {
             panic!("cannot call a non-function type");
@@ -427,8 +427,7 @@ impl<'ir> InstBuilder<'ir> {
     }
 
     pub fn eq(&mut self, l: Var, r: impl Into<Operand>) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+        let var = self.create_var(Ty::BOOL);
 
         self.block().instrs.push(Instr {
             kind: InstrKind::Cmp {
@@ -443,8 +442,7 @@ impl<'ir> InstBuilder<'ir> {
     }
 
     pub fn ne(&mut self, l: Var, r: impl Into<Operand>) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+        let var = self.create_var(Ty::BOOL);
 
         self.block().instrs.push(Instr {
             kind: InstrKind::Cmp {
@@ -459,8 +457,7 @@ impl<'ir> InstBuilder<'ir> {
     }
 
     pub fn lt(&mut self, l: Var, r: impl Into<Operand>) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+        let var = self.create_var(Ty::BOOL);
 
         self.block().instrs.push(Instr {
             kind: InstrKind::Cmp {
@@ -475,8 +472,7 @@ impl<'ir> InstBuilder<'ir> {
     }
 
     pub fn le(&mut self, l: Var, r: impl Into<Operand>) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+        let var = self.create_var(Ty::BOOL);
 
         self.block().instrs.push(Instr {
             kind: InstrKind::Cmp {
@@ -491,8 +487,7 @@ impl<'ir> InstBuilder<'ir> {
     }
 
     pub fn gt(&mut self, l: Var, r: impl Into<Operand>) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+        let var = self.create_var(Ty::BOOL);
 
         self.block().instrs.push(Instr {
             kind: InstrKind::Cmp {
@@ -507,8 +502,7 @@ impl<'ir> InstBuilder<'ir> {
     }
 
     pub fn ge(&mut self, l: Var, r: impl Into<Operand>) -> Var {
-        let bool_ty = Type::Int(1, false);
-        let var = self.create_var(bool_ty);
+        let var = self.create_var(Ty::BOOL);
 
         self.block().instrs.push(Instr {
             kind: InstrKind::Cmp {

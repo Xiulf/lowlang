@@ -1,4 +1,5 @@
 pub mod builder;
+pub mod layout;
 mod printing;
 pub mod visit;
 
@@ -22,7 +23,7 @@ index_vec::define_index_type! {
     DEFAULT = DefId::from_raw_unchecked(0);
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Decl {
     pub id: DefId,
     pub name: String,
@@ -30,30 +31,30 @@ pub struct Decl {
     pub kind: DeclKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DeclKind {
-    Def(Type),
+    Def(Ty),
     Type,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Linkage {
     Import,
     Export,
     Local,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeDef {
     pub variants: Vec<Variant>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Variant {
-    pub tys: Vec<Type>,
+    pub tys: Vec<Ty>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Body {
     pub vars: IndexVec<Var, Variable>,
     pub blocks: IndexVec<Block, BasicBlock>,
@@ -64,10 +65,10 @@ index_vec::define_index_type! {
     DEFAULT = Var::from_raw_unchecked(0);
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Variable {
     pub id: Var,
-    pub ty: Type,
+    pub ty: Ty,
 }
 
 index_vec::define_index_type! {
@@ -75,7 +76,7 @@ index_vec::define_index_type! {
     DEFAULT = Block::from_raw_unchecked(0);
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BasicBlock {
     pub id: Block,
     pub params: Vec<Var>,
@@ -83,12 +84,16 @@ pub struct BasicBlock {
     pub term: Term,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Instr {
     pub kind: InstrKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub mod instr {
+    pub use super::InstrKind::*;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum InstrKind {
     Const { res: Var, const_: Const },
     Load { res: Var, ptr: Var },
@@ -110,7 +115,7 @@ pub enum InstrKind {
     Cmp { res: Var, cc: CondCode, lhs: Var, rhs: Operand },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CondCode {
     Equal,
     NotEqual,
@@ -120,7 +125,7 @@ pub enum CondCode {
     GreaterEqual,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Term {
     Unset,
     Abort,
@@ -129,39 +134,54 @@ pub enum Term {
     BrIf(Operand, Block, Block, Vec<Var>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Operand {
     Var(Var),
     Const(Const),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Const {
     Undefined,
     Scalar(u128),
     Addr(DefId),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Ty {
+    pub info: TyInfo,
+    pub kind: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TyInfo {
+    pub valid_range: Option<std::ops::RangeInclusive<u128>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Int(u8, bool),
     Float(u8),
-    Ptr(Box<Type>),
-    Box(Box<Type>),
-    Tuple(Vec<Type>),
+    Ptr(Box<Ty>),
+    Box(Box<Ty>),
+    Tuple(Vec<Ty>),
     Func(Signature),
     Def(DefId),
     Var(TypeVar),
-    Forall(Vec<TypeVar>, Box<Type>),
+    Forall(Vec<TypeVar>, Box<Ty>),
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeVar(pub u32);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Signature {
-    pub params: Vec<Type>,
-    pub rets: Vec<Type>,
+    pub params: Vec<Ty>,
+    pub rets: Vec<Ty>,
+}
+
+impl Block {
+    pub const ENTRY: Self = Block::from_raw_unchecked(0);
 }
 
 impl Instr {
@@ -171,6 +191,20 @@ impl Instr {
 
     pub fn outputs(&self) -> Outputs {
         Outputs { instr: self, idx: 0 }
+    }
+}
+
+impl Ty {
+    pub const fn new(kind: Type) -> Self {
+        Ty {
+            info: TyInfo { valid_range: None },
+            kind,
+        }
+    }
+
+    pub fn with_valid_range(mut self, valid_range: std::ops::RangeInclusive<u128>) -> Self {
+        self.info.valid_range = Some(valid_range);
+        self
     }
 }
 

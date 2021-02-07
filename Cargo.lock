@@ -10,6 +10,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.38"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afddf7f520a80dbf76e6f50a35bca42a2331ef227a28b3b6dc5c2e2338d114b1"
+
+[[package]]
+name = "autocfg"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
+
+[[package]]
+name = "byteorder"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae44d1a3d5a19df61dd0c8beb138458ac2a53a7ac09eba97d55592540004306b"
+
+[[package]]
 name = "cc"
 version = "1.0.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -25,9 +43,136 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "codegen"
 version = "0.1.0"
 dependencies = [
+ "ir",
+ "libloading",
+]
+
+[[package]]
+name = "codegen_clif"
+version = "0.1.0"
+dependencies = [
+ "cranelift",
+ "cranelift-module",
+ "cranelift-object",
+ "index_vec",
+ "ir",
+ "target-lexicon",
+]
+
+[[package]]
+name = "codegen_llvm"
+version = "0.1.0"
+dependencies = [
  "index_vec",
  "inkwell",
  "ir",
+]
+
+[[package]]
+name = "cranelift"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "910322bd748b9b2450947659a48a928f35b8ba7212d80d719ff85e4b7cde62b7"
+dependencies = [
+ "cranelift-codegen",
+ "cranelift-frontend",
+]
+
+[[package]]
+name = "cranelift-bforest"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4066fd63b502d73eb8c5fa6bcab9c7962b05cd580f6b149ee83a8e730d8ce7fb"
+dependencies = [
+ "cranelift-entity",
+]
+
+[[package]]
+name = "cranelift-codegen"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a54e4beb833a3c873a18a8fe735d73d732044004c7539a072c8faa35ccb0c60"
+dependencies = [
+ "byteorder",
+ "cranelift-bforest",
+ "cranelift-codegen-meta",
+ "cranelift-codegen-shared",
+ "cranelift-entity",
+ "log",
+ "regalloc",
+ "smallvec",
+ "target-lexicon",
+ "thiserror",
+]
+
+[[package]]
+name = "cranelift-codegen-meta"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c54cac7cacb443658d8f0ff36a3545822613fa202c946c0891897843bc933810"
+dependencies = [
+ "cranelift-codegen-shared",
+ "cranelift-entity",
+]
+
+[[package]]
+name = "cranelift-codegen-shared"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a109760aff76788b2cdaeefad6875a73c2b450be13906524f6c2a81e05b8d83c"
+
+[[package]]
+name = "cranelift-entity"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b044234aa32531f89a08b487630ddc6744696ec04c8123a1ad388de837f5de3"
+
+[[package]]
+name = "cranelift-frontend"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5452b3e4e97538ee5ef2cc071301c69a86c7adf2770916b9d04e9727096abd93"
+dependencies = [
+ "cranelift-codegen",
+ "log",
+ "smallvec",
+ "target-lexicon",
+]
+
+[[package]]
+name = "cranelift-module"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b17bc01cb9f176156d5cbd47ece19292e04e05a91a837dcf0ef69cc1e0e97a5a"
+dependencies = [
+ "anyhow",
+ "cranelift-codegen",
+ "cranelift-entity",
+ "log",
+ "thiserror",
+]
+
+[[package]]
+name = "cranelift-object"
+version = "0.69.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b25cdfa0f692f9d17626fb6ee1ecae545585f97c7a998c90423576d588ea7825"
+dependencies = [
+ "anyhow",
+ "cranelift-codegen",
+ "cranelift-module",
+ "log",
+ "object",
+ "target-lexicon",
+]
+
+[[package]]
+name = "crc32fast"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81156fece84ab6a9f2afdb109ce3ae577e42b1228441eded99bd77f627953b1a"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -37,10 +182,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
+name = "hashbrown"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
+
+[[package]]
 name = "index_vec"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52fb664a32d8c1f30a4693137066dd1c3bd67c8edc544281ec3d7cdc8230ed32"
+
+[[package]]
+name = "indexmap"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fb1fa934250de4de8aef298d81c729a7d33d8c239daa3a7575e6b92bfc7313b"
+dependencies = [
+ "autocfg",
+ "hashbrown",
+]
 
 [[package]]
 name = "inkwell"
@@ -80,6 +241,7 @@ name = "ir"
 version = "0.1.0"
 dependencies = [
  "index_vec",
+ "target-lexicon",
 ]
 
 [[package]]
@@ -93,6 +255,16 @@ name = "libc"
 version = "0.2.84"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1cca32fa0182e8c0989459524dc356b8f2b5c10f1b9eb521b7d182c03cf8c5ff"
+
+[[package]]
+name = "libloading"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f84d96438c15fcd6c3f244c8fce01d1e2b9c6b5623e9c711dc9286d8fc92d6a"
+dependencies = [
+ "cfg-if",
+ "winapi",
+]
 
 [[package]]
 name = "llvm-sys"
@@ -117,6 +289,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "log"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "lowc"
 version = "0.1.0"
 dependencies = [
@@ -129,6 +310,16 @@ name = "memchr"
 version = "2.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ee1c47aaa256ecabcaea351eae4a9b01ef39ed810004e298d2511ed284b1525"
+
+[[package]]
+name = "object"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d3b63360ec3cb337817c2dbd47ab4a0f170d285d8e5a2064600f3def1402397"
+dependencies = [
+ "crc32fast",
+ "indexmap",
+]
 
 [[package]]
 name = "once_cell"
@@ -195,6 +386,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41cc0f7e4d5d4544e8861606a285bb08d3e70712ccc7d2b84d7c0ccfaf4b05ce"
 
 [[package]]
+name = "regalloc"
+version = "0.0.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "571f7f397d61c4755285cd37853fe8e03271c243424a907415909379659381c5"
+dependencies = [
+ "log",
+ "rustc-hash",
+ "smallvec",
+]
+
+[[package]]
 name = "regex"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -211,6 +413,12 @@ name = "regex-syntax"
 version = "0.6.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5eb417147ba9860a96cfe72a0b93bf88fee1744b5636ec99ab20c1aa9376581"
+
+[[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "scopeguard"
@@ -251,6 +459,32 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-xid",
+]
+
+[[package]]
+name = "target-lexicon"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ee5a98e506fb7231a304c3a1bd7c132a55016cf65001e0282480665870dfcb9"
+
+[[package]]
+name = "thiserror"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76cc616c6abf8c8928e2fdcc0dbfab37175edd8fb49a4641066ad1364fdab146"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9be73a2caec27583d0046ef3796c3794f868a5bc813db689eed00c7631275cd1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
