@@ -6,7 +6,8 @@ use inkwell::module::{Linkage, Module};
 use inkwell::{types, values, AddressSpace};
 use std::collections::HashMap;
 
-pub fn run(module: &ir::Module) {
+#[no_mangle]
+pub fn run_codegen(module: &ir::Module) {
     let context = Context::create();
     let mut mcx = ModuleCtx::new(&context, "test");
 
@@ -126,7 +127,6 @@ impl<'ctx> ModuleCtx<'ctx> {
             | ir::Type::Float(128) => self.context.f128_type().into(),
             | ir::Type::Float(_) => unreachable!(),
             | ir::Type::Ptr(to) => self.ll_basic_type(to).ptr_type(AddressSpace::Generic).into(),
-            | ir::Type::Box(_) => unimplemented!(),
             | ir::Type::Tuple(tys) => {
                 let tys = tys.iter().map(|t| self.ll_basic_type(t)).collect::<Vec<_>>();
 

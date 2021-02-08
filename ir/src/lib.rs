@@ -56,6 +56,7 @@ pub struct Variant {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Body {
+    pub rets: Vec<Ty>,
     pub vars: IndexVec<Var, Variable>,
     pub blocks: IndexVec<Block, BasicBlock>,
 }
@@ -163,7 +164,6 @@ pub enum Type {
     Int(u8, bool),
     Float(u8),
     Ptr(Box<Ty>),
-    Box(Box<Ty>),
     Tuple(Vec<Ty>),
     Func(Signature),
     Def(DefId),

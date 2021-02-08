@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 ir = { path = "../ir" }
 libloading = "0.7.0"
+tempfile = "3.2.0"

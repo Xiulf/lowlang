@@ -99,7 +99,7 @@ macro_rules! make_visitor {
             }
 
             fn super_body(&mut self, decl: &$($mut)? Body) {
-                let Body { vars, blocks } = decl;
+                let Body { vars, blocks, .. } = decl;
 
                 for var in vars {
                     self.visit_variable(var);
@@ -175,7 +175,6 @@ macro_rules! make_visitor {
             fn super_type(&mut self, decl: &$($mut)? Ty) {
                 match &$($mut)? decl.kind {
                     Type::Ptr(to) => self.visit_type(to),
-                    Type::Box(to) => self.visit_type(to),
                     Type::Tuple(tys) => {
                         for ty in tys {
                             self.visit_type(ty);

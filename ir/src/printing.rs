@@ -177,7 +177,6 @@ impl Display for Ty {
             | Type::Int(bits, false) => write!(f, "u{}", bits),
             | Type::Float(bits) => write!(f, "f{}", bits),
             | Type::Ptr(to) => write!(f, "ptr {}", to),
-            | Type::Box(to) => write!(f, "box {}", to),
             | Type::Tuple(tys) => write!(f, "({})", list(tys, ", ")),
             | Type::Func(sig) => sig.fmt(f),
             | Type::Def(id) => id.fmt(f),

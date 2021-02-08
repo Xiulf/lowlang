@@ -28,7 +28,21 @@ impl Module {
     }
 
     pub fn define(&mut self, def: DefId) -> InstBuilder {
-        self.bodies.insert(def, Body::default());
+        let mut body = Body::default();
+
+        if let DeclKind::Def(ty) = &self.defs[def].kind {
+            let mut ty = ty;
+
+            while let Type::Forall(_, r) = &ty.kind {
+                ty = &**r;
+            }
+
+            if let Type::Func(sig) = &ty.kind {
+                body.rets = sig.rets.clone();
+            }
+        }
+
+        self.bodies.insert(def, body);
 
         InstBuilder::new(&self.subset, self.bodies.get_mut(&def).unwrap())
     }

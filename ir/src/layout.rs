@@ -42,12 +42,6 @@ pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
         | Type::Float(64) => scalar(Primitive::F64),
         | Type::Float(_) => unreachable!(),
         | Type::Ptr(_) => scalar(Primitive::Pointer),
-        | Type::Box(_) => {
-            let mut scalar = scalar_unit(Primitive::Pointer);
-
-            scalar.valid_range = 1..=*scalar.valid_range.end();
-            Layout::scalar(scalar, target)
-        },
         | Type::Func(_) => {
             let mut ptr = scalar_unit(Primitive::Pointer);
 
@@ -302,25 +296,37 @@ pub fn ptr_sized_int(target: &Triple, sign: bool) -> Ty {
 }
 
 impl TyLayout {
-    pub fn unit() -> Self {
-        TyLayout {
-            ty: Ty::new(Type::Tuple(Vec::new())),
-            layout: Layout {
-                size: Size::ZERO,
-                align: Align::from_bytes(1),
-                stride: Size::ZERO,
-                abi: Abi::Aggregate { sized: true },
-                fields: FieldsShape::Arbitrary { offsets: Vec::new() },
-                variants: Variants::Single { index: 0 },
-                largest_niche: None,
-            },
-        }
-    }
+    pub const UNIT: Self = TyLayout {
+        ty: Ty::new(Type::Tuple(Vec::new())),
+        layout: Layout {
+            size: Size::ZERO,
+            align: Align::from_bytes(1),
+            stride: Size::ZERO,
+            abi: Abi::Aggregate { sized: true },
+            fields: FieldsShape::Arbitrary { offsets: Vec::new() },
+            variants: Variants::Single { index: 0 },
+            largest_niche: None,
+        },
+    };
+
+    pub const BOOL: Self = TyLayout {
+        ty: Ty::BOOL,
+        layout: Layout {
+            size: Size { raw: 1 },
+            align: Align::from_bytes(1),
+            stride: Size { raw: 1 },
+            abi: Abi::Scalar(Scalar {
+                value: Primitive::Bool,
+                valid_range: 0..=1,
+            }),
+            fields: FieldsShape::Primitive,
+            variants: Variants::Single { index: 0 },
+            largest_niche: None,
+        },
+    };
 
     pub fn pointee(&self, target: &Triple) -> Self {
         if let Type::Ptr(to) = &self.ty.kind {
-            layout_of(to, target)
-        } else if let Type::Box(to) = &self.ty.kind {
             layout_of(to, target)
         } else {
             unreachable!();
@@ -335,7 +341,7 @@ impl TyLayout {
         assert!(field < self.fields.count());
 
         let ty = match &self.ty.kind {
-            | Type::Int(_, _) | Type::Float(_) | Type::Ptr(_) | Type::Box(_) | Type::Func(_) | Type::Var(_) => {
+            | Type::Int(_, _) | Type::Float(_) | Type::Ptr(_) | Type::Func(_) | Type::Var(_) => {
                 unreachable!()
             },
             | Type::Tuple(tys) => tys[field].clone(),
@@ -555,7 +561,7 @@ impl Align {
         Align::from_bytes(Size::from_bits(bits).bytes())
     }
 
-    pub fn from_bytes(mut bytes: u64) -> Self {
+    pub const fn from_bytes(mut bytes: u64) -> Self {
         if bytes == 0 {
             return Align { pow2: 0 };
         }
