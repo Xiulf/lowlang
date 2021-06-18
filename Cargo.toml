@@ -1,8 +1,5 @@
 [workspace]
 members = [
-    "ir",
-    "codegen_llvm",
-    "codegen_clif",
-    "codegen",
     "lowc",
+    "ir",
 ]
