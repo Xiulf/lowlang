@@ -5,3 +5,4 @@ edition = "2018"
 
 [dependencies]
 arena = { git = "https://github.com/Xiulf/arena.git" }
+logos = "0.12.0"

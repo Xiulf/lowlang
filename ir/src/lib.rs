@@ -4,6 +4,7 @@ pub mod builder;
 pub mod display;
 mod intrinsics;
 pub mod layout;
+pub mod parser;
 pub mod ty;
 
 use arena::{Arena, Idx};

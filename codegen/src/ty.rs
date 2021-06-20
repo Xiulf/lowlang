@@ -57,7 +57,7 @@ impl AsFuncType for Ty {
                         let ty = p.ty.as_basic_type(ctx);
 
                         if p.flags.is_set(ir::Flags::IN) {
-                            ty.ptr_type(AddressSpace::Local).into()
+                            ty.ptr_type(AddressSpace::Generic).into()
                         } else {
                             ty
                         }
@@ -72,7 +72,7 @@ impl AsFuncType for Ty {
                         let ty = r.ty.as_basic_type(ctx);
 
                         if r.flags.is_set(ir::Flags::OUT) {
-                            params.insert(0, ty.ptr_type(AddressSpace::Local).into());
+                            params.insert(0, ty.ptr_type(AddressSpace::Generic).into());
                             None
                         } else {
                             Some(ty)
