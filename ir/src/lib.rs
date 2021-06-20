@@ -4,30 +4,30 @@ pub mod builder;
 pub mod display;
 mod intrinsics;
 pub mod layout;
-mod ty;
+pub mod ty;
 
 use arena::{Arena, Idx};
 use std::ops::{Index, IndexMut};
-pub use ty::*;
+use ty::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub name: String,
-    funcs: Arena<Func>,
+    pub funcs: Arena<Func>,
     bodies: Arena<Body>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FuncId(Idx<Func>);
+pub struct FuncId(pub Idx<Func>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BodyId(Idx<Body>);
+pub struct BodyId(pub Idx<Body>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Var(Idx<VarInfo>);
+pub struct Var(pub Idx<VarInfo>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Block(Idx<BlockData>);
+pub struct Block(pub Idx<BlockData>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Func {
