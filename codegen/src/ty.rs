@@ -14,8 +14,10 @@ pub trait AsFuncType {
 
 impl AsBasicType for Ty {
     fn as_basic_type<'ctx>(&self, ctx: &CodegenCtx<'ctx>) -> BasicTypeEnum<'ctx> {
-        match &self.kind {
-            | typ::Unit => match self.repr.scalar {
+        let ty = self.lookup();
+
+        match ty.kind {
+            | typ::Unit => match ty.repr.scalar {
                 | Some(prim) => match prim {
                     | Primitive::Int(Integer::I8, _) => ctx.context.i8_type().into(),
                     | Primitive::Int(Integer::I16, _) => ctx.context.i16_type().into(),
@@ -35,8 +37,13 @@ impl AsBasicType for Ty {
 
                 ctx.context.struct_type(&[fst, snd], false).into()
             },
+            | typ::Tuple(ref ts) => {
+                let ts = ts.iter().map(|t| t.as_basic_type(ctx)).collect::<Vec<_>>();
+
+                ctx.context.struct_type(&ts, false).into()
+            },
             | typ::Var(_) => ctx.context.struct_type(&[], false).into(),
-            | typ::Func(sig) => {
+            | typ::Func(ref sig) => {
                 let fn_type = self.as_func_type(ctx);
 
                 fn_type.ptr_type(AddressSpace::Const).into()
@@ -48,8 +55,10 @@ impl AsBasicType for Ty {
 
 impl AsFuncType for Ty {
     fn as_func_type<'ctx>(&self, ctx: &CodegenCtx<'ctx>) -> FunctionType<'ctx> {
-        match &self.kind {
-            | typ::Func(sig) => {
+        let ty = self.lookup();
+
+        match ty.kind {
+            | typ::Func(ref sig) => {
                 let mut params = sig
                     .params
                     .iter()

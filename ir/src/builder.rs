@@ -45,8 +45,7 @@ pub struct Builder<'a> {
     block_id: Block,
 }
 
-pub struct SwitchBuilder<'a, 'b> {
-    builder: &'b mut Builder<'a>,
+pub struct SwitchBuilder {
     op: Var,
     cases: Vec<SwitchCase>,
 }
@@ -60,7 +59,7 @@ impl<'a> Builder<'a> {
         &mut self.module[self.body_id]
     }
 
-    fn block(&mut self) -> &mut BlockData {
+    pub(crate) fn block(&mut self) -> &mut BlockData {
         let block_id = self.block_id;
 
         &mut self.body_mut()[block_id]
@@ -102,9 +101,14 @@ impl<'a> Builder<'a> {
         self.block_id = block_id;
     }
 
+    /// Get the current block id
+    pub fn current_block(&self) -> Block {
+        self.block_id
+    }
+
     /// Add a new basic block parameter
     pub fn add_param(&mut self, block_id: Block, ty: Ty) -> Var {
-        let param = match ty.kind {
+        let param = match ty.lookup().kind {
             | typ::Var(_) => {
                 let var = self.create_var(ty.ptr());
 
@@ -124,9 +128,9 @@ impl<'a> Builder<'a> {
     }
 
     /// Return with a set of values
-    pub fn return_(&mut self, ops: impl IntoIterator<Item = Var>) {
+    pub fn return_(&mut self, vals: impl IntoIterator<Item = Var>) {
         let mut i = 0;
-        let ops = ops
+        let vals = vals
             .into_iter()
             .filter_map(|op| {
                 if self.body()[op].flags.is_set(Flags::INDIRECT) {
@@ -148,7 +152,7 @@ impl<'a> Builder<'a> {
             })
             .collect();
 
-        self.block().term = Some(Term::Return { ops });
+        self.block().term = Some(Term::Return { vals });
     }
 
     /// Jumpt to the target block with a set of arguments
@@ -161,13 +165,17 @@ impl<'a> Builder<'a> {
         })
     }
 
+    /// Jump to the `then` block if a condition is true, otherwise jump to the `else_` block.
+    pub fn brif(&mut self, pred: Var, then: Block, then_args: impl IntoIterator<Item = Var>, else_: Block, else_args: impl IntoIterator<Item = Var>) {
+        let mut switch = self.switch(pred);
+
+        switch.case(0, else_, else_args);
+        switch.build(self, then, then_args);
+    }
+
     /// Build a new switch terminator
-    pub fn switch(&mut self, op: Var) -> SwitchBuilder<'a, '_> {
-        SwitchBuilder {
-            builder: self,
-            op,
-            cases: Vec::new(),
-        }
+    pub fn switch(&self, op: Var) -> SwitchBuilder {
+        SwitchBuilder { op, cases: Vec::new() }
     }
 
     /// Allocate space on the stack for a value of type `ty`.
@@ -207,8 +215,8 @@ impl<'a> Builder<'a> {
     /// Get the address of a boxed value of type `box ty`.
     /// The returned var has type `*ty`.
     pub fn box_addr(&mut self, boxed: Var) -> Var {
-        if let typ::Box(ref of) = self.body().var_type(boxed).kind {
-            let ret = self.create_var(of.clone().ptr());
+        if let typ::Box(of) = self.body().var_type(boxed).lookup().kind {
+            let ret = self.create_var(of.ptr());
 
             self.block().instrs.push(Instr::BoxAddr { ret, boxed });
 
@@ -221,8 +229,8 @@ impl<'a> Builder<'a> {
     /// Load a value of type `*ty`.
     /// The return var has type `ty`.
     pub fn load(&mut self, addr: Var) -> Var {
-        if let typ::Ptr(ref to) = self.body().var_type(addr).kind {
-            let ret = self.create_var(to.clone());
+        if let typ::Ptr(to) = self.body().var_type(addr).lookup().kind {
+            let ret = self.create_var(to);
 
             self.block().instrs.push(Instr::Load { ret, addr });
 
@@ -234,8 +242,8 @@ impl<'a> Builder<'a> {
 
     /// Store a value of type `ty` in an addr of type `*ty`.
     pub fn store(&mut self, val: Var, addr: Var) {
-        if let typ::Ptr(ref to) = self.body().var_type(addr).kind {
-            if *to != self.body().var_type(val) {
+        if let typ::Ptr(to) = self.body().var_type(addr).lookup().kind {
+            if to != self.body().var_type(val) {
                 panic!("Cannot store value of type `a` in an address of type `*b`");
             }
         } else {
@@ -250,8 +258,8 @@ impl<'a> Builder<'a> {
     ///   - TAKE: the value is moved from old to new.
     ///   - INIT: the new address was previously uninitialized.
     pub fn copy_addr(&mut self, old: Var, new: Var, flags: Flags) {
-        if let typ::Ptr(ref old) = self.body().var_type(old).kind {
-            if let typ::Ptr(ref new) = self.body().var_type(new).kind {
+        if let typ::Ptr(old) = self.body().var_type(old).lookup().kind {
+            if let typ::Ptr(new) = self.body().var_type(new).lookup().kind {
                 if old != new {
                     panic!("Cannot copy a value of type `a` in an address of type `*b`");
                 }
@@ -263,6 +271,16 @@ impl<'a> Builder<'a> {
         }
 
         self.block().instrs.push(Instr::CopyAddr { old, new, flags });
+    }
+
+    /// Create a copy of the value.
+    pub fn copy_value(&mut self, val: Var) -> Var {
+        let ty = self.body().var_type(val);
+        let ret = self.create_var(ty);
+
+        self.block().instrs.push(Instr::CopyValue { ret, val });
+
+        ret
     }
 
     /// Create a constant integer value of type `ty`.
@@ -285,6 +303,57 @@ impl<'a> Builder<'a> {
         ret
     }
 
+    /// Create a new tuple of type `(t1, t2, ...tn)`.
+    pub fn tuple(&mut self, vals: impl IntoIterator<Item = Var>) -> Var {
+        let vals = vals.into_iter().collect::<Vec<_>>();
+        let tys = vals.iter().map(|&v| self.body()[v].ty).collect();
+        let ty = Ty::new(typ::Tuple(tys));
+        let ret = self.create_var(ty);
+
+        self.block().instrs.push(Instr::Tuple { ret, vals });
+
+        ret
+    }
+
+    /// Extract field `field` of tuple `tuple`.
+    /// The return var will have the type of the `field`th element of the tuple.
+    pub fn tuple_extract(&mut self, tuple: Var, field: usize) -> Var {
+        if let typ::Tuple(ref tys) = self.body()[tuple].ty.lookup().kind {
+            let ret = self.create_var(tys[field]);
+
+            self.block().instrs.push(Instr::TupleExtract { ret, tuple, field });
+
+            ret
+        } else {
+            panic!("Cannot extract the field of a non-tuple type");
+        }
+    }
+
+    /// Insert value `val` into the tuple at field `field`.
+    // @TODO: typecheck field
+    pub fn tuple_insert(&mut self, tuple: Var, field: usize, val: Var) {
+        self.block().instrs.push(Instr::TupleInsert { tuple, field, val });
+    }
+
+    /// Get the address of tuple field `field`.
+    /// The given tuple must be of type `*(t1, t2, ...tn)`.
+    /// The return var will be of type `*tn`.
+    pub fn tuple_addr(&mut self, tuple: Var, field: usize) -> Var {
+        if let typ::Ptr(to) = self.body()[tuple].ty.lookup().kind {
+            if let typ::Tuple(ref ts) = to.lookup().kind {
+                let ret = self.create_var(ts[field].ptr());
+
+                self.block().instrs.push(Instr::TupleAddr { ret, tuple, field });
+
+                ret
+            } else {
+                panic!("Cannot get the address to a field of a non-tuple type");
+            }
+        } else {
+            panic!("Cannot get the address to a field of a non-address type");
+        }
+    }
+
     /// Apply a function to some arguments.
     /// If the function is generic then the substitutions must be supplied.
     /// This function returns the same number of vars as there are returns in the signature.
@@ -293,18 +362,18 @@ impl<'a> Builder<'a> {
         let mut sig = self.body().var_type(func);
         let subst = subst.into_iter().collect::<Vec<_>>();
 
-        if let typ::Generic(_, ref ret) = sig.kind {
+        if let typ::Generic(_, ret) = sig.lookup().kind {
             sig = ret.subst(&subst, 0);
         }
 
-        if let typ::Func(ref sig) = sig.kind {
+        if let typ::Func(ref sig) = sig.lookup().kind {
             let mut ret_args = Vec::new();
             let mut rets = sig
                 .rets
                 .iter()
                 .filter_map(|ret| {
                     if ret.flags.is_set(Flags::OUT) {
-                        let stack_slot = self.stack_alloc(ret.ty.clone());
+                        let stack_slot = self.stack_alloc(ret.ty);
 
                         ret_args.push(stack_slot);
                         None
@@ -320,7 +389,7 @@ impl<'a> Builder<'a> {
                 .copied()
                 .chain(args.into_iter().zip(&sig.params).map(|(arg, param)| {
                     if param.flags.is_set(Flags::IN) {
-                        let stack_slot = self.stack_alloc(param.ty.clone());
+                        let stack_slot = self.stack_alloc(param.ty);
 
                         self.store(arg, stack_slot);
                         indirect_args.push(stack_slot);
@@ -364,12 +433,12 @@ impl<'a> Builder<'a> {
         let name = name.as_ref();
 
         if let Some(mut sig) = intrinsics::INTRINSICS.get(name).cloned() {
-            if let typ::Generic(_, ref ret) = sig.kind {
-                sig = ret.clone();
+            if let typ::Generic(_, ret) = sig.lookup().kind {
+                sig = ret;
             }
 
-            if let typ::Func(ref sig) = sig.kind {
-                let rets = sig.rets.iter().map(|r| self.create_var(r.ty.clone())).collect::<Vec<_>>();
+            if let typ::Func(ref sig) = sig.lookup().kind {
+                let rets = sig.rets.iter().map(|r| self.create_var(r.ty)).collect::<Vec<_>>();
 
                 self.block().instrs.push(Instr::Intrinsic {
                     name: name.into(),
@@ -387,7 +456,7 @@ impl<'a> Builder<'a> {
     }
 }
 
-impl SwitchBuilder<'_, '_> {
+impl SwitchBuilder {
     pub fn case(&mut self, val: u128, block: Block, args: impl IntoIterator<Item = Var>) {
         self.cases.push(SwitchCase {
             val,
@@ -398,8 +467,8 @@ impl SwitchBuilder<'_, '_> {
         });
     }
 
-    pub fn build(self, block: Block, args: impl IntoIterator<Item = Var>) {
-        self.builder.block().term = Some(Term::Switch {
+    pub fn build(self, builder: &mut Builder, block: Block, args: impl IntoIterator<Item = Var>) {
+        builder.block().term = Some(Term::Switch {
             pred: self.op,
             cases: self.cases,
             default: BrTarget {

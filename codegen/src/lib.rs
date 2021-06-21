@@ -1,3 +1,5 @@
+#![feature(once_cell)]
+
 pub mod ty;
 
 use arena::{ArenaMap, Idx};
@@ -11,6 +13,7 @@ use inkwell::targets::{InitializationConfig, Target, TargetData, TargetMachine, 
 use inkwell::values;
 use inkwell::IntPredicate;
 use std::io::Write as _;
+use std::lazy::OnceCell;
 use tempfile::NamedTempFile;
 use ty::*;
 
@@ -35,7 +38,7 @@ pub fn compile_module(ir: &ir::Module) -> NamedTempFile {
         pass_builder.populate_module_pass_manager(&pass_manager);
         pass_manager.run_on(&ctx.module);
 
-        // ctx.module.print_to_stderr();
+        ctx.module.print_to_stderr();
 
         let buffer = ctx
             .target_machine
@@ -57,6 +60,10 @@ pub struct CodegenCtx<'ctx> {
     target_data: TargetData,
     ir: &'ctx ir::Module,
     funcs: ArenaMap<Idx<ir::Func>, values::FunctionValue<'ctx>>,
+
+    gen_alloc: OnceCell<values::FunctionValue<'ctx>>,
+    gen_free: OnceCell<values::FunctionValue<'ctx>>,
+    gen_generation: OnceCell<values::FunctionValue<'ctx>>,
 }
 
 pub struct BodyCtx<'a, 'ctx> {
@@ -99,6 +106,10 @@ pub fn with_codegen_ctx<T>(ir: &ir::Module, f: impl FnOnce(CodegenCtx) -> T) -> 
         target_data,
         ir,
         funcs: ArenaMap::default(),
+
+        gen_alloc: OnceCell::new(),
+        gen_free: OnceCell::new(),
+        gen_generation: OnceCell::new(),
     };
 
     f(ctx)
@@ -191,7 +202,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             | ir::Term::Unreachable => {
                 self.cx.builder.build_unreachable();
             },
-            | ir::Term::Return { ops } => {
+            | ir::Term::Return { vals: ops } => {
                 let vals = ops.iter().map(|v| self.vars[v.0]).collect::<Vec<_>>();
 
                 match vals.len() {
@@ -238,6 +249,28 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         }
     }
 
+    fn gen_alloc(&self) -> values::FunctionValue<'ctx> {
+        *self.cx.gen_alloc.get_or_init(|| {
+            let size_t = self.cx.context.ptr_sized_int_type(&self.cx.target_data, None);
+            let unit = self.cx.context.opaque_struct_type("UNIT").ptr_type(inkwell::AddressSpace::Generic);
+            let ret = self.cx.context.struct_type(&[unit.into(), size_t.into()], false);
+            let sig = ret.fn_type(&[size_t.into()], false);
+
+            self.cx.module.add_function("gen_alloc", sig, None)
+        })
+    }
+
+    fn gen_free(&self) -> values::FunctionValue<'ctx> {
+        *self.cx.gen_free.get_or_init(|| {
+            let size_t = self.cx.context.ptr_sized_int_type(&self.cx.target_data, None);
+            let unit = self.cx.context.opaque_struct_type("UNIT").ptr_type(inkwell::AddressSpace::Generic);
+            let void = self.cx.context.void_type();
+            let sig = void.fn_type(&[unit.into(), size_t.into()], false);
+
+            self.cx.module.add_function("gen_free", sig, None)
+        })
+    }
+
     fn lower_instr(&mut self, instr: &ir::Instr) -> Option<()> {
         match *instr {
             | ir::Instr::StackAlloc { ret, ref ty } => {
@@ -247,6 +280,30 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 self.vars.insert(ret.0, val.into());
             },
             | ir::Instr::StackFree { .. } => {},
+            | ir::Instr::BoxAlloc { ret, ref ty } => {
+                use inkwell::types::BasicType;
+                let ty = ty.as_basic_type(self.cx);
+                let size = ty.size_of().unwrap();
+                let gen_alloc = self.gen_alloc();
+                let call = self.cx.builder.build_call(gen_alloc, &[size.into()], "");
+                let val = call.try_as_basic_value().unwrap_left();
+
+                self.vars.insert(ret.0, val);
+            },
+            | ir::Instr::BoxFree { boxed } => {
+                if let ir::ty::typ::Box(of) = self.body[boxed].ty.lookup().kind {
+                    use inkwell::types::BasicType;
+                    let ty = of.as_basic_type(self.cx);
+                    let size = ty.size_of().unwrap();
+                    let gen_free = self.gen_free();
+                    let val = self.vars[boxed.0].into_struct_value();
+                    let ptr = self.cx.builder.build_extract_value(val, 0, "").unwrap();
+
+                    self.cx.builder.build_call(gen_free, &[ptr, size.into()], "");
+                } else {
+                    unreachable!();
+                }
+            },
             | ir::Instr::ConstInt { ret, val } => {
                 let ty = self.body[ret].ty.as_basic_type(self.cx);
                 let val = ty.into_int_type().const_int(val as u64, true);
@@ -257,6 +314,34 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 let val = self.cx.funcs[func.0];
 
                 self.any_vars.insert(ret.0, val.into());
+            },
+            | ir::Instr::Tuple { ret, ref vals } => {
+                let tys = vals.iter().map(|v| self.body[*v].ty.as_basic_type(self.cx)).collect::<Vec<_>>();
+                let tuple = self.cx.context.struct_type(&tys, false);
+                let tuple = self.cx.builder.build_alloca(tuple, "");
+                let mut tuple = self.cx.builder.build_load(tuple, "").into_struct_value();
+
+                for (i, val) in vals.iter().enumerate() {
+                    let val = self.vars[val.0];
+                    let new = self.cx.builder.build_insert_value(tuple, val, i as u32, "");
+
+                    tuple = new.unwrap().into_struct_value();
+                }
+
+                self.vars.insert(ret.0, tuple.into());
+            },
+            | ir::Instr::TupleExtract { ret, tuple, field } => {
+                let tuple = self.vars[tuple.0].into_struct_value();
+                let val = self.cx.builder.build_extract_value(tuple, field as u32, "").unwrap();
+
+                self.vars.insert(ret.0, val);
+            },
+            | ir::Instr::TupleInsert { tuple, field, val } => {
+                let tuple_ = self.vars[tuple.0].into_struct_value();
+                let val = self.vars[val.0];
+                let new = self.cx.builder.build_insert_value(tuple_, val, field as u32, "");
+
+                self.vars.insert(tuple.0, new.unwrap().into_struct_value().into());
             },
             | ir::Instr::Apply { ref rets, func, ref args, .. } => {
                 let args = args.iter().map(|a| self.vars[a.0]).collect::<Vec<_>>();

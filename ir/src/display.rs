@@ -141,7 +141,7 @@ impl fmt::Display for BodyDisplay<'_, Term> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.t {
             | Term::Unreachable => write!(f, "unreachable"),
-            | Term::Return { ops } => {
+            | Term::Return { vals: ops } => {
                 write!(f, "return ")?;
                 list(f, ops, Var::fmt)
             },
@@ -168,8 +168,16 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
             | Instr::CopyAddr { old, new, flags } if flags.is_set(Flags::TAKE) => write!(f, "copy_addr {}, {} [take]", old, new),
             | Instr::CopyAddr { old, new, flags } if flags.is_set(Flags::INIT) => write!(f, "copy_addr {}, {} [init]", old, new),
             | Instr::CopyAddr { old, new, flags } => write!(f, "copy_addr {}, {}", old, new),
-            | Instr::ConstInt { ret, val } => write!(f, "{} = const_int {} : ${}", ret, val, self.body[*ret].ty),
+            | Instr::CopyValue { ret, val } => write!(f, "{} = copy_value {}", ret, val),
+            | Instr::ConstInt { ret, val } => write!(f, "{} = const_int {}, ${}", ret, val, self.body[*ret].ty),
             | Instr::FuncRef { ret, func } => write!(f, "{} = func_ref {}", ret, func),
+            | Instr::Tuple { ret, vals } => {
+                write!(f, "{} = tuple ", ret)?;
+                list(f, vals, Var::fmt)
+            },
+            | Instr::TupleExtract { ret, tuple, field } => write!(f, "{} = tuple_extract {}, {}", ret, tuple, field),
+            | Instr::TupleInsert { tuple, field, val } => write!(f, "tuple_field {}, {}, {}", tuple, field, val),
+            | Instr::TupleAddr { ret, tuple, field } => write!(f, "{} = tuple_addr {}, {}", ret, tuple, field),
             | Instr::Apply { rets, func, args, subst } => {
                 if !rets.is_empty() {
                     list(f, rets, Var::fmt)?;
@@ -223,9 +231,10 @@ impl fmt::Display for BrTarget {
 impl fmt::Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::layout::Primitive;
+        let ty = self.lookup();
 
-        match &self.kind {
-            | typ::Unit => match self.repr.scalar {
+        match ty.kind {
+            | typ::Unit => match ty.repr.scalar {
                 | Some(prim) => match prim {
                     | Primitive::Int(Integer::I8, true) => write!(f, "i8"),
                     | Primitive::Int(Integer::I16, true) => write!(f, "i16"),
@@ -245,11 +254,16 @@ impl fmt::Display for Ty {
             },
             | typ::Ptr(to) => write!(f, "*{}", to),
             | typ::Box(to) => write!(f, "box {}", to),
+            | typ::Tuple(ref ts) => {
+                write!(f, "(")?;
+                list(f, ts, Ty::fmt)?;
+                write!(f, ")")
+            },
             | typ::Var(tv) => tv.fmt(f),
-            | typ::Func(sig) => sig.fmt(f),
-            | typ::Generic(params, ty) => {
+            | typ::Func(ref sig) => sig.fmt(f),
+            | typ::Generic(ref params, ty) => {
                 write!(f, "<")?;
-                list(f, params.iter(), GenericParam::fmt)?;
+                list(f, params, GenericParam::fmt)?;
                 write!(f, "> {}", ty)
             },
         }
@@ -275,11 +289,11 @@ impl fmt::Display for Signature {
 impl fmt::Display for SigParam {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.flags.is_set(Flags::IN) {
-            write!(f, "@in ")?;
+            write!(f, "[in] ")?;
         }
 
         if self.flags.is_set(Flags::OUT) {
-            write!(f, "@out ")?;
+            write!(f, "[out] ")?;
         }
 
         self.ty.fmt(f)

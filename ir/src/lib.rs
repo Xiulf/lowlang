@@ -108,6 +108,10 @@ pub enum Instr {
         new: Var,
         flags: Flags,
     },
+    CopyValue {
+        ret: Var,
+        val: Var,
+    },
 
     // Constants
     ConstInt {
@@ -117,6 +121,27 @@ pub enum Instr {
     FuncRef {
         ret: Var,
         func: FuncId,
+    },
+
+    // Tuples
+    Tuple {
+        ret: Var,
+        vals: Vec<Var>,
+    },
+    TupleExtract {
+        ret: Var,
+        tuple: Var,
+        field: usize,
+    },
+    TupleInsert {
+        tuple: Var,
+        field: usize,
+        val: Var,
+    },
+    TupleAddr {
+        ret: Var,
+        tuple: Var,
+        field: usize,
     },
 
     // Apply
@@ -139,7 +164,7 @@ pub struct Flags(u32);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Term {
     Unreachable,
-    Return { ops: Vec<Var> },
+    Return { vals: Vec<Var> },
     Br { to: BrTarget },
     Switch { pred: Var, cases: Vec<SwitchCase>, default: BrTarget },
 }
@@ -162,7 +187,7 @@ impl Block {
 
 impl Body {
     pub fn var_type(&self, var: Var) -> Ty {
-        self[var].ty.clone()
+        self[var].ty
     }
 }
 

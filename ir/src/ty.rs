@@ -2,18 +2,29 @@ pub use crate::layout::Integer;
 use crate::layout::Primitive;
 use crate::Flags;
 use arena::{Arena, Idx};
+use std::collections::HashMap;
+use std::lazy::SyncLazy;
 use std::sync::Arc;
+use std::sync::RwLock;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ty(Arc<Type>);
+static TYPE_INTERNER: SyncLazy<RwLock<TypeInterner>> = SyncLazy::new(Default::default);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default)]
+struct TypeInterner {
+    map: HashMap<Arc<Type>, Ty>,
+    vec: Vec<Arc<Type>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Ty(u32);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Type {
     pub repr: Repr,
     pub kind: TypeKind,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Repr {
     pub scalar: Option<Primitive>,
     pub valid_range_start: Option<u128>,
@@ -21,23 +32,24 @@ pub struct Repr {
     pub uninhabited: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeKind {
     Unit,
     Ptr(Ty),
     Box(Ty),
+    Tuple(Vec<Ty>),
     Var(GenericVar),
     Func(Signature),
     Generic(Vec<GenericParam>, Ty),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Signature {
     pub params: Vec<SigParam>,
     pub rets: Vec<SigParam>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SigParam {
     pub ty: Ty,
     pub flags: Flags,
@@ -46,14 +58,14 @@ pub struct SigParam {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GenericVar(pub(crate) u8, pub(crate) u8);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericParam {
     Type,
     Figure,
     Symbol,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Subst {
     Type(Ty),
     Figure(u128),
@@ -69,8 +81,23 @@ pub mod typ {
 }
 
 impl Ty {
+    pub fn lookup(self) -> Arc<Type> {
+        TYPE_INTERNER.read().unwrap().vec[self.0 as usize].clone()
+    }
+
+    fn intern(ty: Arc<Type>) -> Self {
+        let mut int = TYPE_INTERNER.write().unwrap();
+        let id = Ty(int.vec.len() as u32);
+
+        int.vec.push(ty.clone());
+        int.map.insert(ty, id);
+        id
+    }
+
     pub fn new(kind: TypeKind) -> Self {
-        Self(Arc::new(Type { repr: Repr::default(), kind }))
+        let ty = Arc::new(Type { repr: Repr::default(), kind });
+
+        Self::intern(ty)
     }
 
     pub fn ptr(self) -> Self {
@@ -82,7 +109,7 @@ impl Ty {
     }
 
     pub fn int(int: Integer, sign: bool) -> Self {
-        Self(Arc::new(Type {
+        Self::intern(Arc::new(Type {
             repr: Repr {
                 scalar: Some(Primitive::Int(int, sign)),
                 ..Repr::default()
@@ -95,16 +122,12 @@ impl Ty {
         GenericType { params: Vec::new() }
     }
 
-    pub fn cloned(&self) -> Self {
-        Self(Arc::new((*self.0).clone()))
-    }
-
-    pub fn subst(&self, args: &[Subst], depth: u8) -> Self {
-        match self.kind {
-            | typ::Ptr(ref to) => Ty::new(typ::Ptr(to.subst(args, depth))),
-            | typ::Box(ref to) => Ty::new(typ::Box(to.subst(args, depth))),
+    pub fn subst(self, args: &[Subst], depth: u8) -> Self {
+        match self.lookup().kind {
+            | typ::Ptr(to) => Ty::new(typ::Ptr(to.subst(args, depth))),
+            | typ::Box(to) => Ty::new(typ::Box(to.subst(args, depth))),
             | typ::Var(GenericVar(d2, idx)) if depth == d2 => match args[idx as usize] {
-                | Subst::Type(ref t) => t.clone(),
+                | Subst::Type(t) => t,
                 | _ => panic!("Cannot substitute type"),
             },
             | typ::Func(ref sig) => Ty::new(typ::Func(Signature {
@@ -125,8 +148,8 @@ impl Ty {
                     })
                     .collect(),
             })),
-            | typ::Generic(ref params, ref ty) => Ty::new(typ::Generic(params.clone(), ty.subst(args, depth + 1))),
-            | _ => self.clone(),
+            | typ::Generic(ref params, ty) => Ty::new(typ::Generic(params.clone(), ty.subst(args, depth + 1))),
+            | _ => self,
         }
     }
 }
@@ -145,7 +168,7 @@ impl Signature {
     }
 
     pub fn param(mut self, ty: Ty) -> Self {
-        let flags = match ty.kind {
+        let flags = match ty.lookup().kind {
             | typ::Var(_) => Flags::IN,
             | _ => Flags::EMPTY,
         };
@@ -155,7 +178,7 @@ impl Signature {
     }
 
     pub fn ret(mut self, ty: Ty) -> Self {
-        let flags = match ty.kind {
+        let flags = match ty.lookup().kind {
             | typ::Var(_) => Flags::OUT,
             | _ => Flags::EMPTY,
         };
@@ -170,11 +193,11 @@ macro_rules! sig {
     ($($param:ident),* -> $($ret:ident),*) => {
         $crate::ty::Ty::new($crate::ty::typ::Func($crate::ty::Signature {
             params: vec![$($crate::ty::SigParam {
-                ty: $param.clone(),
+                ty: $param,
                 flags: $crate::Flags::EMPTY
             }),*],
             rets: vec![$($crate::ty::SigParam {
-                ty: $ret.clone(),
+                ty: $ret,
                 flags: $crate::Flags::EMPTY
             }),*],
         }))
@@ -199,13 +222,5 @@ impl GenericType {
 
     pub fn finish(self, ty: Ty) -> Ty {
         Ty::new(typ::Generic(self.params, ty))
-    }
-}
-
-impl std::ops::Deref for Ty {
-    type Target = Type;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
