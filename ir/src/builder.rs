@@ -283,11 +283,41 @@ impl<'a> Builder<'a> {
         ret
     }
 
+    /// Drops the value at address `addr`.
+    /// For trivial types this is a nop.
+    /// For generic types this will call it's destructor.
+    /// For any other type this is equivalent to `load` + `drop_value`.
+    pub fn drop_addr(&mut self, addr: Var) {
+        if let typ::Ptr(_) = self.body().var_type(addr).lookup().kind {
+            self.block().instrs.push(Instr::DropAddr { addr });
+        } else {
+            panic!("Cannot drop the value at the address of a non-pointer type.");
+        }
+    }
+
+    /// Drop the value.
+    /// For trivial types this is a nop.
+    /// For boxed types this will destroy the value in the box.
+    pub fn drop_value(&mut self, val: Var) {
+        self.block().instrs.push(Instr::DropValue { val });
+    }
+
     /// Create a constant integer value of type `ty`.
     pub fn const_int(&mut self, val: u128, ty: Ty) -> Var {
         let ret = self.create_var(ty);
 
         self.block().instrs.push(Instr::ConstInt { ret, val });
+
+        ret
+    }
+
+    /// Create a constant string reference.
+    /// These strings are always utf8 encoded and null-terminated.
+    pub fn const_str(&mut self, val: impl Into<String>) -> Var {
+        let ty = Ty::int(Integer::I8, false).ptr();
+        let ret = self.create_var(ty);
+
+        self.block().instrs.push(Instr::ConstStr { ret, val: val.into() });
 
         ret
     }
@@ -429,12 +459,14 @@ impl<'a> Builder<'a> {
         }
     }
 
-    pub fn intrinsic(&mut self, name: impl AsRef<str>, args: impl IntoIterator<Item = Var>) -> Vec<Var> {
+    pub fn intrinsic(&mut self, name: impl AsRef<str>, subst: impl IntoIterator<Item = Subst>, args: impl IntoIterator<Item = Var>) -> Vec<Var> {
         let name = name.as_ref();
 
         if let Some(mut sig) = intrinsics::INTRINSICS.get(name).cloned() {
+            let subst = subst.into_iter().collect::<Vec<_>>();
+
             if let typ::Generic(_, ret) = sig.lookup().kind {
-                sig = ret;
+                sig = ret.subst(&subst, 0);
             }
 
             if let typ::Func(ref sig) = sig.lookup().kind {
@@ -444,6 +476,7 @@ impl<'a> Builder<'a> {
                     name: name.into(),
                     rets: rets.clone(),
                     args: args.into_iter().collect(),
+                    subst,
                 });
 
                 rets

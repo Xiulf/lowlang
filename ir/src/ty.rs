@@ -100,6 +100,10 @@ impl Ty {
         Self::intern(ty)
     }
 
+    pub fn unit() -> Self {
+        Self::new(typ::Unit)
+    }
+
     pub fn ptr(self) -> Self {
         Self::new(typ::Ptr(self))
     }
@@ -188,22 +192,6 @@ impl Signature {
     }
 }
 
-#[macro_export]
-macro_rules! sig {
-    ($($param:ident),* -> $($ret:ident),*) => {
-        $crate::ty::Ty::new($crate::ty::typ::Func($crate::ty::Signature {
-            params: vec![$($crate::ty::SigParam {
-                ty: $param,
-                flags: $crate::Flags::EMPTY
-            }),*],
-            rets: vec![$($crate::ty::SigParam {
-                ty: $ret,
-                flags: $crate::Flags::EMPTY
-            }),*],
-        }))
-    };
-}
-
 impl GenericVar {
     pub fn at(mut self, depth: u8) -> Self {
         self.0 = depth;
@@ -223,4 +211,33 @@ impl GenericType {
     pub fn finish(self, ty: Ty) -> Ty {
         Ty::new(typ::Generic(self.params, ty))
     }
+}
+
+#[macro_export]
+macro_rules! sig {
+    ($($param:expr),* => $($ret:expr),*) => {
+        $crate::ty::Ty::new($crate::ty::typ::Func($crate::ty::Signature {
+            params: vec![$($crate::ty::SigParam {
+                ty: $param,
+                flags: $crate::Flags::EMPTY
+            }),*],
+            rets: vec![$($crate::ty::SigParam {
+                ty: $ret,
+                flags: $crate::Flags::EMPTY
+            }),*],
+        }))
+    };
+}
+
+#[macro_export]
+macro_rules! generic {
+    ($($p:ident : $kind:ident),*in $t:expr) => {{
+        let mut generic = $crate::ty::Ty::generic();
+        $(
+            let $p = generic.add_param($crate::ty::GenericParam::$kind);
+            let $p = $crate::ty::Ty::new($crate::ty::typ::Var($p));
+        )*
+
+        generic.finish($t)
+    }};
 }

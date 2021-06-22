@@ -38,7 +38,7 @@ pub fn compile_module(ir: &ir::Module) -> NamedTempFile {
         pass_builder.populate_module_pass_manager(&pass_manager);
         pass_manager.run_on(&ctx.module);
 
-        ctx.module.print_to_stderr();
+        // ctx.module.print_to_stderr();
 
         let buffer = ctx
             .target_machine
@@ -304,11 +304,29 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     unreachable!();
                 }
             },
+            | ir::Instr::Load { ret, addr } => {
+                let addr = self.vars[addr.0].into_pointer_value();
+                let val = self.cx.builder.build_load(addr, "");
+
+                self.vars.insert(ret.0, val);
+            },
+            | ir::Instr::Store { val, addr } => {
+                let val = self.vars[val.0];
+                let addr = self.vars[addr.0].into_pointer_value();
+
+                self.cx.builder.build_store(addr, val);
+            },
             | ir::Instr::ConstInt { ret, val } => {
                 let ty = self.body[ret].ty.as_basic_type(self.cx);
                 let val = ty.into_int_type().const_int(val as u64, true);
 
                 self.vars.insert(ret.0, val.into());
+            },
+            | ir::Instr::ConstStr { ret, ref val } => {
+                let gv = self.cx.builder.build_global_string_ptr(val, "");
+                let gv = gv.as_pointer_value();
+
+                self.vars.insert(ret.0, gv.into());
             },
             | ir::Instr::FuncRef { ret, func } => {
                 let val = self.cx.funcs[func.0];
@@ -377,7 +395,22 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     },
                 }
             },
-            | ir::Instr::Intrinsic { ref rets, ref name, ref args } => match name.as_str() {
+            | ir::Instr::Intrinsic {
+                ref rets, ref name, ref args, ..
+            } => match name.as_str() {
+                | "ptr_offset" => {
+                    let ptr = self.vars[args[0].0].into_pointer_value();
+                    let ptr_type = ptr.get_type();
+                    let elem_type = ptr_type.get_element_type();
+                    let size = elem_type.size_of().unwrap();
+                    let offset = self.vars[args[1].0].into_int_value();
+                    let offset = self.cx.builder.build_int_mul(offset, size, "");
+                    let ptr = self.cx.builder.build_ptr_to_int(ptr, offset.get_type(), "");
+                    let ptr = self.cx.builder.build_int_add(ptr, offset, "");
+                    let ptr = self.cx.builder.build_int_to_ptr(ptr, ptr_type, "");
+
+                    self.vars.insert(rets[0].0, ptr.into());
+                },
                 | "add_i32" => {
                     let lhs = self.vars[args[0].0].into_int_value();
                     let rhs = self.vars[args[1].0].into_int_value();

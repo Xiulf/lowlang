@@ -169,7 +169,10 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
             | Instr::CopyAddr { old, new, flags } if flags.is_set(Flags::INIT) => write!(f, "copy_addr {}, {} [init]", old, new),
             | Instr::CopyAddr { old, new, flags } => write!(f, "copy_addr {}, {}", old, new),
             | Instr::CopyValue { ret, val } => write!(f, "{} = copy_value {}", ret, val),
+            | Instr::DropAddr { addr } => write!(f, "drop_addr {}", addr),
+            | Instr::DropValue { val } => write!(f, "drop_value {}", val),
             | Instr::ConstInt { ret, val } => write!(f, "{} = const_int {}, ${}", ret, val, self.body[*ret].ty),
+            | Instr::ConstStr { ret, val } => write!(f, "{} = const_str {:?}", ret, val),
             | Instr::FuncRef { ret, func } => write!(f, "{} = func_ref {}", ret, func),
             | Instr::Tuple { ret, vals } => {
                 write!(f, "{} = tuple ", ret)?;
@@ -196,13 +199,21 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
                 list(f, args, Var::fmt)?;
                 write!(f, ")")
             },
-            | Instr::Intrinsic { rets, name, args } => {
+            | Instr::Intrinsic { rets, name, args, subst } => {
                 if !rets.is_empty() {
                     list(f, rets, Var::fmt)?;
                     write!(f, " = ")?;
                 }
 
-                write!(f, "intrinsic {:?}(", name)?;
+                write!(f, "intrinsic {:?}", name)?;
+
+                if !subst.is_empty() {
+                    write!(f, "<")?;
+                    list(f, subst, Subst::fmt)?;
+                    write!(f, ">")?;
+                }
+
+                write!(f, "(")?;
                 list(f, args, Var::fmt)?;
                 write!(f, ")")
             },
@@ -241,11 +252,13 @@ impl fmt::Display for Ty {
                     | Primitive::Int(Integer::I32, true) => write!(f, "i32"),
                     | Primitive::Int(Integer::I64, true) => write!(f, "i64"),
                     | Primitive::Int(Integer::I128, true) => write!(f, "i128"),
+                    | Primitive::Int(Integer::ISize, true) => write!(f, "isize"),
                     | Primitive::Int(Integer::I8, false) => write!(f, "u8"),
                     | Primitive::Int(Integer::I16, false) => write!(f, "u16"),
                     | Primitive::Int(Integer::I32, false) => write!(f, "u32"),
                     | Primitive::Int(Integer::I64, false) => write!(f, "u64"),
                     | Primitive::Int(Integer::I128, false) => write!(f, "u128"),
+                    | Primitive::Int(Integer::ISize, false) => write!(f, "usize"),
                     | Primitive::F32 => write!(f, "f32"),
                     | Primitive::F64 => write!(f, "f64"),
                     | Primitive::Pointer => write!(f, "ptr"),

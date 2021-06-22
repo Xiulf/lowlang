@@ -21,4 +21,5 @@ pub enum Integer {
     I32,
     I64,
     I128,
+    ISize,
 }

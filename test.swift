@@ -1,10 +1,10 @@
-func identity<T>(_ x: T) -> T {
-    let y = x;
-    return identity2(y);
+class Test {
+    private let abc: Int32 = 0;
 }
 
-func identity2<T>(_ x: T) -> T {
+func identity<T>(_ x: T) -> T {
     return x;
 }
 
 identity(22);
+Test();

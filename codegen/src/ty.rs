@@ -24,6 +24,7 @@ impl AsBasicType for Ty {
                     | Primitive::Int(Integer::I32, _) => ctx.context.i32_type().into(),
                     | Primitive::Int(Integer::I64, _) => ctx.context.i64_type().into(),
                     | Primitive::Int(Integer::I128, _) => ctx.context.i128_type().into(),
+                    | Primitive::Int(Integer::ISize, _) => ctx.context.ptr_sized_int_type(&ctx.target_data, None).into(),
                     | Primitive::F32 => ctx.context.f32_type().into(),
                     | Primitive::F64 => ctx.context.f64_type().into(),
                     | Primitive::Pointer => unimplemented!(),

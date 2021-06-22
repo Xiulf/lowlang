@@ -112,11 +112,21 @@ pub enum Instr {
         ret: Var,
         val: Var,
     },
+    DropAddr {
+        addr: Var,
+    },
+    DropValue {
+        val: Var,
+    },
 
     // Constants
     ConstInt {
         ret: Var,
         val: u128,
+    },
+    ConstStr {
+        ret: Var,
+        val: String,
     },
     FuncRef {
         ret: Var,
@@ -155,6 +165,7 @@ pub enum Instr {
         rets: Vec<Var>,
         name: String,
         args: Vec<Var>,
+        subst: Vec<Subst>,
     },
 }
 
