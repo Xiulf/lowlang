@@ -6,3 +6,4 @@ edition = "2018"
 [dependencies]
 codegen = { path = "../codegen" }
 ir = { path = "../ir" }
+mun_lld = "110.0.0"
