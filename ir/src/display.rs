@@ -73,7 +73,12 @@ impl fmt::Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.generic_params.is_empty() {
             write!(f, "<")?;
-            list(f, &self.generic_params, GenericParam::fmt)?;
+
+            list(f, self.generic_params.iter().enumerate(), |(i, p), f| {
+                p.fmt(f)?;
+                write!(f, " {}", (b'a' + i as u8) as char)
+            })?;
+
             write!(f, "> ")?;
         }
 
@@ -244,6 +249,10 @@ impl fmt::Display for Ty {
         use crate::layout::Primitive;
         let ty = self.lookup();
 
+        if ty.flags.is_set(Flags::OWNED) {
+            write!(f, "[owned] ")?;
+        }
+
         match ty.kind {
             | typ::Unit => match ty.repr.scalar {
                 | Some(prim) => match prim {
@@ -276,7 +285,12 @@ impl fmt::Display for Ty {
             | typ::Func(ref sig) => sig.fmt(f),
             | typ::Generic(ref params, ty) => {
                 write!(f, "<")?;
-                list(f, params, GenericParam::fmt)?;
+
+                list(f, params.iter().enumerate(), |(i, p), f| {
+                    p.fmt(f)?;
+                    write!(f, " {}", (b'a' + i as u8) as char)
+                })?;
+
                 write!(f, "> {}", ty)
             },
         }
@@ -315,7 +329,8 @@ impl fmt::Display for SigParam {
 
 impl fmt::Display for GenericVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}'{}", self.0, self.1)
+        let ch = (b'a' + self.1) as char;
+        write!(f, "{}'{}", ch, self.0)
     }
 }
 
@@ -339,11 +354,7 @@ impl fmt::Display for Subst {
     }
 }
 
-fn list<'a, T: 'a>(
-    f: &mut fmt::Formatter<'_>,
-    ts: impl IntoIterator<Item = &'a T>,
-    fmt: impl Fn(&'a T, &mut fmt::Formatter<'_>) -> fmt::Result,
-) -> fmt::Result {
+fn list<'a, T>(f: &mut fmt::Formatter<'_>, ts: impl IntoIterator<Item = T>, fmt: impl Fn(T, &mut fmt::Formatter<'_>) -> fmt::Result) -> fmt::Result {
     for (i, t) in ts.into_iter().enumerate() {
         if i != 0 {
             write!(f, ", ")?;

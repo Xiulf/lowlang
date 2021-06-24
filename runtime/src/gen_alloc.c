@@ -1,23 +1,23 @@
-#include "runtime.h"
+#include "../include/gen_alloc.h"
 #include "malloc.h"
 
-struct FreeEntry {
+typedef struct FreeEntryS {
     void* ptr;
     size_t generation;
     size_t size;
-};
+} FreeEntry;
 
-struct FreeList {
-    struct FreeEntry* ptr;
+typedef struct FreeListS {
+    FreeEntry* ptr;
     size_t len;
     size_t cap;
-};
+} FreeList;
 
-static struct FreeList FREE_LIST;
+static FreeList FREE_LIST;
 
-void free_list_push(struct FreeEntry entry) {
+void free_list_push(FreeEntry entry) {
     if (!FREE_LIST.ptr) {
-        FREE_LIST.ptr = (struct FreeEntry*)malloc(sizeof(struct FreeEntry));
+        FREE_LIST.ptr = (FreeEntry*)malloc(sizeof(FreeEntry));
         FREE_LIST.cap = 1;
     }
 
@@ -25,15 +25,15 @@ void free_list_push(struct FreeEntry entry) {
 
     if (FREE_LIST.len > FREE_LIST.cap) {
         FREE_LIST.cap *= 2;
-        FREE_LIST.ptr = (struct FreeEntry*)malloc(sizeof(struct FreeEntry) * FREE_LIST.cap);
+        FREE_LIST.ptr = (FreeEntry*)malloc(sizeof(FreeEntry) * FREE_LIST.cap);
     }
 
     FREE_LIST.ptr[FREE_LIST.len - 1] = entry;
 }
 
-struct FreeEntry* free_list_find(size_t size) {
+FreeEntry* free_list_find(size_t size) {
     for (int i = 0; i < FREE_LIST.len; i++) {
-        struct FreeEntry* entry = &FREE_LIST.ptr[i];
+        FreeEntry* entry = &FREE_LIST.ptr[i];
 
         if (entry->ptr && entry->size == size) {
             return entry;
@@ -47,7 +47,7 @@ __attribute__((destructor)) void destroy_free_list() {
     size_t ptr_size = sizeof(size_t);
 
     for (int i = 0; i < FREE_LIST.len; i++) {
-        struct FreeEntry entry = FREE_LIST.ptr[i];
+        FreeEntry entry = FREE_LIST.ptr[i];
 
         if (entry.ptr) {
             free(entry.ptr - ptr_size);
@@ -67,11 +67,11 @@ size_t next_power_of_2(size_t x) {
     return value;
 }
 
-struct GenAllocResult gen_alloc(size_t size) {
+GenAllocResult gen_alloc(size_t size) {
     size_t ptr_size = sizeof(size_t);
     size_t new_size = next_power_of_2(ptr_size + size);
-    struct FreeEntry* free_entry = free_list_find(new_size);
-    struct GenAllocResult result;
+    FreeEntry* free_entry = free_list_find(new_size);
+    GenAllocResult result;
 
     if (free_entry) {
         result.ptr = free_entry->ptr;
@@ -95,7 +95,7 @@ void gen_free(void* ptr, size_t size) {
     *new_ptr += 1;
 
     for (int i = 0; i < FREE_LIST.len; i++) {
-        struct FreeEntry* entry = &FREE_LIST.ptr[i];
+        FreeEntry* entry = &FREE_LIST.ptr[i];
 
         if (!entry->ptr) {
             entry->ptr = ptr;
@@ -104,7 +104,7 @@ void gen_free(void* ptr, size_t size) {
         }
     }
 
-    struct FreeEntry entry;
+    FreeEntry entry;
 
     entry.size = new_size;
     entry.ptr = ptr;

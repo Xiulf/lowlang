@@ -1,9 +1,13 @@
 module "test"
 
 export "main" : $(i32, **u8) -> i32
+export "identity" : $<type T>([in] T) -> [out] T
+
 local  "print_args" : $(i32, **u8) -> ()
+
 import "puts" : $(*u8) -> i32
 import "write" : $(i32, *u8, usize) -> isize
+
 
 body "main" {
 
@@ -33,5 +37,13 @@ call:
     br entry(argc, argv)
 
 exit:
+    return
+}
+
+
+body "identity" <type T> {
+
+entry(ret : $*T, x : $*T):
+    copy_addr x, ret [init]
     return
 }

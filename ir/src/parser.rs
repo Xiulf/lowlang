@@ -105,6 +105,7 @@ pub struct Parser<'a> {
     lexer: Peekable<Lexer<'a, Token<'a>>>,
     module: Module,
     funcs: HashMap<Cow<'a, str>, FuncId>,
+    generics: Vec<HashMap<&'a str, GenericVar>>,
 }
 
 struct BodyParser<'a, 'b> {
@@ -126,6 +127,7 @@ impl<'a> Parser<'a> {
             lexer: Token::lexer(source).peekable(),
             module: Module::new(""),
             funcs: HashMap::new(),
+            generics: Vec::new(),
         }
     }
 
@@ -181,7 +183,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Option<Ty> {
-        match self.lexer.next()? {
+        let owned = self.eat(Flag("owned"));
+        let mut ty = match self.lexer.next()? {
             | Star => self.parse_type().map(Ty::ptr),
             | Ident("box") => self.parse_type().map(Ty::boxed),
             | Ident(other) => match other {
@@ -197,15 +200,56 @@ impl<'a> Parser<'a> {
                 | "i64" => Some(Ty::int(Integer::I64, true)),
                 | "i128" => Some(Ty::int(Integer::I128, true)),
                 | "isize" => Some(Ty::int(Integer::ISize, true)),
-                | _ => None,
+                | _ => {
+                    let found = self
+                        .generics
+                        .iter()
+                        .rev()
+                        .enumerate()
+                        .find_map(|(i, map)| map.get(other).map(|r| r.at(i as u8)));
+
+                    if let Some(found) = found {
+                        Some(Ty::new(typ::Var(found)))
+                    } else {
+                        None
+                    }
+                },
+            },
+            | LAngle => {
+                let mut generic = Ty::generic();
+                self.generics.push(HashMap::new());
+
+                while self.lexer.peek() != Some(&RAngle) {
+                    let kind = match self.lexer.next()? {
+                        | Ident("type") => GenericParam::Type,
+                        | Ident("figure") => GenericParam::Figure,
+                        | Ident("symbol") => GenericParam::Symbol,
+                        | _ => return None,
+                    };
+
+                    let name = self.ident()?;
+                    let id = generic.add_param(kind);
+
+                    self.generics.last_mut().unwrap().insert(name, id);
+                }
+
+                self.expect(RAngle)?;
+
+                let inner = self.parse_type()?;
+
+                Some(generic.finish(inner))
             },
             | LParen => {
-                let mut ty_flags = vec![if self.eat(Flag("in")) { Flags::IN } else { Flags::EMPTY }];
-                let mut tys = vec![self.parse_type()?];
+                let mut ty_flags = vec![];
+                let mut tys = vec![];
 
-                while self.eat(Comma) {
+                while self.lexer.peek() != Some(&RParen) {
                     ty_flags.push(if self.eat(Flag("in")) { Flags::IN } else { Flags::EMPTY });
                     tys.push(self.parse_type()?);
+
+                    if self.lexer.peek() != Some(&RParen) {
+                        self.expect(Comma)?;
+                    }
                 }
 
                 self.expect(RParen)?;
@@ -242,7 +286,13 @@ impl<'a> Parser<'a> {
                 }
             },
             | _ => None,
+        };
+
+        if owned {
+            ty = ty.map(Ty::owned);
         }
+
+        ty
     }
 
     fn string(&mut self) -> Option<Cow<'a, str>> {
@@ -298,6 +348,26 @@ impl<'a, 'b> BodyParser<'a, 'b> {
             let _ = self.lexer.next()?;
 
             self.parser.module.define_func(func, id);
+        }
+
+        if self.eat(LAngle) {
+            self.generics.push(HashMap::new());
+
+            while self.lexer.peek() != Some(&RAngle) {
+                let kind = match self.lexer.next()? {
+                    | Ident("type") => GenericParam::Type,
+                    | Ident("figure") => GenericParam::Figure,
+                    | Ident("symbol") => GenericParam::Symbol,
+                    | _ => return None,
+                };
+
+                let name = self.ident()?;
+                let id = self.builder.add_generic_param(kind);
+
+                self.generics.last_mut().unwrap().insert(name, id);
+            }
+
+            self.expect(RAngle)?;
         }
 
         self.expect(LBrace)?;

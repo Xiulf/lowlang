@@ -200,7 +200,7 @@ impl<'a> Builder<'a> {
     /// with a single owner.
     /// The return var has type `box ty`.
     pub fn box_alloc(&mut self, ty: Ty) -> Var {
-        let ret = self.create_var(ty.clone().boxed());
+        let ret = self.create_var(ty.clone().boxed().owned());
 
         self.block().instrs.push(Instr::BoxAlloc { ret, ty });
 
@@ -209,7 +209,17 @@ impl<'a> Builder<'a> {
 
     /// Deallocate a previously allocted box.
     pub fn box_free(&mut self, boxed: Var) {
-        self.block().instrs.push(Instr::BoxFree { boxed });
+        let ty = self.body().var_type(boxed).lookup();
+
+        if let typ::Box(to) = ty.kind {
+            if ty.flags.is_set(Flags::OWNED) {
+                self.block().instrs.push(Instr::BoxFree { boxed });
+            } else {
+                panic!("Only owned boxes can be box_free'd.");
+            }
+        } else {
+            panic!("Only boxed types can be box_free'd");
+        }
     }
 
     /// Get the address of a boxed value of type `box ty`.

@@ -20,8 +20,13 @@ pub struct Ty(u32);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Type {
+    pub flags: Flags,
     pub repr: Repr,
     pub kind: TypeKind,
+}
+
+impl Flags {
+    pub const OWNED: Self = Self(1 << 0);
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -87,15 +92,24 @@ impl Ty {
 
     fn intern(ty: Arc<Type>) -> Self {
         let mut int = TYPE_INTERNER.write().unwrap();
-        let id = Ty(int.vec.len() as u32);
 
-        int.vec.push(ty.clone());
-        int.map.insert(ty, id);
-        id
+        if let Some(id) = int.map.get(&ty) {
+            *id
+        } else {
+            let id = Ty(int.vec.len() as u32);
+
+            int.vec.push(ty.clone());
+            int.map.insert(ty, id);
+            id
+        }
     }
 
     pub fn new(kind: TypeKind) -> Self {
-        let ty = Arc::new(Type { repr: Repr::default(), kind });
+        let ty = Arc::new(Type {
+            flags: Flags::EMPTY,
+            repr: Repr::default(),
+            kind,
+        });
 
         Self::intern(ty)
     }
@@ -112,12 +126,24 @@ impl Ty {
         Self::new(typ::Box(self))
     }
 
+    pub fn owned(self) -> Self {
+        let mut int = TYPE_INTERNER.write().unwrap();
+        let ptr = Arc::as_ptr(&int.vec[self.0 as usize]) as *mut Type;
+
+        unsafe {
+            (*ptr).flags = (*ptr).flags.set(Flags::OWNED);
+        }
+
+        self
+    }
+
     pub fn int(int: Integer, sign: bool) -> Self {
         Self::intern(Arc::new(Type {
             repr: Repr {
                 scalar: Some(Primitive::Int(int, sign)),
                 ..Repr::default()
             },
+            flags: Flags::EMPTY,
             kind: typ::Unit,
         }))
     }
