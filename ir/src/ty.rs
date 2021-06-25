@@ -1,7 +1,6 @@
 pub use crate::layout::Integer;
 use crate::layout::Primitive;
 use crate::Flags;
-use arena::{Arena, Idx};
 use std::collections::HashMap;
 use std::lazy::SyncLazy;
 use std::sync::Arc;
@@ -127,7 +126,7 @@ impl Ty {
     }
 
     pub fn owned(self) -> Self {
-        let mut int = TYPE_INTERNER.write().unwrap();
+        let int = TYPE_INTERNER.write().unwrap();
         let ptr = Arc::as_ptr(&int.vec[self.0 as usize]) as *mut Type;
 
         unsafe {
@@ -150,6 +149,13 @@ impl Ty {
 
     pub fn generic() -> GenericType {
         GenericType { params: Vec::new() }
+    }
+
+    pub fn pointee(self) -> Option<Ty> {
+        match self.lookup().kind {
+            | typ::Ptr(to) => Some(to),
+            | _ => None,
+        }
     }
 
     pub fn subst(self, args: &[Subst], depth: u8) -> Self {
@@ -222,6 +228,14 @@ impl GenericVar {
     pub fn at(mut self, depth: u8) -> Self {
         self.0 = depth;
         self
+    }
+
+    pub fn idx(self) -> usize {
+        self.1 as usize
+    }
+
+    pub fn depth(self) -> usize {
+        self.0 as usize
     }
 }
 

@@ -12,8 +12,10 @@ import "write" : $(i32, *u8, usize) -> isize
 body "main" {
 
 entry(argc : $i32, argv : $**u8):
+    identity = func_ref "identity"
+    argc_ret = apply identity<$i32>(argc)
     print_args = func_ref "print_args"
-    apply print_args(argc, argv)
+    apply print_args(argc_ret, argv)
     zero = const_int 0, $i32
     return zero
 }

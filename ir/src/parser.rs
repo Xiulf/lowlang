@@ -171,7 +171,7 @@ impl<'a> Parser<'a> {
         let parser = unsafe { &mut *(self as *mut _) };
         let body = self.module.declare_body();
         let builder = self.module.define_body(body);
-        let mut parser = BodyParser {
+        let parser = BodyParser {
             parser,
             builder,
             blocks: HashMap::new(),

@@ -1,10 +1,10 @@
-#include "../include/metadata.h"
 #include "../include/gen_alloc.h"
+#include "../include/metadata.h"
 #include "memory.h"
 
-void copy_zst(Opaque* dst, Opaque* src, Type* t);
-void move_zst(Opaque* dst, Opaque* src, Type* t);
-void drop_owned_box(Opaque* val, Type* t);
+void copy_zst(Opaque *dst, Opaque *src, Type *t);
+void move_zst(Opaque *dst, Opaque *src, Type *t);
+void drop_owned_box(Opaque *val, Type *t);
 
 ValueWitnessTable OWNED_BOX_VWT = {
     .size = sizeof(size_t) * 2,
@@ -75,20 +75,45 @@ ValueWitnessTable TRIVIAL_VWT[6] = {
     },
 };
 
-void copy_trivial(Opaque* dst, Opaque* src, Type* t) {
-    memcpy(dst, src, t->vwt->size);
+Type TRIVIAL_METAS[6] = {{
+                             .vwt = &TRIVIAL_VWT[0],
+                             .flags = TYPE_FLAG_TRIVIAL,
+                         },
+                         {
+                             .vwt = &TRIVIAL_VWT[1],
+                             .flags = TYPE_FLAG_TRIVIAL,
+                         },
+                         {
+                             .vwt = &TRIVIAL_VWT[2],
+                             .flags = TYPE_FLAG_TRIVIAL,
+                         },
+                         {
+                             .vwt = &TRIVIAL_VWT[3],
+                             .flags = TYPE_FLAG_TRIVIAL,
+                         },
+                         {
+                             .vwt = &TRIVIAL_VWT[4],
+                             .flags = TYPE_FLAG_TRIVIAL,
+                         },
+                         {
+                             .vwt = &TRIVIAL_VWT[5],
+                             .flags = TYPE_FLAG_TRIVIAL,
+                         }};
+
+void copy_trivial(Opaque *dst, Opaque *src, Type *t) {
+  memcpy(dst, src, t->vwt->size);
 }
 
-void move_trivial(Opaque* dst, Opaque* src, Type* t) {
-    memcpy(dst, src, t->vwt->size);
+void move_trivial(Opaque *dst, Opaque *src, Type *t) {
+  memcpy(dst, src, t->vwt->size);
 }
 
-void drop_trivial(Opaque* val, Type* t) {}
+void drop_trivial(Opaque *val, Type *t) {}
 
-void copy_zst(Opaque* dst, Opaque* src, Type* t) {}
-void move_zst(Opaque* dst, Opaque* src, Type* t) {}
+void copy_zst(Opaque *dst, Opaque *src, Type *t) {}
+void move_zst(Opaque *dst, Opaque *src, Type *t) {}
 
-void drop_owned_box(Opaque* val, Type* t) {
-    Box* box = (Box*)val;
-    gen_free(box->ptr, t->vwt->size);
+void drop_owned_box(Opaque *val, Type *t) {
+  Box *box = (Box *)val;
+  gen_free(box->ptr, t->vwt->size);
 }

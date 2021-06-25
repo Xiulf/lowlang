@@ -56,7 +56,13 @@ impl AsBasicType for Ty {
 
 impl AsFuncType for Ty {
     fn as_func_type<'ctx>(&self, ctx: &CodegenCtx<'ctx>) -> FunctionType<'ctx> {
-        let ty = self.lookup();
+        let mut ty = self.lookup();
+        let mut generic_params = Vec::new();
+
+        if let typ::Generic(ref params, ret) = ty.kind {
+            generic_params = params.clone();
+            ty = ret.lookup();
+        }
 
         match ty.kind {
             | typ::Func(ref sig) => {
@@ -72,6 +78,10 @@ impl AsFuncType for Ty {
                             ty
                         }
                     })
+                    .chain(generic_params.into_iter().map(|p| match p {
+                        | GenericParam::Type => ctx.type_().ptr_type(AddressSpace::Generic).into(),
+                        | _ => unimplemented!(),
+                    }))
                     .collect::<Vec<_>>();
 
                 let rets = sig
@@ -97,7 +107,6 @@ impl AsFuncType for Ty {
                     | _ => ctx.context.struct_type(&rets, false).fn_type(&params, false),
                 }
             },
-            | typ::Generic(_, t) => t.as_func_type(ctx),
             | _ => unreachable!(),
         }
     }

@@ -1,5 +1,7 @@
 #![feature(once_cell)]
 
+mod metadata;
+mod runtime;
 pub mod ty;
 
 use arena::{ArenaMap, Idx};
@@ -12,6 +14,7 @@ use inkwell::passes::{PassManager, PassManagerBuilder};
 use inkwell::targets::{InitializationConfig, Target, TargetData, TargetMachine, TargetTriple};
 use inkwell::values;
 use inkwell::IntPredicate;
+use ir::ty::typ;
 use std::io::Write as _;
 use std::lazy::OnceCell;
 use tempfile::NamedTempFile;
@@ -38,7 +41,7 @@ pub fn compile_module(ir: &ir::Module) -> NamedTempFile {
         pass_builder.populate_module_pass_manager(&pass_manager);
         pass_manager.run_on(&ctx.module);
 
-        // ctx.module.print_to_stderr();
+        ctx.module.print_to_stderr();
 
         let buffer = ctx
             .target_machine
@@ -60,16 +63,14 @@ pub struct CodegenCtx<'ctx> {
     target_data: TargetData,
     ir: &'ctx ir::Module,
     funcs: ArenaMap<Idx<ir::Func>, values::FunctionValue<'ctx>>,
-
-    gen_alloc: OnceCell<values::FunctionValue<'ctx>>,
-    gen_free: OnceCell<values::FunctionValue<'ctx>>,
-    gen_generation: OnceCell<values::FunctionValue<'ctx>>,
+    runtime_defs: runtime::RuntimeDefs<'ctx>,
 }
 
 pub struct BodyCtx<'a, 'ctx> {
     cx: &'a CodegenCtx<'ctx>,
     func: values::FunctionValue<'ctx>,
     body: &'ctx ir::Body,
+    generic_params: Vec<values::PointerValue<'ctx>>,
     blocks: ArenaMap<Idx<ir::BlockData>, BasicBlock<'ctx>>,
     params: ArenaMap<Idx<ir::VarInfo>, values::PointerValue<'ctx>>,
     vars: ArenaMap<Idx<ir::VarInfo>, values::BasicValueEnum<'ctx>>,
@@ -106,10 +107,7 @@ pub fn with_codegen_ctx<T>(ir: &ir::Module, f: impl FnOnce(CodegenCtx) -> T) -> 
         target_data,
         ir,
         funcs: ArenaMap::default(),
-
-        gen_alloc: OnceCell::new(),
-        gen_free: OnceCell::new(),
-        gen_generation: OnceCell::new(),
+        runtime_defs: runtime::RuntimeDefs::default(),
     };
 
     f(ctx)
@@ -128,6 +126,7 @@ impl<'ctx> CodegenCtx<'ctx> {
             func,
             body: &self.ir[body],
             cx: self,
+            generic_params: Vec::new(),
             blocks: ArenaMap::default(),
             params: ArenaMap::default(),
             vars: ArenaMap::default(),
@@ -159,6 +158,18 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         }
 
         let entry = &self.body[ir::Block::ENTRY];
+
+        for (i, p) in self.body.generic_params.iter().enumerate() {
+            match p {
+                | ir::ty::GenericParam::Type => {
+                    let param = self.func.get_nth_param((entry.params.len() + i) as u32).unwrap();
+                    let param = param.into_pointer_value();
+
+                    self.generic_params.push(param);
+                },
+                | _ => unimplemented!(),
+            }
+        }
 
         for (i, param) in entry.params.iter().enumerate() {
             let ptr = self.params[param.0];
@@ -249,28 +260,6 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         }
     }
 
-    fn gen_alloc(&self) -> values::FunctionValue<'ctx> {
-        *self.cx.gen_alloc.get_or_init(|| {
-            let size_t = self.cx.context.ptr_sized_int_type(&self.cx.target_data, None);
-            let unit = self.cx.context.opaque_struct_type("UNIT").ptr_type(inkwell::AddressSpace::Generic);
-            let ret = self.cx.context.struct_type(&[unit.into(), size_t.into()], false);
-            let sig = ret.fn_type(&[size_t.into()], false);
-
-            self.cx.module.add_function("gen_alloc", sig, None)
-        })
-    }
-
-    fn gen_free(&self) -> values::FunctionValue<'ctx> {
-        *self.cx.gen_free.get_or_init(|| {
-            let size_t = self.cx.context.ptr_sized_int_type(&self.cx.target_data, None);
-            let unit = self.cx.context.opaque_struct_type("UNIT").ptr_type(inkwell::AddressSpace::Generic);
-            let void = self.cx.context.void_type();
-            let sig = void.fn_type(&[unit.into(), size_t.into()], false);
-
-            self.cx.module.add_function("gen_free", sig, None)
-        })
-    }
-
     fn lower_instr(&mut self, instr: &ir::Instr) -> Option<()> {
         match *instr {
             | ir::Instr::StackAlloc { ret, ref ty } => {
@@ -284,7 +273,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 use inkwell::types::BasicType;
                 let ty = ty.as_basic_type(self.cx);
                 let size = ty.size_of().unwrap();
-                let gen_alloc = self.gen_alloc();
+                let gen_alloc = self.cx.gen_alloc();
                 let call = self.cx.builder.build_call(gen_alloc, &[size.into()], "");
                 let val = call.try_as_basic_value().unwrap_left();
 
@@ -295,7 +284,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     use inkwell::types::BasicType;
                     let ty = of.as_basic_type(self.cx);
                     let size = ty.size_of().unwrap();
-                    let gen_free = self.gen_free();
+                    let gen_free = self.cx.gen_free();
                     let val = self.vars[boxed.0].into_struct_value();
                     let ptr = self.cx.builder.build_extract_value(val, 0, "").unwrap();
 
@@ -315,6 +304,30 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 let addr = self.vars[addr.0].into_pointer_value();
 
                 self.cx.builder.build_store(addr, val);
+            },
+            | ir::Instr::CopyAddr { old, new, flags } => {
+                let elem_ty = self.body[old].ty.pointee().unwrap();
+                let old = self.vars[old.0].into_pointer_value();
+                let new = self.vars[new.0].into_pointer_value();
+
+                if let typ::Var(var) = elem_ty.lookup().kind {
+                    use std::convert::TryFrom;
+                    use values::CallableValue;
+                    let param = self.generic_params[var.idx()];
+                    let vwt = self.cx.builder.build_struct_gep(param, 0, "").unwrap();
+                    let vwt = self.cx.builder.build_load(vwt, "").into_pointer_value();
+                    let copy = self.cx.builder.build_struct_gep(vwt, 3, "").unwrap();
+                    let copy = self.cx.builder.build_load(copy, "").into_pointer_value();
+                    let copy = CallableValue::try_from(copy).unwrap();
+
+                    self.cx.builder.build_call(copy, &[new.into(), old.into(), param.into()], "");
+                } else {
+                    let old_align = old.get_type().get_alignment().get_zero_extended_constant().unwrap() as u32;
+                    let new_align = new.get_type().get_alignment().get_zero_extended_constant().unwrap() as u32;
+                    let size = new.get_type().size_of();
+
+                    self.cx.builder.build_memcpy(new, new_align, old, old_align, size).unwrap();
+                }
             },
             | ir::Instr::ConstInt { ret, val } => {
                 let ty = self.body[ret].ty.as_basic_type(self.cx);
@@ -361,8 +374,25 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
 
                 self.vars.insert(tuple.0, new.unwrap().into_struct_value().into());
             },
-            | ir::Instr::Apply { ref rets, func, ref args, .. } => {
-                let args = args.iter().map(|a| self.vars[a.0]).collect::<Vec<_>>();
+            | ir::Instr::Apply {
+                ref rets,
+                func,
+                ref args,
+                ref subst,
+            } => {
+                let mut args = args.iter().map(|a| self.vars[a.0]).collect::<Vec<_>>();
+
+                for sub in subst {
+                    match *sub {
+                        | ir::ty::Subst::Type(t) => {
+                            let meta = self.find_type_metadata(t).unwrap();
+
+                            args.push(meta.into());
+                        },
+                        | _ => unimplemented!(),
+                    }
+                }
+
                 let res = match self.any_vars.get(func.0) {
                     | Some(val) => {
                         let func = val.into_function_value();

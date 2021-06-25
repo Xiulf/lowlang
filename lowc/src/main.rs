@@ -2,8 +2,8 @@ use ir::ty::*;
 use ir::*;
 
 fn main() {
-    let mut source = std::fs::read_to_string("test.ll").unwrap();
-    let mut parser = parser::Parser::new(&source);
+    let source = std::fs::read_to_string("test.ll").unwrap();
+    let parser = parser::Parser::new(&source);
     let module = parser.parse().unwrap();
 
     println!("{}", module);
