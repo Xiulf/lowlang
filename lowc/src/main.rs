@@ -1,4 +1,3 @@
-use ir::ty::*;
 use ir::*;
 
 fn main() {

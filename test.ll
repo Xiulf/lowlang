@@ -1,27 +1,45 @@
-module "test"
+module test
 
-export "main" : $(i32, **u8) -> i32
-export "identity" : $<type T>([in] T) -> [out] T
+type Pair
+type UnionTest
+type Option
 
-local  "print_args" : $(i32, **u8) -> ()
+export main : $(i32, **u8) -> i32
+export identity : $<type T>([in] T) -> [out] T
+local  print_args : $(i32, **u8) -> ()
+import puts : $(*u8) -> i32
+import write : $(i32, *u8, usize) -> isize
 
-import "puts" : $(*u8) -> i32
-import "write" : $(i32, *u8, usize) -> isize
+
+struct Pair <type T> {
+    a : $T,
+    b : $T,
+}
+
+union UnionTest {
+    a : $i32,
+    b : $u16,
+}
+
+enum Option<type T> {
+    None,
+    Some : $(T),
+}
 
 
-body "main" {
+body main {
 
 entry(argc : $i32, argv : $**u8):
-    identity = func_ref "identity"
+    identity = func_ref identity
     argc_ret = apply identity<$i32>(argc)
-    print_args = func_ref "print_args"
+    print_args = func_ref print_args
     apply print_args(argc_ret, argv)
     zero = const_int 0, $i32
     return zero
 }
 
 
-body "print_args" {
+body print_args {
 
 entry(argc : $i32, argv : $**u8):
     zero = const_int 0, $i32
@@ -30,7 +48,7 @@ entry(argc : $i32, argv : $**u8):
 
 call:
     arg = load argv
-    puts = func_ref "puts"
+    puts = func_ref puts
     _ = apply puts(arg)
     one = const_int 1, $i32
     argc = intrinsic "sub_i32"(argc, one)
@@ -43,7 +61,7 @@ exit:
 }
 
 
-body "identity" <type T> {
+body identity <type T> {
 
 entry(ret : $*T, x : $*T):
     copy_addr x, ret [init]

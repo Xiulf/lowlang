@@ -14,9 +14,13 @@ use ty::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub name: String,
+    pub types: Arena<TypeDef>,
     pub funcs: Arena<Func>,
     bodies: Arena<Body>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TypeId(pub Idx<TypeDef>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FuncId(pub Idx<Func>);
@@ -29,6 +33,32 @@ pub struct Var(pub Idx<VarInfo>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Block(pub Idx<BlockData>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeDef {
+    pub name: String,
+    pub generic_params: Vec<GenericParam>,
+    pub body: Option<TypeDefbody>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeDefbody {
+    Struct { fields: Vec<TypeDefField> },
+    Union { fields: Vec<TypeDefField> },
+    Enum { variants: Vec<TypeDefVariant> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeDefField {
+    pub name: String,
+    pub ty: Ty,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeDefVariant {
+    pub name: String,
+    pub payload: Option<Ty>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Func {
@@ -215,6 +245,20 @@ impl Flags {
 
     pub fn is_set(self, flag: Self) -> bool {
         self.0 & flag.0 != 0
+    }
+}
+
+impl Index<TypeId> for Module {
+    type Output = TypeDef;
+
+    fn index(&self, id: TypeId) -> &Self::Output {
+        &self.types[id.0]
+    }
+}
+
+impl IndexMut<TypeId> for Module {
+    fn index_mut(&mut self, id: TypeId) -> &mut Self::Output {
+        &mut self.types[id.0]
     }
 }
 

@@ -1,6 +1,6 @@
 pub use crate::layout::Integer;
 use crate::layout::Primitive;
-use crate::Flags;
+use crate::{Flags, TypeId};
 use std::collections::HashMap;
 use std::lazy::SyncLazy;
 use std::sync::Arc;
@@ -45,6 +45,7 @@ pub enum TypeKind {
     Var(GenericVar),
     Func(Signature),
     Generic(Vec<GenericParam>, Ty),
+    Def(TypeId, Option<Vec<Subst>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -158,6 +159,19 @@ impl Ty {
         }
     }
 
+    pub fn pass_indirectly(self) -> bool {
+        match self.lookup().kind {
+            | typ::Var(_) => true,
+            | typ::Tuple(ref ts) => ts.iter().any(|t| t.pass_indirectly()),
+            | typ::Generic(_, t) => t.pass_indirectly(),
+            | typ::Def(_, Some(ref sub)) => sub.iter().any(|s| match s {
+                | Subst::Type(t) => t.pass_indirectly(),
+                | _ => false,
+            }),
+            | _ => false,
+        }
+    }
+
     pub fn subst(self, args: &[Subst], depth: u8) -> Self {
         match self.lookup().kind {
             | typ::Ptr(to) => Ty::new(typ::Ptr(to.subst(args, depth))),
@@ -185,6 +199,18 @@ impl Ty {
                     .collect(),
             })),
             | typ::Generic(ref params, ty) => Ty::new(typ::Generic(params.clone(), ty.subst(args, depth + 1))),
+            | typ::Def(id, Some(ref sub)) => Ty::new(typ::Def(
+                id,
+                Some(
+                    sub.iter()
+                        .map(|s| match s {
+                            | Subst::Type(t) => Subst::Type(t.subst(args, depth)),
+                            | Subst::Figure(f) => Subst::Figure(*f),
+                            | Subst::Symbol(s) => Subst::Symbol(s.clone()),
+                        })
+                        .collect(),
+                ),
+            )),
             | _ => self,
         }
     }
@@ -204,9 +230,9 @@ impl Signature {
     }
 
     pub fn param(mut self, ty: Ty) -> Self {
-        let flags = match ty.lookup().kind {
-            | typ::Var(_) => Flags::IN,
-            | _ => Flags::EMPTY,
+        let flags = match ty.pass_indirectly() {
+            | true => Flags::IN,
+            | false => Flags::EMPTY,
         };
 
         self.params.push(SigParam { ty, flags });
@@ -214,9 +240,9 @@ impl Signature {
     }
 
     pub fn ret(mut self, ty: Ty) -> Self {
-        let flags = match ty.lookup().kind {
-            | typ::Var(_) => Flags::OUT,
-            | _ => Flags::EMPTY,
+        let flags = match ty.pass_indirectly() {
+            | true => Flags::IN,
+            | false => Flags::EMPTY,
         };
 
         self.rets.push(SigParam { ty, flags });

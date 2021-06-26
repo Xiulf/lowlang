@@ -16,8 +16,11 @@ pub enum Token<'a> {
     #[regex(r#""(\\"|[^"])+""#, lex_string)]
     String(Cow<'a, str>),
 
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
+    #[regex(r"[\pL_][\pL\pN_]*'*")]
     Ident(&'a str),
+
+    #[regex(r"[\pL_][\pL\pN_]*'*(/[\pL_][\pL\pN_]*'*)+")]
+    Path(&'a str),
 
     #[regex(r"\[\w+\]", |lex| &lex.slice()[1..lex.slice().len() - 1])]
     Flag(&'a str),
@@ -39,6 +42,9 @@ pub enum Token<'a> {
 
     #[token("$")]
     Dollar,
+
+    #[token("/")]
+    Slash,
 
     #[token("->")]
     Arrow,
@@ -104,7 +110,8 @@ use Token::*;
 pub struct Parser<'a> {
     lexer: Peekable<Lexer<'a, Token<'a>>>,
     module: Module,
-    funcs: HashMap<Cow<'a, str>, FuncId>,
+    types: HashMap<&'a str, TypeId>,
+    funcs: HashMap<&'a str, FuncId>,
     generics: Vec<HashMap<&'a str, GenericVar>>,
 }
 
@@ -126,6 +133,7 @@ impl<'a> Parser<'a> {
         Parser {
             lexer: Token::lexer(source).peekable(),
             module: Module::new(""),
+            types: HashMap::new(),
             funcs: HashMap::new(),
             generics: Vec::new(),
         }
@@ -133,7 +141,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse(mut self) -> Option<Module> {
         let _ = self.expect(Ident("module"))?;
-        let name = self.string()?;
+        let name = self.def_name()?;
 
         self.module.name = name.to_string();
 
@@ -148,22 +156,137 @@ impl<'a> Parser<'a> {
 
     fn parse_item(&mut self) -> Option<()> {
         match self.lexer.next()? {
+            | Ident("type") => self.parse_type_decl(),
             | Ident("import") => self.parse_func(Linkage::Import),
             | Ident("export") => self.parse_func(Linkage::Export),
             | Ident("local") => self.parse_func(Linkage::Local),
+            | Ident("struct") => self.parse_struct(false),
+            | Ident("union") => self.parse_struct(true),
+            | Ident("enum") => self.parse_enum(),
             | Ident("body") => self.parse_body(),
             | _ => None,
         }
     }
 
+    fn parse_type_decl(&mut self) -> Option<()> {
+        let name = self.def_name()?;
+        let id = self.module.declare_type(name);
+
+        self.types.insert(name, id);
+        Some(())
+    }
+
     fn parse_func(&mut self, linkage: Linkage) -> Option<()> {
-        let name = self.string()?;
+        let name = self.def_name()?;
         let _ = self.expect(Token::Colon)?;
         let _ = self.expect(Token::Dollar)?;
         let ty = self.parse_type()?;
-        let id = self.module.declare_func(name.to_string(), linkage, ty);
+        let id = self.module.declare_func(name, linkage, ty);
 
         self.funcs.insert(name, id);
+        Some(())
+    }
+
+    fn parse_struct(&mut self, is_union: bool) -> Option<()> {
+        let name = self.def_name()?;
+        let id = self.types[name];
+
+        if self.eat(LAngle) {
+            self.generics.push(HashMap::new());
+
+            while self.lexer.peek() != Some(&RAngle) {
+                let kind = match self.lexer.next()? {
+                    | Ident("type") => GenericParam::Type,
+                    | Ident("figure") => GenericParam::Figure,
+                    | Ident("symbol") => GenericParam::Symbol,
+                    | _ => return None,
+                };
+
+                let name = self.ident()?;
+                let id = self.module[id].add_generic_param(kind);
+
+                self.generics.last_mut().unwrap().insert(name, id);
+            }
+
+            self.expect(RAngle)?;
+        }
+
+        let _ = self.expect(LBrace)?;
+        let mut fields = Vec::new();
+
+        while self.lexer.peek() != Some(&RBrace) {
+            let name = self.ident()?;
+            let _ = self.expect(Colon)?;
+            let _ = self.expect(Dollar)?;
+            let ty = self.parse_type()?;
+
+            fields.push(TypeDefField { name: name.to_string(), ty });
+
+            if self.lexer.peek() != Some(&RBrace) {
+                self.expect(Comma)?;
+            }
+        }
+
+        self.expect(RBrace)?;
+
+        if is_union {
+            self.module.define_union(id, fields);
+        } else {
+            self.module.define_struct(id, fields);
+        }
+
+        Some(())
+    }
+
+    fn parse_enum(&mut self) -> Option<()> {
+        let name = self.def_name()?;
+        let id = self.types[name];
+
+        if self.eat(LAngle) {
+            self.generics.push(HashMap::new());
+
+            while self.lexer.peek() != Some(&RAngle) {
+                let kind = match self.lexer.next()? {
+                    | Ident("type") => GenericParam::Type,
+                    | Ident("figure") => GenericParam::Figure,
+                    | Ident("symbol") => GenericParam::Symbol,
+                    | _ => return None,
+                };
+
+                let name = self.ident()?;
+                let id = self.module[id].add_generic_param(kind);
+
+                self.generics.last_mut().unwrap().insert(name, id);
+            }
+
+            self.expect(RAngle)?;
+        }
+
+        let _ = self.expect(LBrace)?;
+        let mut variants = Vec::new();
+
+        while self.lexer.peek() != Some(&RBrace) {
+            let name = self.ident()?;
+            let payload = if self.eat(Colon) {
+                self.expect(Dollar)?;
+                Some(self.parse_type()?)
+            } else {
+                None
+            };
+
+            variants.push(TypeDefVariant {
+                name: name.to_string(),
+                payload,
+            });
+
+            if self.lexer.peek() != Some(&RBrace) {
+                self.expect(Comma)?;
+            }
+        }
+
+        self.expect(RBrace)?;
+        self.module.define_enum(id, variants);
+
         Some(())
     }
 
@@ -211,7 +334,11 @@ impl<'a> Parser<'a> {
                     if let Some(found) = found {
                         Some(Ty::new(typ::Var(found)))
                     } else {
-                        None
+                        let id = *self.types.get(other)?;
+                        let subst = self.parse_substs()?;
+                        let subst = if subst.is_empty() { None } else { Some(subst) };
+
+                        Some(Ty::new(typ::Def(id, subst)))
                     }
                 },
             },
@@ -295,6 +422,31 @@ impl<'a> Parser<'a> {
         ty
     }
 
+    fn parse_substs(&mut self) -> Option<Vec<Subst>> {
+        let mut subst = Vec::new();
+
+        if self.eat(LAngle) {
+            subst.push(self.parse_subst()?);
+
+            while self.eat(Comma) {
+                subst.push(self.parse_subst()?);
+            }
+
+            self.expect(RAngle)?;
+        }
+
+        Some(subst)
+    }
+
+    fn parse_subst(&mut self) -> Option<Subst> {
+        match self.lexer.next()? {
+            | Dollar => Some(Subst::Type(self.parse_type()?)),
+            | Int(i) => Some(Subst::Figure(i as u128)),
+            | String(s) => Some(Subst::Symbol(s.to_string())),
+            | _ => None,
+        }
+    }
+
     fn string(&mut self) -> Option<Cow<'a, str>> {
         match self.lexer.next()? {
             | String(s) => Some(s),
@@ -305,6 +457,14 @@ impl<'a> Parser<'a> {
     fn ident(&mut self) -> Option<&'a str> {
         match self.lexer.next()? {
             | Ident(s) => Some(s),
+            | _ => None,
+        }
+    }
+
+    fn def_name(&mut self) -> Option<&'a str> {
+        match self.lexer.next()? {
+            | Ident(s) => Some(s),
+            | Path(p) => Some(p),
             | _ => None,
         }
     }
@@ -342,9 +502,8 @@ impl<'a> Parser<'a> {
 
 impl<'a, 'b> BodyParser<'a, 'b> {
     fn parse(mut self, id: BodyId) -> Option<()> {
-        if let Some(&String(ref name)) = self.lexer.peek() {
-            let name = name.clone();
-            let func = *self.funcs.get(&name)?;
+        if let Some(&Ident(name) | &Path(name)) = self.lexer.peek() {
+            let func = *self.funcs.get(name)?;
             let _ = self.lexer.next()?;
 
             self.parser.module.define_func(func, id);
@@ -668,8 +827,8 @@ impl<'a, 'b> BodyParser<'a, 'b> {
                 vec![ret]
             },
             | "func_ref" => {
-                let name = self.string()?;
-                let func = self.funcs[&name];
+                let name = self.def_name()?;
+                let func = self.funcs[name];
                 let ret = self.builder.func_ref(func);
 
                 vec![ret]
@@ -770,31 +929,6 @@ impl<'a, 'b> BodyParser<'a, 'b> {
         }
 
         Some(())
-    }
-
-    fn parse_substs(&mut self) -> Option<Vec<Subst>> {
-        let mut subst = Vec::new();
-
-        if self.eat(LAngle) {
-            subst.push(self.parse_subst()?);
-
-            while self.eat(Comma) {
-                subst.push(self.parse_subst()?);
-            }
-
-            self.expect(RAngle)?;
-        }
-
-        Some(subst)
-    }
-
-    fn parse_subst(&mut self) -> Option<Subst> {
-        match self.lexer.next()? {
-            | Dollar => Some(Subst::Type(self.parse_type()?)),
-            | Int(i) => Some(Subst::Figure(i as u128)),
-            | String(s) => Some(Subst::Symbol(s.to_string())),
-            | _ => None,
-        }
     }
 }
 

@@ -4,9 +4,38 @@ impl Module {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            types: Arena::default(),
             funcs: Arena::default(),
             bodies: Arena::default(),
         }
+    }
+
+    pub fn declare_type(&mut self, name: impl Into<String>) -> TypeId {
+        let idx = self.types.alloc(TypeDef {
+            name: name.into(),
+            generic_params: Vec::new(),
+            body: None,
+        });
+
+        TypeId(idx)
+    }
+
+    pub fn define_struct(&mut self, id: TypeId, fields: impl IntoIterator<Item = TypeDefField>) {
+        self[id].body = Some(TypeDefbody::Struct {
+            fields: fields.into_iter().collect(),
+        });
+    }
+
+    pub fn define_union(&mut self, id: TypeId, fields: impl IntoIterator<Item = TypeDefField>) {
+        self[id].body = Some(TypeDefbody::Union {
+            fields: fields.into_iter().collect(),
+        });
+    }
+
+    pub fn define_enum(&mut self, id: TypeId, variants: impl IntoIterator<Item = TypeDefVariant>) {
+        self[id].body = Some(TypeDefbody::Enum {
+            variants: variants.into_iter().collect(),
+        });
     }
 
     pub fn declare_func(&mut self, name: impl Into<String>, linkage: Linkage, sig: Ty) -> FuncId {
@@ -36,6 +65,15 @@ impl Module {
             body_id,
             block_id: Block::ENTRY,
         }
+    }
+}
+
+impl TypeDef {
+    pub fn add_generic_param(&mut self, param: GenericParam) -> GenericVar {
+        let id = GenericVar(0, self.generic_params.len() as u8);
+
+        self.generic_params.push(param);
+        id
     }
 }
 

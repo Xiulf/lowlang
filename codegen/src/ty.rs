@@ -50,6 +50,7 @@ impl AsBasicType for Ty {
                 fn_type.ptr_type(AddressSpace::Const).into()
             },
             | typ::Generic(_, t) => t.as_basic_type(ctx),
+            | typ::Def(_, _) => unimplemented!(),
         }
     }
 }

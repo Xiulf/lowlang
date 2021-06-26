@@ -1,5 +1,13 @@
 use crate::*;
-use std::fmt::{self, Write as _};
+use std::fmt;
+
+impl fmt::Display for TypeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let id: u32 = self.0.into_raw().into();
+
+        write!(f, "type{}", id)
+    }
+}
 
 impl fmt::Display for FuncId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -76,7 +84,7 @@ impl fmt::Display for Body {
 
             list(f, self.generic_params.iter().enumerate(), |(i, p), f| {
                 p.fmt(f)?;
-                write!(f, " {}", (b'a' + i as u8) as char)
+                write!(f, " {}", (b'A' + i as u8) as char)
             })?;
 
             write!(f, "> ")?;
@@ -172,7 +180,7 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
             | Instr::Store { val, addr } => write!(f, "store {}, {}", val, addr),
             | Instr::CopyAddr { old, new, flags } if flags.is_set(Flags::TAKE) => write!(f, "copy_addr {}, {} [take]", old, new),
             | Instr::CopyAddr { old, new, flags } if flags.is_set(Flags::INIT) => write!(f, "copy_addr {}, {} [init]", old, new),
-            | Instr::CopyAddr { old, new, flags } => write!(f, "copy_addr {}, {}", old, new),
+            | Instr::CopyAddr { old, new, .. } => write!(f, "copy_addr {}, {}", old, new),
             | Instr::CopyValue { ret, val } => write!(f, "{} = copy_value {}", ret, val),
             | Instr::DropAddr { addr } => write!(f, "drop_addr {}", addr),
             | Instr::DropValue { val } => write!(f, "drop_value {}", val),
@@ -274,6 +282,12 @@ impl fmt::Display for Ty {
                 },
                 | None => write!(f, "()"),
             },
+            | typ::Def(id, Some(ref subst)) => {
+                write!(f, "{}<", id)?;
+                list(f, subst, Subst::fmt)?;
+                write!(f, ">")
+            },
+            | typ::Def(id, None) => write!(f, "{}", id),
             | typ::Ptr(to) => write!(f, "*{}", to),
             | typ::Box(to) => write!(f, "box {}", to),
             | typ::Tuple(ref ts) => {
@@ -288,7 +302,7 @@ impl fmt::Display for Ty {
 
                 list(f, params.iter().enumerate(), |(i, p), f| {
                     p.fmt(f)?;
-                    write!(f, " {}", (b'a' + i as u8) as char)
+                    write!(f, " {}", (b'A' + i as u8) as char)
                 })?;
 
                 write!(f, "> {}", ty)
@@ -329,7 +343,7 @@ impl fmt::Display for SigParam {
 
 impl fmt::Display for GenericVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ch = (b'a' + self.1) as char;
+        let ch = (b'A' + self.1) as char;
         write!(f, "{}'{}", ch, self.0)
     }
 }
