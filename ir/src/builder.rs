@@ -21,19 +21,19 @@ impl Module {
     }
 
     pub fn define_struct(&mut self, id: TypeId, fields: impl IntoIterator<Item = TypeDefField>) {
-        self[id].body = Some(TypeDefbody::Struct {
+        self[id].body = Some(TypeDefBody::Struct {
             fields: fields.into_iter().collect(),
         });
     }
 
     pub fn define_union(&mut self, id: TypeId, fields: impl IntoIterator<Item = TypeDefField>) {
-        self[id].body = Some(TypeDefbody::Union {
+        self[id].body = Some(TypeDefBody::Union {
             fields: fields.into_iter().collect(),
         });
     }
 
     pub fn define_enum(&mut self, id: TypeId, variants: impl IntoIterator<Item = TypeDefVariant>) {
-        self[id].body = Some(TypeDefbody::Enum {
+        self[id].body = Some(TypeDefBody::Enum {
             variants: variants.into_iter().collect(),
         });
     }

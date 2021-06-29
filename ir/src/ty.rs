@@ -26,6 +26,8 @@ pub struct Type {
 
 impl Flags {
     pub const OWNED: Self = Self(1 << 0);
+    pub const C_REPR: Self = Self(1 << 1);
+    pub const NON_NULL: Self = Self(1 << 2);
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -102,6 +104,10 @@ impl Ty {
             int.map.insert(ty, id);
             id
         }
+    }
+
+    pub(crate) fn idx(self) -> usize {
+        self.0 as usize
     }
 
     pub fn new(kind: TypeKind) -> Self {

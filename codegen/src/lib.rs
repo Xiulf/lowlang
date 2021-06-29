@@ -41,7 +41,7 @@ pub fn compile_module(ir: &ir::Module) -> NamedTempFile {
         pass_builder.populate_module_pass_manager(&pass_manager);
         pass_manager.run_on(&ctx.module);
 
-        ctx.module.print_to_stderr();
+        // ctx.module.print_to_stderr();
 
         let buffer = ctx
             .target_machine

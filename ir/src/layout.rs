@@ -1,7 +1,23 @@
+use crate::ty::*;
 use std::convert::TryInto;
+use std::lazy::SyncLazy;
 use std::num::NonZeroUsize;
 use std::ops::{self, Range, RangeInclusive};
+use std::sync::RwLock;
 use target_lexicon::{PointerWidth, Triple};
+
+static LAYOUT_INTERNER: SyncLazy<RwLock<LayoutInterner>> = SyncLazy::new(Default::default);
+
+#[derive(Default)]
+struct LayoutInterner {
+    vec: Vec<Option<Layout>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TyAndLayout {
+    pub ty: Ty,
+    pub layout: Layout,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Layout {
@@ -92,6 +108,37 @@ pub enum TagEncoding {
         niche_variants: RangeInclusive<usize>,
         niche_start: u128,
     },
+}
+
+impl Layout {
+    pub const UNIT: Self = Self {
+        size: Size::ZERO,
+        align: Align::ONE,
+        stride: Size::ZERO,
+        abi: Abi::Aggregate { sized: true },
+        fields: Fields::Arbitrary {
+            offsets: Vec::new(),
+            memory_index: Vec::new(),
+        },
+        variants: Variants::Single { index: 0 },
+        largest_niche: None,
+    };
+
+    pub fn scalar(scalar: Scalar, triple: &Triple) -> Self {
+        let size = scalar.value.size(triple);
+        let align = Align::from_bytes(size.bytes());
+        let largest_niche = Niche::from_scalar(triple, Size::ZERO, scalar.clone());
+
+        Self {
+            size,
+            align,
+            stride: size,
+            abi: Abi::Scalar(scalar),
+            fields: Fields::Primitive,
+            variants: Variants::Single { index: 0 },
+            largest_niche,
+        }
+    }
 }
 
 impl Size {
@@ -213,6 +260,15 @@ impl Abi {
 }
 
 impl Scalar {
+    fn new(value: Primitive, triple: &Triple) -> Self {
+        let bits = value.size(triple).bits();
+
+        Scalar {
+            value,
+            valid_range: 0..=(!0 >> (128 - bits)),
+        }
+    }
+
     pub fn is_bool(&self) -> bool {
         matches!(self.value, Primitive::Int(Integer::I8, false)) && self.valid_range == (0..=1)
     }
@@ -356,5 +412,71 @@ impl Niche {
             value,
             valid_range: *v.start()..=end,
         }))
+    }
+}
+
+impl std::ops::Deref for TyAndLayout {
+    type Target = Layout;
+
+    fn deref(&self) -> &Self::Target {
+        &self.layout
+    }
+}
+
+impl crate::Module {
+    pub fn layout_of(&self, triple: &Triple, ty: Ty) -> TyAndLayout {
+        if let Some(Some(layout)) = LAYOUT_INTERNER.read().unwrap().vec.get(ty.idx()) {
+            TyAndLayout { ty, layout: layout.clone() }
+        } else {
+            use crate::Flags;
+            let info = ty.lookup();
+            let scalar_unit = |value: Primitive| Scalar::new(value, triple);
+            let scalar = |value: Primitive| {
+                let mut scalar = scalar_unit(value);
+
+                if let Some(start) = info.repr.valid_range_start {
+                    scalar.valid_range = start..=*scalar.valid_range.end();
+                }
+
+                if let Some(end) = info.repr.valid_range_end {
+                    scalar.valid_range = *scalar.valid_range.start()..=end;
+                }
+
+                Layout::scalar(scalar, triple)
+            };
+
+            let layout = match info.kind {
+                | typ::Unit => {
+                    if let Some(prim) = info.repr.scalar {
+                        scalar(prim)
+                    } else {
+                        Layout::UNIT
+                    }
+                },
+                | typ::Ptr(_) => {
+                    let mut scalar = scalar_unit(Primitive::Pointer);
+
+                    if let Some(start) = info.repr.valid_range_start {
+                        scalar.valid_range = start..=*scalar.valid_range.end();
+                    } else if info.flags.is_set(Flags::NON_NULL) {
+                        scalar.valid_range = 1..=*scalar.valid_range.end();
+                    }
+
+                    if let Some(end) = info.repr.valid_range_end {
+                        scalar.valid_range = *scalar.valid_range.start()..=end;
+                    }
+
+                    Layout::scalar(scalar, triple)
+                },
+                | _ => unimplemented!(),
+            };
+
+            let mut int = LAYOUT_INTERNER.write().unwrap();
+
+            int.vec.resize(ty.idx(), None);
+            int.vec[ty.idx()] = Some(layout.clone());
+
+            TyAndLayout { ty, layout }
+        }
     }
 }

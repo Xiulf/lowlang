@@ -38,11 +38,11 @@ pub struct Block(pub Idx<BlockData>);
 pub struct TypeDef {
     pub name: String,
     pub generic_params: Vec<GenericParam>,
-    pub body: Option<TypeDefbody>,
+    pub body: Option<TypeDefBody>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TypeDefbody {
+pub enum TypeDefBody {
     Struct { fields: Vec<TypeDefField> },
     Union { fields: Vec<TypeDefField> },
     Enum { variants: Vec<TypeDefVariant> },
@@ -239,7 +239,7 @@ impl Flags {
     pub const TAKE: Self = Self(1 << 0);
     pub const INIT: Self = Self(1 << 1);
 
-    pub fn set(mut self, flag: Self) -> Self {
+    pub fn set(self, flag: Self) -> Self {
         Self(self.0 | flag.0)
     }
 

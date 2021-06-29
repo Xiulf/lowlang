@@ -52,6 +52,12 @@ impl fmt::Display for Module {
 
         writeln!(f)?;
 
+        for (id, ty) in self.types.iter() {
+            writeln!(f, "{}: {}", TypeId(id), ty)?;
+        }
+
+        writeln!(f)?;
+
         for (id, body) in self.bodies.iter() {
             writeln!(f, "{}: {}", BodyId(id), body)?;
             writeln!(f)?;
@@ -74,6 +80,81 @@ impl fmt::Display for Linkage {
             | Linkage::Export => write!(f, "export"),
             | Linkage::Local => write!(f, "local "),
         }
+    }
+}
+
+impl fmt::Display for TypeDef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "type {:?}", self.name)?;
+
+        if !self.generic_params.is_empty() {
+            write!(f, "<")?;
+
+            list(f, self.generic_params.iter().enumerate(), |(i, p), f| {
+                p.fmt(f)?;
+                write!(f, " {}", (b'A' + i as u8) as char)
+            })?;
+
+            write!(f, ">")?;
+        }
+
+        if let Some(body) = &self.body {
+            write!(f, " = {}", body)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl fmt::Display for TypeDefBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            | TypeDefBody::Struct { fields } => {
+                writeln!(f, "struct {{")?;
+
+                for field in fields {
+                    writeln!(f, "    {},", field)?;
+                }
+
+                write!(f, "}}")
+            },
+            | TypeDefBody::Union { fields } => {
+                writeln!(f, "union {{")?;
+
+                for field in fields {
+                    writeln!(f, "    {},", field)?;
+                }
+
+                write!(f, "}}")
+            },
+            | TypeDefBody::Enum { variants } => {
+                writeln!(f, "enum {{")?;
+
+                for variant in variants {
+                    writeln!(f, "    {},", variant)?;
+                }
+
+                write!(f, "}}")
+            },
+        }
+    }
+}
+
+impl fmt::Display for TypeDefField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} : ${}", self.name, self.ty)
+    }
+}
+
+impl fmt::Display for TypeDefVariant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+
+        if let Some(payload) = &self.payload {
+            write!(f, " : ${}", payload)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -259,6 +340,10 @@ impl fmt::Display for Ty {
 
         if ty.flags.is_set(Flags::OWNED) {
             write!(f, "[owned] ")?;
+        }
+
+        if ty.flags.is_set(Flags::C_REPR) {
+            write!(f, "[c_repr] ")?;
         }
 
         match ty.kind {
