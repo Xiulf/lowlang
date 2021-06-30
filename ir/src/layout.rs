@@ -1,4 +1,5 @@
 use crate::ty::*;
+use crate::{Flags, Module, TypeDefBody};
 use std::convert::TryInto;
 use std::lazy::SyncLazy;
 use std::num::NonZeroUsize;
@@ -124,6 +125,16 @@ impl Layout {
         largest_niche: None,
     };
 
+    pub const UNINHABITED: Self = Self {
+        size: Size::ZERO,
+        align: Align::ONE,
+        stride: Size::ZERO,
+        abi: Abi::Uninhabited,
+        fields: Fields::Primitive,
+        variants: Variants::Single { index: 0 },
+        largest_niche: None,
+    };
+
     pub fn scalar(scalar: Scalar, triple: &Triple) -> Self {
         let size = scalar.value.size(triple);
         let align = Align::from_bytes(size.bytes());
@@ -137,6 +148,14 @@ impl Layout {
             fields: Fields::Primitive,
             variants: Variants::Single { index: 0 },
             largest_niche,
+        }
+    }
+
+    pub fn is_zst(&self) -> bool {
+        match &self.abi {
+            | Abi::Uninhabited => self.size == Size::ZERO,
+            | Abi::Scalar(_) | Abi::ScalarPair(_, _) | Abi::Vector { .. } => false,
+            | Abi::Aggregate { sized } => *sized && self.size == Size::ZERO,
         }
     }
 }
@@ -327,6 +346,20 @@ impl Integer {
             },
         }
     }
+
+    pub fn align(self, triple: &Triple) -> Align {
+        Align::from_bytes(self.size(triple).bytes())
+    }
+
+    pub fn fit_unsigned(x: u128) -> Self {
+        match x {
+            | 0..=0x0000_0000_0000_00FF => Integer::I8,
+            | 0..=0x0000_0000_0000_FFFF => Integer::I16,
+            | 0..=0x0000_0000_FFFF_FFFF => Integer::I32,
+            | 0..=0xFFFF_FFFF_FFFF_FFFF => Integer::I64,
+            | _ => Integer::I128,
+        }
+    }
 }
 
 impl Fields {
@@ -425,10 +458,12 @@ impl std::ops::Deref for TyAndLayout {
 
 impl crate::Module {
     pub fn layout_of(&self, triple: &Triple, ty: Ty) -> TyAndLayout {
-        if let Some(Some(layout)) = LAYOUT_INTERNER.read().unwrap().vec.get(ty.idx()) {
+        let int = LAYOUT_INTERNER.read().unwrap();
+
+        if let Some(Some(layout)) = int.vec.get(ty.idx()) {
             TyAndLayout { ty, layout: layout.clone() }
         } else {
-            use crate::Flags;
+            std::mem::drop(int);
             let info = ty.lookup();
             let scalar_unit = |value: Primitive| Scalar::new(value, triple);
             let scalar = |value: Primitive| {
@@ -468,15 +503,481 @@ impl crate::Module {
 
                     Layout::scalar(scalar, triple)
                 },
-                | _ => unimplemented!(),
+                | typ::Box(_) => {
+                    let mut ptr = Scalar::new(Primitive::Pointer, triple);
+                    let gen = Scalar::new(Primitive::Int(Integer::ISize, false), triple);
+
+                    ptr.valid_range = 1..=*ptr.valid_range.end();
+
+                    scalar_pair(ptr, gen, triple)
+                },
+                | typ::Tuple(ref ts) => {
+                    let fields = ts.iter().map(|&t| self.layout_of(triple, t)).collect::<Vec<_>>();
+
+                    struct_layout(&info, &fields, triple)
+                },
+                | typ::Func(_) => {
+                    let mut scalar = scalar_unit(Primitive::Pointer);
+
+                    scalar.valid_range = 1..=*scalar.valid_range.end();
+
+                    Layout::scalar(scalar, triple)
+                },
+                | typ::Generic(_, t) => self.layout_of(triple, t).layout,
+                | typ::Var(_) => unreachable!(),
+                | typ::Def(id, ref subst) => {
+                    let def = &self[id];
+
+                    match &def.body {
+                        | None => Layout::UNINHABITED,
+                        | Some(body) => match body {
+                            | TypeDefBody::Struct { fields } => {
+                                let fields = fields
+                                    .iter()
+                                    .map(|f| {
+                                        let ty = if let Some(subst) = subst { f.ty.subst(subst, 0) } else { f.ty };
+
+                                        self.layout_of(triple, ty)
+                                    })
+                                    .collect::<Vec<_>>();
+
+                                struct_layout(&info, &fields, triple)
+                            },
+                            | TypeDefBody::Union { fields } => {
+                                let fields = fields
+                                    .iter()
+                                    .map(|f| {
+                                        let ty = if let Some(subst) = subst { f.ty.subst(subst, 0) } else { f.ty };
+
+                                        self.layout_of(triple, ty)
+                                    })
+                                    .collect::<Vec<_>>();
+
+                                union_layout(&info, &fields, triple)
+                            },
+                            | TypeDefBody::Enum { variants } => {
+                                let variants = variants
+                                    .iter()
+                                    .map(|v| {
+                                        v.payload.map(|p| {
+                                            let ty = if let Some(subst) = subst { p.subst(subst, 0) } else { p };
+
+                                            self.layout_of(triple, ty).layout
+                                        })
+                                    })
+                                    .collect::<Vec<_>>();
+
+                                enum_layout(&info, &variants, triple)
+                            },
+                        },
+                    }
+                },
             };
 
             let mut int = LAYOUT_INTERNER.write().unwrap();
 
-            int.vec.resize(ty.idx(), None);
+            int.vec.resize(ty.idx() + 1, None);
             int.vec[ty.idx()] = Some(layout.clone());
 
             TyAndLayout { ty, layout }
         }
     }
+}
+
+fn scalar_pair(a: Scalar, b: Scalar, triple: &Triple) -> Layout {
+    let b_align = b.value.align(triple);
+    let align = a.value.align(triple).max(b_align);
+    let b_offset = a.value.size(triple).align_to(b_align);
+    let size = b_offset + b.value.size(triple);
+    let largest_niche = Niche::from_scalar(triple, b_offset, b.clone())
+        .into_iter()
+        .chain(Niche::from_scalar(triple, Size::ZERO, a.clone()))
+        .max_by_key(|n| n.available(triple));
+
+    Layout {
+        size,
+        align,
+        stride: size.align_to(align),
+        abi: Abi::ScalarPair(a, b),
+        fields: Fields::Arbitrary {
+            offsets: vec![Size::ZERO, b_offset],
+            memory_index: vec![0, 1],
+        },
+        variants: Variants::Single { index: 0 },
+        largest_niche,
+    }
+}
+
+fn struct_layout(info: &Type, fields: &[TyAndLayout], triple: &Triple) -> Layout {
+    let optimize = !info.flags.is_set(Flags::C_REPR);
+    let packed = info.flags.is_set(Flags::PACKED);
+    let mut inverse_memory_index = (0..fields.len()).collect::<Vec<_>>();
+
+    if optimize {
+        let optimizing = &mut inverse_memory_index[..fields.len()];
+
+        optimizing.sort_by_key(|&x| {
+            let f = &fields[x];
+
+            (!f.is_zst(), std::cmp::Reverse(f.align))
+        });
+    }
+
+    let mut sized = true;
+    let mut offsets = vec![Size::ZERO; fields.len()];
+    let mut offset = Size::ZERO;
+    let mut align = Align::ONE;
+    let mut largest_niche = None;
+    let mut largest_niche_available = 0;
+
+    for &i in &inverse_memory_index {
+        let field = &fields[i];
+
+        if !sized {
+            panic!("struct_layout: field after unsized field");
+        }
+
+        if field.abi.is_unsized() {
+            sized = false;
+        }
+
+        if !packed {
+            offset = offset.align_to(field.align);
+        }
+
+        align = align.max(field.align);
+        offsets[i] = offset;
+
+        if let Some(mut niche) = field.largest_niche.clone() {
+            let available = niche.available(triple);
+
+            if available > largest_niche_available {
+                largest_niche_available = available;
+                niche.offset = niche.offset + offset;
+                largest_niche = Some(niche);
+            }
+        }
+
+        offset = offset + field.size;
+    }
+
+    let memory_index = if optimize {
+        invert_mapping(&inverse_memory_index)
+    } else {
+        inverse_memory_index
+    };
+
+    let size = offset;
+    let stride = size.align_to(align);
+    let mut abi = Abi::Aggregate { sized };
+
+    if sized && size.bytes() > 0 {
+        let mut non_zst_fields = fields.iter().enumerate().filter(|(_, f)| !f.is_zst());
+
+        match (non_zst_fields.next(), non_zst_fields.next(), non_zst_fields.next()) {
+            | (Some((i, field)), None, None) => {
+                if offsets[i].bytes() == 0 && align == field.align && size == field.size {
+                    match field.abi {
+                        | Abi::Scalar(_) | Abi::Vector { .. } if optimize => {
+                            abi = field.abi.clone();
+                        },
+                        | Abi::ScalarPair(_, _) => {
+                            abi = field.abi.clone();
+                        },
+                        | _ => {},
+                    }
+                }
+            },
+            | (
+                Some((
+                    i,
+                    TyAndLayout {
+                        layout: Layout { abi: Abi::Scalar(ref a), .. },
+                        ..
+                    },
+                )),
+                Some((
+                    j,
+                    TyAndLayout {
+                        layout: Layout { abi: Abi::Scalar(ref b), .. },
+                        ..
+                    },
+                )),
+                None,
+            ) => {
+                let ((i, a), (j, b)) = if offsets[i] < offsets[j] { ((i, a), (j, b)) } else { ((j, b), (i, a)) };
+
+                let pair = scalar_pair(a.clone(), b.clone(), triple);
+                let pair_offsets = match pair.fields {
+                    | Fields::Arbitrary { ref offsets, .. } => offsets,
+                    | _ => unreachable!(),
+                };
+
+                if offsets[i] == pair_offsets[0] && offsets[j] == pair_offsets[1] && align == pair.align && size == pair.size {
+                    abi = pair.abi.clone();
+                }
+            },
+            | _ => {},
+        }
+    }
+
+    if sized && fields.iter().any(|f| f.abi.is_uninhabited()) {
+        abi = Abi::Uninhabited;
+    }
+
+    Layout {
+        size,
+        align,
+        stride,
+        abi,
+        fields: Fields::Arbitrary { offsets, memory_index },
+        variants: Variants::Single { index: 0 },
+        largest_niche,
+    }
+}
+
+fn union_layout(info: &Type, fields: &[TyAndLayout], triple: &Triple) -> Layout {
+    let optimize = !info.flags.is_set(Flags::C_REPR);
+    let mut align = Align::ONE;
+    let mut size = Size::ZERO;
+    let mut abi = Abi::Aggregate { sized: true };
+
+    for field in fields {
+        if optimize && !field.is_zst() {
+            let field_abi = match &field.abi {
+                | Abi::Scalar(x) => Abi::Scalar(Scalar::new(x.value, triple)),
+                | Abi::ScalarPair(a, b) => Abi::ScalarPair(Scalar::new(a.value, triple), Scalar::new(b.value, triple)),
+                | Abi::Vector { elem, count } => Abi::Vector {
+                    elem: Scalar::new(elem.value, triple),
+                    count: *count,
+                },
+                | Abi::Uninhabited | Abi::Aggregate { .. } => Abi::Aggregate { sized: true },
+            };
+
+            if size == Size::ZERO {
+                abi = field_abi;
+            } else if abi != field_abi {
+                abi = Abi::Aggregate { sized: true };
+            }
+        }
+
+        align = align.max(field.align);
+        size = size.max(field.size);
+    }
+
+    Layout {
+        size,
+        align,
+        stride: size.align_to(align),
+        abi,
+        fields: Fields::Union(NonZeroUsize::new(fields.len()).unwrap()),
+        variants: Variants::Single { index: 0 },
+        largest_niche: None,
+    }
+}
+
+fn enum_layout(info: &Type, variants: &[Option<Layout>], triple: &Triple) -> Layout {
+    let optimize = !info.flags.is_set(Flags::C_REPR);
+    let absent = |v: &Option<Layout>| v.as_ref().map(|l| l.is_zst() && l.abi.is_uninhabited()).unwrap_or(false);
+
+    let (present_first, present_second) = {
+        let mut present_variants = variants.iter().enumerate().filter_map(|(i, v)| if absent(v) { None } else { Some(i) });
+
+        (present_variants.next(), present_variants.next())
+    };
+
+    let present_first = match present_first {
+        | Some(present_first) => present_first,
+        | None => return Layout::UNINHABITED,
+    };
+
+    if present_second.is_none() && optimize {
+        // let mut st = variants[present_first].as_ref().unwrap();
+        //
+        // st.layout.variants = Variants::Single { index: present_first };
+        unimplemented!();
+    }
+
+    let mut niche_filling_layout = None;
+
+    if optimize {
+        let mut dataful_variant = None;
+        let mut niche_variants = usize::MAX..=0;
+
+        for (v, payload) in variants.iter().enumerate() {
+            if absent(payload) {
+                continue;
+            }
+
+            if let Some(payload) = payload {
+                if !payload.is_zst() {
+                    if let None = dataful_variant {
+                        dataful_variant = Some(v);
+                        continue;
+                    } else {
+                        dataful_variant = None;
+                        break;
+                    }
+                }
+            }
+
+            niche_variants = *niche_variants.start().min(&v)..=v;
+        }
+
+        if niche_variants.start() > niche_variants.end() {
+            dataful_variant = None;
+        }
+
+        if let Some(i) = dataful_variant {
+            let count = (*niche_variants.end() - *niche_variants.start() + 1) as u128;
+            let niche_candidate = variants[i].as_ref().and_then(|v| v.largest_niche.as_ref());
+
+            if let Some((niche, (niche_start, niche_scalar))) = niche_candidate.and_then(|niche| Some((niche, niche.reserve(triple, count)?))) {
+                let mut align = Align::ONE;
+                let st = variants
+                    .iter()
+                    .enumerate()
+                    .map(|(i, payload)| {
+                        let mut st = payload.clone().unwrap_or(Layout::UNIT);
+
+                        st.variants = Variants::Single { index: i };
+                        align = align.max(st.align);
+                        st
+                    })
+                    .collect::<Vec<_>>();
+
+                let offset = niche.offset;
+                let size = st[i].size;
+                let abi = if st.iter().all(|v| v.abi.is_uninhabited()) {
+                    Abi::Uninhabited
+                } else {
+                    match st[i].abi {
+                        | Abi::Scalar(_) => Abi::Scalar(niche_scalar.clone()),
+                        | Abi::ScalarPair(ref first, ref second) => {
+                            if offset.bytes() > 0 {
+                                Abi::ScalarPair(niche_scalar.clone(), Scalar::new(second.value, triple))
+                            } else {
+                                Abi::ScalarPair(Scalar::new(first.value, triple), niche_scalar.clone())
+                            }
+                        },
+                        | _ => Abi::Aggregate { sized: true },
+                    }
+                };
+
+                let largest_niche = Niche::from_scalar(triple, offset, niche_scalar.clone());
+
+                niche_filling_layout = Some(Layout {
+                    size,
+                    align,
+                    stride: size.align_to(align),
+                    abi,
+                    fields: Fields::Arbitrary {
+                        offsets: vec![offset],
+                        memory_index: vec![0],
+                    },
+                    variants: Variants::Multiple {
+                        tag: niche_scalar,
+                        tag_encoding: TagEncoding::Niche {
+                            dataful_variant: i,
+                            niche_variants,
+                            niche_start,
+                        },
+                        tag_field: 0,
+                        variants: st,
+                    },
+                    largest_niche,
+                });
+            }
+        }
+    }
+
+    let discr = Integer::fit_unsigned(variants.len() as u128);
+    let mut align = Align::ONE;
+    let mut size = Size::ZERO;
+    let mut prefix_align = discr.align(triple);
+
+    if info.flags.is_set(Flags::C_REPR) {
+        for v in variants {
+            if let Some(p) = v {
+                prefix_align = prefix_align.max(p.align);
+            }
+        }
+    }
+
+    let prefix_size = discr.size(triple).align_to(prefix_align);
+    let layout_variants = variants
+        .iter()
+        .enumerate()
+        .map(|(i, payload)| {
+            let mut st = payload.clone().unwrap_or(Layout::UNIT);
+
+            if let Fields::Arbitrary { offsets, .. } = &mut st.fields {
+                for offset in offsets {
+                    *offset = *offset + prefix_size;
+                }
+            }
+
+            size = size.max(st.size);
+            align = align.max(st.align);
+            st.variants = Variants::Single { index: i };
+            st
+        })
+        .collect::<Vec<_>>();
+
+    size = size + prefix_size;
+
+    let stride = size.align_to(align);
+    let tag_mask = !0u128 >> (128 - discr.size(triple).bits());
+    let tag = Scalar {
+        value: Primitive::Int(discr, false),
+        valid_range: (0 & tag_mask)..=(variants.len() as u128 & tag_mask),
+    };
+
+    let mut abi = Abi::Aggregate { sized: true };
+
+    if tag.value.size(triple) == size {
+        abi = Abi::Scalar(tag.clone());
+    }
+
+    if layout_variants.iter().all(|v| v.abi.is_uninhabited()) {
+        abi = Abi::Uninhabited;
+    }
+
+    let largest_niche = Niche::from_scalar(triple, Size::ZERO, tag.clone());
+    let tagged_layout = Layout {
+        size,
+        align,
+        stride,
+        abi,
+        fields: Fields::Arbitrary {
+            offsets: vec![Size::ZERO],
+            memory_index: vec![0],
+        },
+        variants: Variants::Multiple {
+            tag,
+            tag_encoding: TagEncoding::Direct,
+            tag_field: 0,
+            variants: layout_variants,
+        },
+        largest_niche,
+    };
+
+    match niche_filling_layout {
+        | Some(niche_filling_layout) => std::cmp::min_by_key(tagged_layout, niche_filling_layout, |layout| {
+            let niche_size = layout.largest_niche.as_ref().map_or(0, |n| n.available(triple));
+
+            (layout.size, std::cmp::Reverse(niche_size))
+        }),
+        | _ => tagged_layout,
+    }
+}
+
+fn invert_mapping(map: &[usize]) -> Vec<usize> {
+    let mut inverse = vec![0; map.len()];
+
+    for i in 0..map.len() {
+        inverse[map[i]] = i;
+    }
+
+    inverse
 }

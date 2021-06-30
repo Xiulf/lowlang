@@ -27,7 +27,8 @@ pub struct Type {
 impl Flags {
     pub const OWNED: Self = Self(1 << 0);
     pub const C_REPR: Self = Self(1 << 1);
-    pub const NON_NULL: Self = Self(1 << 2);
+    pub const PACKED: Self = Self(1 << 2);
+    pub const NON_NULL: Self = Self(1 << 3);
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -133,11 +134,15 @@ impl Ty {
     }
 
     pub fn owned(self) -> Self {
+        self.flag(Flags::OWNED)
+    }
+
+    pub fn flag(self, flags: Flags) -> Self {
         let int = TYPE_INTERNER.write().unwrap();
         let ptr = Arc::as_ptr(&int.vec[self.0 as usize]) as *mut Type;
 
         unsafe {
-            (*ptr).flags = (*ptr).flags.set(Flags::OWNED);
+            (*ptr).flags = (*ptr).flags.set(flags);
         }
 
         self
