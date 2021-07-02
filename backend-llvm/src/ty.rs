@@ -44,13 +44,15 @@ impl AsBasicType for Ty {
                 ctx.context.struct_type(&ts, false).into()
             },
             | typ::Var(_) => ctx.context.struct_type(&[], false).into(),
-            | typ::Func(ref sig) => {
+            | typ::Func(_) => {
                 let fn_type = self.as_func_type(ctx);
 
                 fn_type.ptr_type(AddressSpace::Const).into()
             },
             | typ::Generic(_, t) => t.as_basic_type(ctx),
-            | typ::Def(_, _) => unimplemented!(),
+            | typ::Def(id, ref subst) => {
+                unimplemented!()
+            },
         }
     }
 }

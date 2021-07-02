@@ -30,10 +30,11 @@ enum Option<type T> {
 body main {
 
 entry(argc : $i32, argv : $**u8):
+    union = stack_alloc $UnionTest
     identity = func_ref identity
-    argc_ret = apply identity<$i32>(argc)
+    argv = apply identity<$**u8>(argv)
     print_args = func_ref print_args
-    apply print_args(argc_ret, argv)
+    apply print_args(argc, argv)
     zero = const_int 0, $i32
     return zero
 }

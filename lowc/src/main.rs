@@ -7,7 +7,8 @@ fn main() {
 
     println!("{}", module);
 
-    let obj_file = codegen::compile_module(&module);
+    let target = codegen::Triple::host();
+    let obj_file = codegen::compile_module(&module, target, codegen::Backend::Llvm);
     let _ = std::fs::copy(obj_file.path(), "test.o").unwrap();
     let link_args = [
         "-dynamic-linker",

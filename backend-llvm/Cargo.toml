@@ -1,0 +1,18 @@
+[package]
+name = "backend-llvm"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ir = { path = "../ir" }
+arena = { git = "https://github.com/Xiulf/arena.git" }
+target-lexicon = "0.12.0"
+tempfile = "3.2.0"
+
+[dependencies.inkwell]
+git = "https://github.com/TheDan64/inkwell"
+branch = "master"
+features = ["llvm11-0"]

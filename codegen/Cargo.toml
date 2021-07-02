@@ -5,10 +5,6 @@ edition = "2018"
 
 [dependencies]
 ir = { path = "../ir" }
-arena = { git = "https://github.com/Xiulf/arena.git" }
+target-lexicon = "0.12.0"
+libloading = "0.7.0"
 tempfile = "3.2.0"
-
-[dependencies.inkwell]
-git = "https://github.com/TheDan64/inkwell"
-branch = "master"
-features = ["llvm11-0"]

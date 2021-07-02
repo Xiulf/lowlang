@@ -1,4 +1,3 @@
-use crate::ty::AsBasicType;
 use crate::BodyCtx;
 use inkwell::values;
 
@@ -12,9 +11,8 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             }
         } else {
             // for now assume the type is trivial.
-            // let ll_type = ty.as_basic_type(self.cx);
-            // let size = ll_type.size_of()?.get_zero_extended_constant()?;
-            let size = 4;
+            let layout = self.cx.ir.layout_of(&self.target_triple, ty);
+            let size = layout.size.bytes();
 
             self.cx.get_trivial_meta(size)
         }
