@@ -1,11 +1,13 @@
 [package]
-name = "ir"
+name = "backend-clif"
 version = "0.1.0"
 edition = "2018"
 
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
+ir = { path = "../ir" }
 arena = { git = "https://github.com/Xiulf/arena.git" }
-salsa = "0.16.0"
-logos = "0.12.0"
 target-lexicon = "0.12.0"
-unicode-xid = "0.2.2"
+tempfile = "3.2.0"

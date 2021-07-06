@@ -14,7 +14,7 @@ pub trait AsFuncType {
 
 impl AsBasicType for Ty {
     fn as_basic_type<'ctx>(&self, ctx: &CodegenCtx<'ctx>) -> BasicTypeEnum<'ctx> {
-        let ty = self.lookup();
+        let ty = self.lookup(ctx.db);
 
         match ty.kind {
             | typ::Unit => match ty.repr.scalar {
@@ -51,7 +51,7 @@ impl AsBasicType for Ty {
             },
             | typ::Generic(_, t) => t.as_basic_type(ctx),
             | typ::Def(id, ref subst) => {
-                unimplemented!()
+                todo!();
             },
         }
     }
@@ -59,12 +59,12 @@ impl AsBasicType for Ty {
 
 impl AsFuncType for Ty {
     fn as_func_type<'ctx>(&self, ctx: &CodegenCtx<'ctx>) -> FunctionType<'ctx> {
-        let mut ty = self.lookup();
+        let mut ty = self.lookup(ctx.db);
         let mut generic_params = Vec::new();
 
         if let typ::Generic(ref params, ret) = ty.kind {
             generic_params = params.clone();
-            ty = ret.lookup();
+            ty = ret.lookup(ctx.db);
         }
 
         match ty.kind {

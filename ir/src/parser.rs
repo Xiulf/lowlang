@@ -1,3 +1,4 @@
+use crate::db::IrDatabase;
 use crate::*;
 use logos::{Lexer, Logos};
 use std::borrow::Cow;
@@ -108,6 +109,7 @@ use std::iter::Peekable;
 use Token::*;
 
 pub struct Parser<'a> {
+    db: &'a dyn IrDatabase,
     lexer: Peekable<Lexer<'a, Token<'a>>>,
     module: Module,
     types: HashMap<&'a str, TypeId>,
@@ -129,8 +131,9 @@ struct BlockRef {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(db: &'a dyn IrDatabase, source: &'a str) -> Self {
         Parser {
+            db,
             lexer: Token::lexer(source).peekable(),
             module: Module::new(""),
             types: HashMap::new(),
@@ -293,7 +296,7 @@ impl<'a> Parser<'a> {
     fn parse_body(&mut self) -> Option<()> {
         let parser = unsafe { &mut *(self as *mut _) };
         let body = self.module.declare_body();
-        let builder = self.module.define_body(body);
+        let builder = self.module.define_body(self.db, body);
         let parser = BodyParser {
             parser,
             builder,
@@ -308,21 +311,21 @@ impl<'a> Parser<'a> {
     fn parse_type(&mut self) -> Option<Ty> {
         let owned = self.eat(Flag("owned"));
         let mut ty = match self.lexer.next()? {
-            | Star => self.parse_type().map(Ty::ptr),
-            | Ident("box") => self.parse_type().map(Ty::boxed),
+            | Star => self.parse_type().map(|t| t.ptr(self.db)),
+            | Ident("box") => self.parse_type().map(|t| t.boxed(self.db)),
             | Ident(other) => match other {
-                | "u8" => Some(Ty::int(Integer::I8, false)),
-                | "u16" => Some(Ty::int(Integer::I16, false)),
-                | "u32" => Some(Ty::int(Integer::I32, false)),
-                | "u64" => Some(Ty::int(Integer::I64, false)),
-                | "u128" => Some(Ty::int(Integer::I128, false)),
-                | "usize" => Some(Ty::int(Integer::ISize, false)),
-                | "i8" => Some(Ty::int(Integer::I8, true)),
-                | "i16" => Some(Ty::int(Integer::I16, true)),
-                | "i32" => Some(Ty::int(Integer::I32, true)),
-                | "i64" => Some(Ty::int(Integer::I64, true)),
-                | "i128" => Some(Ty::int(Integer::I128, true)),
-                | "isize" => Some(Ty::int(Integer::ISize, true)),
+                | "u8" => Some(Ty::int(self.db, Integer::I8, false)),
+                | "u16" => Some(Ty::int(self.db, Integer::I16, false)),
+                | "u32" => Some(Ty::int(self.db, Integer::I32, false)),
+                | "u64" => Some(Ty::int(self.db, Integer::I64, false)),
+                | "u128" => Some(Ty::int(self.db, Integer::I128, false)),
+                | "usize" => Some(Ty::int(self.db, Integer::ISize, false)),
+                | "i8" => Some(Ty::int(self.db, Integer::I8, true)),
+                | "i16" => Some(Ty::int(self.db, Integer::I16, true)),
+                | "i32" => Some(Ty::int(self.db, Integer::I32, true)),
+                | "i64" => Some(Ty::int(self.db, Integer::I64, true)),
+                | "i128" => Some(Ty::int(self.db, Integer::I128, true)),
+                | "isize" => Some(Ty::int(self.db, Integer::ISize, true)),
                 | _ => {
                     let found = self
                         .generics
@@ -332,13 +335,13 @@ impl<'a> Parser<'a> {
                         .find_map(|(i, map)| map.get(other).map(|r| r.at(i as u8)));
 
                     if let Some(found) = found {
-                        Some(Ty::new(typ::Var(found)))
+                        Some(Ty::new(self.db, typ::Var(found)))
                     } else {
                         let id = *self.types.get(other)?;
                         let subst = self.parse_substs()?;
                         let subst = if subst.is_empty() { None } else { Some(subst) };
 
-                        Some(Ty::new(typ::Def(id, subst)))
+                        Some(Ty::new(self.db, typ::Def(id, subst)))
                     }
                 },
             },
@@ -364,7 +367,7 @@ impl<'a> Parser<'a> {
 
                 let inner = self.parse_type()?;
 
-                Some(generic.finish(inner))
+                Some(generic.finish(self.db, inner))
             },
             | LParen => {
                 let mut ty_flags = vec![];
@@ -407,16 +410,16 @@ impl<'a> Parser<'a> {
                         rets,
                     };
 
-                    Some(Ty::new(typ::Func(sig)))
+                    Some(Ty::new(self.db, typ::Func(sig)))
                 } else {
-                    Some(Ty::new(typ::Tuple(tys)))
+                    Some(Ty::new(self.db, typ::Tuple(tys)))
                 }
             },
             | _ => None,
         };
 
         if owned {
-            ty = ty.map(Ty::owned);
+            ty = ty.map(|t| t.owned(self.db));
         }
 
         ty

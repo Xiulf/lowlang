@@ -1,14 +1,28 @@
+use ir::db::IrDatabase;
 use ir::*;
+use std::sync::Arc;
+
+#[salsa::database(ir::db::IrDatabaseStorage)]
+#[derive(Default)]
+struct LlDatabase {
+    storage: salsa::Storage<Self>,
+}
+
+impl salsa::Database for LlDatabase {
+}
 
 fn main() {
+    let mut db = LlDatabase::default();
+
+    db.set_triple(Arc::new(ir::layout::Triple::host()));
+
     let source = std::fs::read_to_string("test.ll").unwrap();
-    let parser = parser::Parser::new(&source);
+    let parser = parser::Parser::new(&db, &source);
     let module = parser.parse().unwrap();
 
-    println!("{}", module);
+    println!("{}", module.display(&db));
 
-    let target = codegen::Triple::host();
-    let obj_file = codegen::compile_module(&module, target, codegen::Backend::Llvm);
+    let obj_file = codegen::compile_module(&db, &module, codegen::Backend::Llvm);
     let _ = std::fs::copy(obj_file.path(), "test.o").unwrap();
     let link_args = [
         "-dynamic-linker",

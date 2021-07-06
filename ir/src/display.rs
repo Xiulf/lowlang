@@ -1,5 +1,8 @@
+use crate::db::IrDatabase;
 use crate::*;
 use std::fmt;
+
+pub struct IrDisplay<'a, T>(&'a T, &'a dyn IrDatabase);
 
 impl fmt::Display for TypeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -41,25 +44,33 @@ impl fmt::Display for Block {
     }
 }
 
-impl fmt::Display for Module {
+impl Module {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, Module> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "module {} {{", self.name)?;
+        let IrDisplay(this, db) = *self;
+
+        writeln!(f, "module {} {{", this.name)?;
         writeln!(f)?;
 
-        for (id, func) in self.funcs.iter() {
-            writeln!(f, "{}: {}", FuncId(id), func)?;
+        for (id, func) in this.funcs.iter() {
+            writeln!(f, "{}: {}", FuncId(id), func.display(db))?;
         }
 
         writeln!(f)?;
 
-        for (id, ty) in self.types.iter() {
-            writeln!(f, "{}: {}", TypeId(id), ty)?;
+        for (id, ty) in this.types.iter() {
+            writeln!(f, "{}: {}", TypeId(id), ty.display(db))?;
         }
 
         writeln!(f)?;
 
-        for (id, body) in self.bodies.iter() {
-            writeln!(f, "{}: {}", BodyId(id), body)?;
+        for (id, body) in this.bodies.iter() {
+            writeln!(f, "{}: {}", BodyId(id), body.display(db))?;
             writeln!(f)?;
         }
 
@@ -67,9 +78,17 @@ impl fmt::Display for Module {
     }
 }
 
-impl fmt::Display for Func {
+impl Func {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, Func> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {:?} : ${}", self.linkage, self.name, self.sig)
+        let IrDisplay(this, db) = *self;
+
+        write!(f, "{} {:?} : ${}", this.linkage, this.name, this.sig.display(db))
     }
 }
 
@@ -83,14 +102,22 @@ impl fmt::Display for Linkage {
     }
 }
 
-impl fmt::Display for TypeDef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "type {:?}", self.name)?;
+impl TypeDef {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
 
-        if !self.generic_params.is_empty() {
+impl fmt::Display for IrDisplay<'_, TypeDef> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let IrDisplay(this, db) = *self;
+
+        write!(f, "type {:?}", this.name)?;
+
+        if !this.generic_params.is_empty() {
             write!(f, "<")?;
 
-            list(f, self.generic_params.iter().enumerate(), |(i, p), f| {
+            list(f, this.generic_params.iter().enumerate(), |(i, p), f| {
                 p.fmt(f)?;
                 write!(f, " {}", (b'A' + i as u8) as char)
             })?;
@@ -98,22 +125,30 @@ impl fmt::Display for TypeDef {
             write!(f, ">")?;
         }
 
-        if let Some(body) = &self.body {
-            write!(f, " = {}", body)?;
+        if let Some(body) = &this.body {
+            write!(f, " = {}", body.display(db))?;
         }
 
         Ok(())
     }
 }
 
-impl fmt::Display for TypeDefBody {
+impl TypeDefBody {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, TypeDefBody> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
+        let IrDisplay(this, db) = *self;
+
+        match this {
             | TypeDefBody::Struct { fields } => {
                 writeln!(f, "struct {{")?;
 
                 for field in fields {
-                    writeln!(f, "    {},", field)?;
+                    writeln!(f, "    {},", field.display(db))?;
                 }
 
                 write!(f, "}}")
@@ -122,7 +157,7 @@ impl fmt::Display for TypeDefBody {
                 writeln!(f, "union {{")?;
 
                 for field in fields {
-                    writeln!(f, "    {},", field)?;
+                    writeln!(f, "    {},", field.display(db))?;
                 }
 
                 write!(f, "}}")
@@ -131,7 +166,7 @@ impl fmt::Display for TypeDefBody {
                 writeln!(f, "enum {{")?;
 
                 for variant in variants {
-                    writeln!(f, "    {},", variant)?;
+                    writeln!(f, "    {},", variant.display(db))?;
                 }
 
                 write!(f, "}}")
@@ -140,30 +175,54 @@ impl fmt::Display for TypeDefBody {
     }
 }
 
-impl fmt::Display for TypeDefField {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} : ${}", self.name, self.ty)
+impl TypeDefField {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
     }
 }
 
-impl fmt::Display for TypeDefVariant {
+impl fmt::Display for IrDisplay<'_, TypeDefField> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)?;
+        let IrDisplay(this, db) = *self;
 
-        if let Some(payload) = &self.payload {
-            write!(f, " : ${}", payload)?;
+        write!(f, "{} : ${}", this.name, this.ty.display(db))
+    }
+}
+
+impl TypeDefVariant {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, TypeDefVariant> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let IrDisplay(this, db) = *self;
+
+        write!(f, "{}", this.name)?;
+
+        if let Some(payload) = &this.payload {
+            write!(f, " : ${}", payload.display(db))?;
         }
 
         Ok(())
     }
 }
 
-impl fmt::Display for Body {
+impl Body {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'_, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, Body> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.generic_params.is_empty() {
+        let IrDisplay(this, db) = *self;
+
+        if !this.generic_params.is_empty() {
             write!(f, "<")?;
 
-            list(f, self.generic_params.iter().enumerate(), |(i, p), f| {
+            list(f, this.generic_params.iter().enumerate(), |(i, p), f| {
                 p.fmt(f)?;
                 write!(f, " {}", (b'A' + i as u8) as char)
             })?;
@@ -177,9 +236,9 @@ impl fmt::Display for Body {
         //     writeln!(f, "    {} : ${}", Var(id), var.ty)?;
         // }
 
-        for (id, block) in self.blocks.iter() {
+        for (id, block) in this.blocks.iter() {
             writeln!(f)?;
-            write!(f, "{}{}", Block(id), block.display(self))?;
+            write!(f, "{}{}", Block(id), block.display(db, this))?;
         }
 
         write!(f, "}}")
@@ -187,25 +246,26 @@ impl fmt::Display for Body {
 }
 
 pub struct BodyDisplay<'a, T> {
+    db: &'a dyn IrDatabase,
     body: &'a Body,
     t: &'a T,
 }
 
 impl BlockData {
-    pub fn display<'a>(&'a self, body: &'a Body) -> BodyDisplay<'a, Self> {
-        BodyDisplay { body, t: self }
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase, body: &'a Body) -> BodyDisplay<'a, Self> {
+        BodyDisplay { body, db, t: self }
     }
 }
 
 impl Term {
-    pub fn display<'a>(&'a self, body: &'a Body) -> BodyDisplay<'a, Self> {
-        BodyDisplay { body, t: self }
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase, body: &'a Body) -> BodyDisplay<'a, Self> {
+        BodyDisplay { body, db, t: self }
     }
 }
 
 impl Instr {
-    pub fn display<'a>(&'a self, body: &'a Body) -> BodyDisplay<'a, Self> {
-        BodyDisplay { body, t: self }
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase, body: &'a Body) -> BodyDisplay<'a, Self> {
+        BodyDisplay { body, db, t: self }
     }
 }
 
@@ -220,11 +280,11 @@ impl fmt::Display for BodyDisplay<'_, BlockData> {
         writeln!(f, ":")?;
 
         for instr in &self.t.instrs {
-            writeln!(f, "    {}", instr.display(self.body))?;
+            writeln!(f, "    {}", instr.display(self.db, self.body))?;
         }
 
         if let Some(term) = &self.t.term {
-            writeln!(f, "    {}", term.display(self.body))
+            writeln!(f, "    {}", term.display(self.db, self.body))
         } else {
             Ok(())
         }
@@ -252,9 +312,9 @@ impl fmt::Display for BodyDisplay<'_, Term> {
 impl fmt::Display for BodyDisplay<'_, Instr> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.t {
-            | Instr::StackAlloc { ret, ty } => write!(f, "{} = stack_alloc ${}", ret, ty),
+            | Instr::StackAlloc { ret, ty } => write!(f, "{} = stack_alloc ${}", ret, ty.display(self.db)),
             | Instr::StackFree { addr } => write!(f, "stack_free {}", addr),
-            | Instr::BoxAlloc { ret, ty } => write!(f, "{} = box_alloc ${}", ret, ty),
+            | Instr::BoxAlloc { ret, ty } => write!(f, "{} = box_alloc ${}", ret, ty.display(self.db)),
             | Instr::BoxFree { boxed } => write!(f, "box_free {}", boxed),
             | Instr::BoxAddr { ret, boxed } => write!(f, "{} = box_addr {}", ret, boxed),
             | Instr::Load { ret, addr } => write!(f, "{} = load {}", ret, addr),
@@ -265,7 +325,7 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
             | Instr::CopyValue { ret, val } => write!(f, "{} = copy_value {}", ret, val),
             | Instr::DropAddr { addr } => write!(f, "drop_addr {}", addr),
             | Instr::DropValue { val } => write!(f, "drop_value {}", val),
-            | Instr::ConstInt { ret, val } => write!(f, "{} = const_int {}, ${}", ret, val, self.body[*ret].ty),
+            | Instr::ConstInt { ret, val } => write!(f, "{} = const_int {}, ${}", ret, val, self.body[*ret].ty.display(self.db)),
             | Instr::ConstStr { ret, val } => write!(f, "{} = const_str {:?}", ret, val),
             | Instr::FuncRef { ret, func } => write!(f, "{} = func_ref {}", ret, func),
             | Instr::Tuple { ret, vals } => {
@@ -285,7 +345,7 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
 
                 if !subst.is_empty() {
                     write!(f, "<")?;
-                    list(f, subst, Subst::fmt)?;
+                    list(f, subst, |s, f| s.display(self.db).fmt(f))?;
                     write!(f, ">")?;
                 }
 
@@ -303,7 +363,7 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
 
                 if !subst.is_empty() {
                     write!(f, "<")?;
-                    list(f, subst, Subst::fmt)?;
+                    list(f, subst, |s, f| s.display(self.db).fmt(f))?;
                     write!(f, ">")?;
                 }
 
@@ -333,10 +393,17 @@ impl fmt::Display for BrTarget {
     }
 }
 
-impl fmt::Display for Ty {
+impl Ty {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, Ty> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::layout::Primitive;
-        let ty = self.lookup();
+        let IrDisplay(ty, db) = *self;
+        let ty = ty.lookup(db);
 
         if ty.flags.is_set(Flags::OWNED) {
             write!(f, "[owned] ")?;
@@ -369,19 +436,19 @@ impl fmt::Display for Ty {
             },
             | typ::Def(id, Some(ref subst)) => {
                 write!(f, "{}<", id)?;
-                list(f, subst, Subst::fmt)?;
+                list(f, subst, |s, f| s.display(db).fmt(f))?;
                 write!(f, ">")
             },
             | typ::Def(id, None) => write!(f, "{}", id),
-            | typ::Ptr(to) => write!(f, "*{}", to),
-            | typ::Box(to) => write!(f, "box {}", to),
+            | typ::Ptr(to) => write!(f, "*{}", to.display(db)),
+            | typ::Box(to) => write!(f, "box {}", to.display(db)),
             | typ::Tuple(ref ts) => {
                 write!(f, "(")?;
-                list(f, ts, Ty::fmt)?;
+                list(f, ts, |t, f| t.display(db).fmt(f))?;
                 write!(f, ")")
             },
             | typ::Var(tv) => tv.fmt(f),
-            | typ::Func(ref sig) => sig.fmt(f),
+            | typ::Func(ref sig) => sig.display(db).fmt(f),
             | typ::Generic(ref params, ty) => {
                 write!(f, "<")?;
 
@@ -390,39 +457,55 @@ impl fmt::Display for Ty {
                     write!(f, " {}", (b'A' + i as u8) as char)
                 })?;
 
-                write!(f, "> {}", ty)
+                write!(f, "> {}", ty.display(db))
             },
         }
     }
 }
 
-impl fmt::Display for Signature {
+impl Signature {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, Signature> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let IrDisplay(this, db) = *self;
+
         write!(f, "(")?;
-        list(f, self.params.iter(), SigParam::fmt)?;
+        list(f, this.params.iter(), |s, f| s.display(db).fmt(f))?;
         write!(f, ") -> ")?;
 
-        if self.rets.len() == 1 {
-            self.rets[0].fmt(f)
+        if this.rets.len() == 1 {
+            this.rets[0].display(db).fmt(f)
         } else {
             write!(f, "(")?;
-            list(f, self.rets.iter(), SigParam::fmt)?;
+            list(f, this.rets.iter(), |s, f| s.display(db).fmt(f))?;
             write!(f, ")")
         }
     }
 }
 
-impl fmt::Display for SigParam {
+impl SigParam {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, SigParam> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.flags.is_set(Flags::IN) {
+        let IrDisplay(this, db) = *self;
+
+        if this.flags.is_set(Flags::IN) {
             write!(f, "[in] ")?;
         }
 
-        if self.flags.is_set(Flags::OUT) {
+        if this.flags.is_set(Flags::OUT) {
             write!(f, "[out] ")?;
         }
 
-        self.ty.fmt(f)
+        this.ty.display(db).fmt(f)
     }
 }
 
@@ -443,10 +526,18 @@ impl fmt::Display for GenericParam {
     }
 }
 
-impl fmt::Display for Subst {
+impl Subst {
+    pub fn display<'a>(&'a self, db: &'a dyn IrDatabase) -> IrDisplay<'a, Self> {
+        IrDisplay(self, db)
+    }
+}
+
+impl fmt::Display for IrDisplay<'_, Subst> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            | Subst::Type(t) => write!(f, "${}", t),
+        let IrDisplay(this, db) = *self;
+
+        match this {
+            | Subst::Type(t) => write!(f, "${}", t.display(db)),
             | Subst::Figure(i) => write!(f, "{}", i),
             | Subst::Symbol(s) => write!(f, "{:?}", s),
         }

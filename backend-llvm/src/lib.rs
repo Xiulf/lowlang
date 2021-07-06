@@ -13,15 +13,15 @@ use inkwell::passes::{PassManager, PassManagerBuilder};
 use inkwell::targets::{InitializationConfig, Target, TargetData, TargetMachine, TargetTriple};
 use inkwell::values;
 use inkwell::IntPredicate;
+use ir::db::IrDatabase;
 use ir::ty::typ;
 use std::io::Write as _;
-use target_lexicon::Triple;
 use tempfile::NamedTempFile;
 use ty::*;
 
 #[no_mangle]
-pub fn compile_module(ir: &ir::Module, target: Triple, object_file: &mut NamedTempFile) {
-    with_codegen_ctx(ir, target, |mut ctx| {
+pub fn compile_module(db: &dyn IrDatabase, ir: &ir::Module, object_file: &mut NamedTempFile) {
+    with_codegen_ctx(db, ir, |mut ctx| {
         for (id, func) in ctx.ir.funcs.iter() {
             ctx.declare_func(id, func);
         }
@@ -53,10 +53,10 @@ pub fn compile_module(ir: &ir::Module, target: Triple, object_file: &mut NamedTe
 }
 
 pub struct CodegenCtx<'ctx> {
+    db: &'ctx dyn IrDatabase,
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
-    target_triple: Triple,
     target_machine: TargetMachine,
     target_data: TargetData,
     ir: &'ctx ir::Module,
@@ -83,9 +83,10 @@ impl<'a, 'ctx> std::ops::Deref for BodyCtx<'a, 'ctx> {
     }
 }
 
-pub fn with_codegen_ctx<T>(ir: &ir::Module, target_triple: Triple, f: impl FnOnce(CodegenCtx) -> T) -> T {
+pub fn with_codegen_ctx<T>(db: &dyn IrDatabase, ir: &ir::Module, f: impl FnOnce(CodegenCtx) -> T) -> T {
     Target::initialize_native(&InitializationConfig::default()).unwrap();
 
+    let target_triple = db.triple();
     let host_triple = TargetTriple::create(&target_triple.to_string());
     let host_cpu = TargetMachine::get_host_cpu_name();
     let host_features = TargetMachine::get_host_cpu_features();
@@ -106,10 +107,10 @@ pub fn with_codegen_ctx<T>(ir: &ir::Module, target_triple: Triple, f: impl FnOnc
     let module = context.create_module(&ir.name);
     let builder = context.create_builder();
     let ctx = CodegenCtx {
+        db,
         context: &context,
         module,
         builder,
-        target_triple,
         target_machine,
         target_data,
         ir,
@@ -287,7 +288,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 self.vars.insert(ret.0, val);
             },
             | ir::Instr::BoxFree { boxed } => {
-                if let ir::ty::typ::Box(of) = self.body[boxed].ty.lookup().kind {
+                if let ir::ty::typ::Box(of) = self.body[boxed].ty.lookup(self.db).kind {
                     use inkwell::types::BasicType;
                     let ty = of.as_basic_type(self.cx);
                     let size = ty.size_of().unwrap();
@@ -313,11 +314,11 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 self.cx.builder.build_store(addr, val);
             },
             | ir::Instr::CopyAddr { old, new, flags } => {
-                let elem_ty = self.body[old].ty.pointee().unwrap();
+                let elem_ty = self.body[old].ty.pointee(self.db).unwrap();
                 let old = self.vars[old.0].into_pointer_value();
                 let new = self.vars[new.0].into_pointer_value();
 
-                if let typ::Var(var) = elem_ty.lookup().kind {
+                if let typ::Var(var) = elem_ty.lookup(self.db).kind {
                     use std::convert::TryFrom;
                     use values::CallableValue;
                     let param = self.generic_params[var.idx()];
@@ -527,7 +528,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 },
                 | _ => unreachable!(),
             },
-            | _ => unimplemented!("{}", instr.display(self.body)),
+            | _ => unimplemented!("{}", instr.display(self.db, self.body)),
         }
 
         Some(())

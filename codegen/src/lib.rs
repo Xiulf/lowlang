@@ -4,22 +4,24 @@ pub use tempfile::NamedTempFile;
 
 pub enum Backend {
     Llvm,
+    Clif,
 }
 
-pub fn compile_module(ir: &ir::Module, target: Triple, backend: Backend) -> NamedTempFile {
+pub fn compile_module(db: &dyn ir::db::IrDatabase, ir: &ir::Module, backend: Backend) -> NamedTempFile {
     let mut dir = std::env::current_exe().unwrap().parent().unwrap().to_path_buf();
 
     match backend {
         | Backend::Llvm => dir.push("libbackend_llvm.so"),
+        | Backend::Clif => dir.push("libbackend_clif.so"),
     }
 
     let mut object_file = NamedTempFile::new().unwrap();
 
     unsafe {
         let lib = Library::new(dir).unwrap();
-        let symbol: Symbol<fn(&ir::Module, Triple, &mut NamedTempFile)> = lib.get(b"compile_module").unwrap();
+        let symbol: Symbol<fn(&dyn ir::db::IrDatabase, &ir::Module, &mut NamedTempFile)> = lib.get(b"compile_module").unwrap();
 
-        symbol(ir, target, &mut object_file);
+        symbol(db, ir, &mut object_file);
     }
 
     object_file

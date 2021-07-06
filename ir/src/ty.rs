@@ -1,21 +1,21 @@
+use crate::db::IrDatabase;
 pub use crate::layout::Integer;
 use crate::layout::Primitive;
 use crate::{Flags, TypeId};
-use std::collections::HashMap;
-use std::lazy::SyncLazy;
 use std::sync::Arc;
-use std::sync::RwLock;
-
-static TYPE_INTERNER: SyncLazy<RwLock<TypeInterner>> = SyncLazy::new(Default::default);
-
-#[derive(Default)]
-struct TypeInterner {
-    map: HashMap<Arc<Type>, Ty>,
-    vec: Vec<Arc<Type>>,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Ty(u32);
+pub struct Ty(salsa::InternId);
+
+impl salsa::InternKey for Ty {
+    fn from_intern_id(v: salsa::InternId) -> Self {
+        Self(v)
+    }
+
+    fn as_intern_id(&self) -> salsa::InternId {
+        self.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Type {
@@ -89,57 +89,47 @@ pub mod typ {
 }
 
 impl Ty {
-    pub fn lookup(self) -> Arc<Type> {
-        TYPE_INTERNER.read().unwrap().vec[self.0 as usize].clone()
+    pub fn lookup(self, db: &dyn IrDatabase) -> Arc<Type> {
+        db.lookup_intern_type(self)
     }
 
-    fn intern(ty: Arc<Type>) -> Self {
-        let mut int = TYPE_INTERNER.write().unwrap();
-
-        if let Some(id) = int.map.get(&ty) {
-            *id
-        } else {
-            let id = Ty(int.vec.len() as u32);
-
-            int.vec.push(ty.clone());
-            int.map.insert(ty, id);
-            id
-        }
+    fn intern(db: &dyn IrDatabase, ty: Arc<Type>) -> Self {
+        db.intern_type(ty)
     }
 
     pub(crate) fn idx(self) -> usize {
-        self.0 as usize
+        self.0.as_usize()
     }
 
-    pub fn new(kind: TypeKind) -> Self {
+    pub fn new(db: &dyn IrDatabase, kind: TypeKind) -> Self {
         let ty = Arc::new(Type {
             flags: Flags::EMPTY,
             repr: Repr::default(),
             kind,
         });
 
-        Self::intern(ty)
+        Self::intern(db, ty)
     }
 
-    pub fn unit() -> Self {
-        Self::new(typ::Unit)
+    pub fn unit(db: &dyn IrDatabase) -> Self {
+        Self::new(db, typ::Unit)
     }
 
-    pub fn ptr(self) -> Self {
-        Self::new(typ::Ptr(self))
+    pub fn ptr(self, db: &dyn IrDatabase) -> Self {
+        Self::new(db, typ::Ptr(self))
     }
 
-    pub fn boxed(self) -> Self {
-        Self::new(typ::Box(self))
+    pub fn boxed(self, db: &dyn IrDatabase) -> Self {
+        Self::new(db, typ::Box(self))
     }
 
-    pub fn owned(self) -> Self {
-        self.flag(Flags::OWNED)
+    pub fn owned(self, db: &dyn IrDatabase) -> Self {
+        self.flag(db, Flags::OWNED)
     }
 
-    pub fn flag(self, flags: Flags) -> Self {
-        let int = TYPE_INTERNER.write().unwrap();
-        let ptr = Arc::as_ptr(&int.vec[self.0 as usize]) as *mut Type;
+    pub fn flag(self, db: &dyn IrDatabase, flags: Flags) -> Self {
+        let ty = self.lookup(db);
+        let ptr = Arc::as_ptr(&ty) as *mut Type;
 
         unsafe {
             (*ptr).flags = (*ptr).flags.set(flags);
@@ -148,80 +138,89 @@ impl Ty {
         self
     }
 
-    pub fn int(int: Integer, sign: bool) -> Self {
-        Self::intern(Arc::new(Type {
-            repr: Repr {
-                scalar: Some(Primitive::Int(int, sign)),
-                ..Repr::default()
-            },
-            flags: Flags::EMPTY,
-            kind: typ::Unit,
-        }))
+    pub fn int(db: &dyn IrDatabase, int: Integer, sign: bool) -> Self {
+        Self::intern(
+            db,
+            Arc::new(Type {
+                repr: Repr {
+                    scalar: Some(Primitive::Int(int, sign)),
+                    ..Repr::default()
+                },
+                flags: Flags::EMPTY,
+                kind: typ::Unit,
+            }),
+        )
     }
 
     pub fn generic() -> GenericType {
         GenericType { params: Vec::new() }
     }
 
-    pub fn pointee(self) -> Option<Ty> {
-        match self.lookup().kind {
+    pub fn pointee(self, db: &dyn IrDatabase) -> Option<Ty> {
+        match self.lookup(db).kind {
             | typ::Ptr(to) => Some(to),
             | _ => None,
         }
     }
 
-    pub fn pass_indirectly(self) -> bool {
-        match self.lookup().kind {
+    pub fn pass_indirectly(self, db: &dyn IrDatabase) -> bool {
+        match self.lookup(db).kind {
             | typ::Var(_) => true,
-            | typ::Tuple(ref ts) => ts.iter().any(|t| t.pass_indirectly()),
-            | typ::Generic(_, t) => t.pass_indirectly(),
+            | typ::Tuple(ref ts) => ts.iter().any(|t| t.pass_indirectly(db)),
+            | typ::Generic(_, t) => t.pass_indirectly(db),
             | typ::Def(_, Some(ref sub)) => sub.iter().any(|s| match s {
-                | Subst::Type(t) => t.pass_indirectly(),
+                | Subst::Type(t) => t.pass_indirectly(db),
                 | _ => false,
             }),
             | _ => false,
         }
     }
 
-    pub fn subst(self, args: &[Subst], depth: u8) -> Self {
-        match self.lookup().kind {
-            | typ::Ptr(to) => Ty::new(typ::Ptr(to.subst(args, depth))),
-            | typ::Box(to) => Ty::new(typ::Box(to.subst(args, depth))),
+    pub fn subst(self, db: &dyn IrDatabase, args: &[Subst], depth: u8) -> Self {
+        match self.lookup(db).kind {
+            | typ::Ptr(to) => Ty::new(db, typ::Ptr(to.subst(db, args, depth))),
+            | typ::Box(to) => Ty::new(db, typ::Box(to.subst(db, args, depth))),
             | typ::Var(GenericVar(d2, idx)) if depth == d2 => match args[idx as usize] {
                 | Subst::Type(t) => t,
                 | _ => panic!("Cannot substitute type"),
             },
-            | typ::Func(ref sig) => Ty::new(typ::Func(Signature {
-                params: sig
-                    .params
-                    .iter()
-                    .map(|p| SigParam {
-                        ty: p.ty.subst(args, depth),
-                        flags: p.flags,
-                    })
-                    .collect(),
-                rets: sig
-                    .rets
-                    .iter()
-                    .map(|r| SigParam {
-                        ty: r.ty.subst(args, depth),
-                        flags: r.flags,
-                    })
-                    .collect(),
-            })),
-            | typ::Generic(ref params, ty) => Ty::new(typ::Generic(params.clone(), ty.subst(args, depth + 1))),
-            | typ::Def(id, Some(ref sub)) => Ty::new(typ::Def(
-                id,
-                Some(
-                    sub.iter()
-                        .map(|s| match s {
-                            | Subst::Type(t) => Subst::Type(t.subst(args, depth)),
-                            | Subst::Figure(f) => Subst::Figure(*f),
-                            | Subst::Symbol(s) => Subst::Symbol(s.clone()),
+            | typ::Func(ref sig) => Ty::new(
+                db,
+                typ::Func(Signature {
+                    params: sig
+                        .params
+                        .iter()
+                        .map(|p| SigParam {
+                            ty: p.ty.subst(db, args, depth),
+                            flags: p.flags,
                         })
                         .collect(),
+                    rets: sig
+                        .rets
+                        .iter()
+                        .map(|r| SigParam {
+                            ty: r.ty.subst(db, args, depth),
+                            flags: r.flags,
+                        })
+                        .collect(),
+                }),
+            ),
+            | typ::Generic(ref params, ty) => Ty::new(db, typ::Generic(params.clone(), ty.subst(db, args, depth + 1))),
+            | typ::Def(id, Some(ref sub)) => Ty::new(
+                db,
+                typ::Def(
+                    id,
+                    Some(
+                        sub.iter()
+                            .map(|s| match s {
+                                | Subst::Type(t) => Subst::Type(t.subst(db, args, depth)),
+                                | Subst::Figure(f) => Subst::Figure(*f),
+                                | Subst::Symbol(s) => Subst::Symbol(s.clone()),
+                            })
+                            .collect(),
+                    ),
                 ),
-            )),
+            ),
             | _ => self,
         }
     }
@@ -240,8 +239,8 @@ impl Signature {
         }
     }
 
-    pub fn param(mut self, ty: Ty) -> Self {
-        let flags = match ty.pass_indirectly() {
+    pub fn param(mut self, db: &dyn IrDatabase, ty: Ty) -> Self {
+        let flags = match ty.pass_indirectly(db) {
             | true => Flags::IN,
             | false => Flags::EMPTY,
         };
@@ -250,8 +249,8 @@ impl Signature {
         self
     }
 
-    pub fn ret(mut self, ty: Ty) -> Self {
-        let flags = match ty.pass_indirectly() {
+    pub fn ret(mut self, db: &dyn IrDatabase, ty: Ty) -> Self {
+        let flags = match ty.pass_indirectly(db) {
             | true => Flags::IN,
             | false => Flags::EMPTY,
         };
@@ -285,15 +284,15 @@ impl GenericType {
         GenericVar(0, i as u8)
     }
 
-    pub fn finish(self, ty: Ty) -> Ty {
-        Ty::new(typ::Generic(self.params, ty))
+    pub fn finish(self, db: &dyn IrDatabase, ty: Ty) -> Ty {
+        Ty::new(db, typ::Generic(self.params, ty))
     }
 }
 
 #[macro_export]
 macro_rules! sig {
-    ($($param:expr),* => $($ret:expr),*) => {
-        $crate::ty::Ty::new($crate::ty::typ::Func($crate::ty::Signature {
+    ($db:ident; $($param:expr),* => $($ret:expr),*) => {
+        $crate::ty::Ty::new($db, $crate::ty::typ::Func($crate::ty::Signature {
             params: vec![$($crate::ty::SigParam {
                 ty: $param,
                 flags: $crate::Flags::EMPTY
@@ -308,13 +307,13 @@ macro_rules! sig {
 
 #[macro_export]
 macro_rules! generic {
-    ($($p:ident : $kind:ident),*in $t:expr) => {{
+    ($db:ident; $($p:ident : $kind:ident),*in $t:expr) => {{
         let mut generic = $crate::ty::Ty::generic();
         $(
             let $p = generic.add_param($crate::ty::GenericParam::$kind);
-            let $p = $crate::ty::Ty::new($crate::ty::typ::Var($p));
+            let $p = $crate::ty::Ty::new($db, $crate::ty::typ::Var($p));
         )*
 
-        generic.finish($t)
+        generic.finish($db, $t)
     }};
 }

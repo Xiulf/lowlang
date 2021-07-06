@@ -1,3 +1,4 @@
+use crate::db::IrDatabase;
 use crate::*;
 
 impl Module {
@@ -59,8 +60,9 @@ impl Module {
         BodyId(idx)
     }
 
-    pub fn define_body(&mut self, body_id: BodyId) -> Builder {
+    pub fn define_body<'a>(&'a mut self, db: &'a dyn IrDatabase, body_id: BodyId) -> Builder<'a> {
         Builder {
+            db,
             module: self,
             body_id,
             block_id: Block::ENTRY,
@@ -78,6 +80,7 @@ impl TypeDef {
 }
 
 pub struct Builder<'a> {
+    db: &'a dyn IrDatabase,
     module: &'a mut Module,
     body_id: BodyId,
     block_id: Block,
@@ -146,9 +149,9 @@ impl<'a> Builder<'a> {
 
     /// Add a new basic block parameter
     pub fn add_param(&mut self, block_id: Block, ty: Ty) -> Var {
-        let param = match ty.lookup().kind {
+        let param = match ty.lookup(self.db).kind {
             | typ::Var(_) => {
-                let var = self.create_var(ty.ptr());
+                let var = self.create_var(ty.ptr(self.db));
 
                 self.body_mut()[var].flags = Flags::INDIRECT;
                 var
@@ -219,7 +222,7 @@ impl<'a> Builder<'a> {
     /// Allocate space on the stack for a value of type `ty`.
     /// The returned var has type `*ty`.
     pub fn stack_alloc(&mut self, ty: Ty) -> Var {
-        let ret = self.create_var(ty.clone().ptr());
+        let ret = self.create_var(ty.clone().ptr(self.db));
 
         self.block().instrs.push(Instr::StackAlloc { ret, ty });
 
@@ -238,7 +241,7 @@ impl<'a> Builder<'a> {
     /// with a single owner.
     /// The return var has type `box ty`.
     pub fn box_alloc(&mut self, ty: Ty) -> Var {
-        let ret = self.create_var(ty.clone().boxed().owned());
+        let ret = self.create_var(ty.clone().boxed(self.db).owned(self.db));
 
         self.block().instrs.push(Instr::BoxAlloc { ret, ty });
 
@@ -247,7 +250,7 @@ impl<'a> Builder<'a> {
 
     /// Deallocate a previously allocted box.
     pub fn box_free(&mut self, boxed: Var) {
-        let ty = self.body().var_type(boxed).lookup();
+        let ty = self.body().var_type(boxed).lookup(self.db);
 
         if let typ::Box(to) = ty.kind {
             if ty.flags.is_set(Flags::OWNED) {
@@ -263,8 +266,8 @@ impl<'a> Builder<'a> {
     /// Get the address of a boxed value of type `box ty`.
     /// The returned var has type `*ty`.
     pub fn box_addr(&mut self, boxed: Var) -> Var {
-        if let typ::Box(of) = self.body().var_type(boxed).lookup().kind {
-            let ret = self.create_var(of.ptr());
+        if let typ::Box(of) = self.body().var_type(boxed).lookup(self.db).kind {
+            let ret = self.create_var(of.ptr(self.db));
 
             self.block().instrs.push(Instr::BoxAddr { ret, boxed });
 
@@ -277,7 +280,7 @@ impl<'a> Builder<'a> {
     /// Load a value of type `*ty`.
     /// The return var has type `ty`.
     pub fn load(&mut self, addr: Var) -> Var {
-        if let typ::Ptr(to) = self.body().var_type(addr).lookup().kind {
+        if let typ::Ptr(to) = self.body().var_type(addr).lookup(self.db).kind {
             let ret = self.create_var(to);
 
             self.block().instrs.push(Instr::Load { ret, addr });
@@ -290,7 +293,7 @@ impl<'a> Builder<'a> {
 
     /// Store a value of type `ty` in an addr of type `*ty`.
     pub fn store(&mut self, val: Var, addr: Var) {
-        if let typ::Ptr(to) = self.body().var_type(addr).lookup().kind {
+        if let typ::Ptr(to) = self.body().var_type(addr).lookup(self.db).kind {
             if to != self.body().var_type(val) {
                 panic!("Cannot store value of type `a` in an address of type `*b`");
             }
@@ -306,8 +309,8 @@ impl<'a> Builder<'a> {
     ///   - TAKE: the value is moved from old to new.
     ///   - INIT: the new address was previously uninitialized.
     pub fn copy_addr(&mut self, old: Var, new: Var, flags: Flags) {
-        if let typ::Ptr(old) = self.body().var_type(old).lookup().kind {
-            if let typ::Ptr(new) = self.body().var_type(new).lookup().kind {
+        if let typ::Ptr(old) = self.body().var_type(old).lookup(self.db).kind {
+            if let typ::Ptr(new) = self.body().var_type(new).lookup(self.db).kind {
                 if old != new {
                     panic!("Cannot copy a value of type `a` in an address of type `*b`");
                 }
@@ -336,7 +339,7 @@ impl<'a> Builder<'a> {
     /// For generic types this will call it's destructor.
     /// For any other type this is equivalent to `load` + `drop_value`.
     pub fn drop_addr(&mut self, addr: Var) {
-        if let typ::Ptr(_) = self.body().var_type(addr).lookup().kind {
+        if let typ::Ptr(_) = self.body().var_type(addr).lookup(self.db).kind {
             self.block().instrs.push(Instr::DropAddr { addr });
         } else {
             panic!("Cannot drop the value at the address of a non-pointer type.");
@@ -362,7 +365,7 @@ impl<'a> Builder<'a> {
     /// Create a constant string reference.
     /// These strings are always utf8 encoded and null-terminated.
     pub fn const_str(&mut self, val: impl Into<String>) -> Var {
-        let ty = Ty::int(Integer::I8, false).ptr();
+        let ty = Ty::int(self.db, Integer::I8, false).ptr(self.db);
         let ret = self.create_var(ty);
 
         self.block().instrs.push(Instr::ConstStr { ret, val: val.into() });
@@ -385,7 +388,7 @@ impl<'a> Builder<'a> {
     pub fn tuple(&mut self, vals: impl IntoIterator<Item = Var>) -> Var {
         let vals = vals.into_iter().collect::<Vec<_>>();
         let tys = vals.iter().map(|&v| self.body()[v].ty).collect();
-        let ty = Ty::new(typ::Tuple(tys));
+        let ty = Ty::new(self.db, typ::Tuple(tys));
         let ret = self.create_var(ty);
 
         self.block().instrs.push(Instr::Tuple { ret, vals });
@@ -396,7 +399,7 @@ impl<'a> Builder<'a> {
     /// Extract field `field` of tuple `tuple`.
     /// The return var will have the type of the `field`th element of the tuple.
     pub fn tuple_extract(&mut self, tuple: Var, field: usize) -> Var {
-        if let typ::Tuple(ref tys) = self.body()[tuple].ty.lookup().kind {
+        if let typ::Tuple(ref tys) = self.body()[tuple].ty.lookup(self.db).kind {
             let ret = self.create_var(tys[field]);
 
             self.block().instrs.push(Instr::TupleExtract { ret, tuple, field });
@@ -417,9 +420,9 @@ impl<'a> Builder<'a> {
     /// The given tuple must be of type `*(t1, t2, ...tn)`.
     /// The return var will be of type `*tn`.
     pub fn tuple_addr(&mut self, tuple: Var, field: usize) -> Var {
-        if let typ::Ptr(to) = self.body()[tuple].ty.lookup().kind {
-            if let typ::Tuple(ref ts) = to.lookup().kind {
-                let ret = self.create_var(ts[field].ptr());
+        if let typ::Ptr(to) = self.body()[tuple].ty.lookup(self.db).kind {
+            if let typ::Tuple(ref ts) = to.lookup(self.db).kind {
+                let ret = self.create_var(ts[field].ptr(self.db));
 
                 self.block().instrs.push(Instr::TupleAddr { ret, tuple, field });
 
@@ -440,11 +443,11 @@ impl<'a> Builder<'a> {
         let mut sig = self.body().var_type(func);
         let subst = subst.into_iter().collect::<Vec<_>>();
 
-        if let typ::Generic(_, ret) = sig.lookup().kind {
-            sig = ret.subst(&subst, 0);
+        if let typ::Generic(_, ret) = sig.lookup(self.db).kind {
+            sig = ret.subst(self.db, &subst, 0);
         }
 
-        if let typ::Func(ref sig) = sig.lookup().kind {
+        if let typ::Func(ref sig) = sig.lookup(self.db).kind {
             let mut ret_args = Vec::new();
             let mut rets = sig
                 .rets
@@ -510,14 +513,14 @@ impl<'a> Builder<'a> {
     pub fn intrinsic(&mut self, name: impl AsRef<str>, subst: impl IntoIterator<Item = Subst>, args: impl IntoIterator<Item = Var>) -> Vec<Var> {
         let name = name.as_ref();
 
-        if let Some(mut sig) = intrinsics::INTRINSICS.get(name).cloned() {
+        if let Some(mut sig) = self.db.intrinsics().get(name).cloned() {
             let subst = subst.into_iter().collect::<Vec<_>>();
 
-            if let typ::Generic(_, ret) = sig.lookup().kind {
-                sig = ret.subst(&subst, 0);
+            if let typ::Generic(_, ret) = sig.lookup(self.db).kind {
+                sig = ret.subst(self.db, &subst, 0);
             }
 
-            if let typ::Func(ref sig) = sig.lookup().kind {
+            if let typ::Func(ref sig) = sig.lookup(self.db).kind {
                 let rets = sig.rets.iter().map(|r| self.create_var(r.ty)).collect::<Vec<_>>();
 
                 self.block().instrs.push(Instr::Intrinsic {

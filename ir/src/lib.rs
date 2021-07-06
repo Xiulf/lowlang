@@ -1,6 +1,7 @@
 #![feature(once_cell)]
 
 pub mod builder;
+pub mod db;
 pub mod display;
 mod intrinsics;
 pub mod layout;

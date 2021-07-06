@@ -1,18 +1,11 @@
+use crate::db::IrDatabase;
 use crate::ty::*;
-use crate::{Flags, Module, TypeDefBody};
+use crate::{Flags, TypeDefBody};
 use std::convert::TryInto;
-use std::lazy::SyncLazy;
 use std::num::NonZeroUsize;
 use std::ops::{self, Range, RangeInclusive};
-use std::sync::RwLock;
-use target_lexicon::{PointerWidth, Triple};
-
-static LAYOUT_INTERNER: SyncLazy<RwLock<LayoutInterner>> = SyncLazy::new(Default::default);
-
-#[derive(Default)]
-struct LayoutInterner {
-    vec: Vec<Option<Layout>>,
-}
+use target_lexicon::PointerWidth;
+pub use target_lexicon::Triple;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TyAndLayout {
@@ -456,132 +449,120 @@ impl std::ops::Deref for TyAndLayout {
     }
 }
 
-impl crate::Module {
-    pub fn layout_of(&self, triple: &Triple, ty: Ty) -> TyAndLayout {
-        let int = LAYOUT_INTERNER.read().unwrap();
+pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
+    let triple = db.triple();
+    let info = ty.lookup(db);
+    let scalar_unit = |value: Primitive| Scalar::new(value, &triple);
+    let scalar = |value: Primitive| {
+        let mut scalar = scalar_unit(value);
 
-        if let Some(Some(layout)) = int.vec.get(ty.idx()) {
-            TyAndLayout { ty, layout: layout.clone() }
-        } else {
-            std::mem::drop(int);
-            let info = ty.lookup();
-            let scalar_unit = |value: Primitive| Scalar::new(value, triple);
-            let scalar = |value: Primitive| {
-                let mut scalar = scalar_unit(value);
-
-                if let Some(start) = info.repr.valid_range_start {
-                    scalar.valid_range = start..=*scalar.valid_range.end();
-                }
-
-                if let Some(end) = info.repr.valid_range_end {
-                    scalar.valid_range = *scalar.valid_range.start()..=end;
-                }
-
-                Layout::scalar(scalar, triple)
-            };
-
-            let layout = match info.kind {
-                | typ::Unit => {
-                    if let Some(prim) = info.repr.scalar {
-                        scalar(prim)
-                    } else {
-                        Layout::UNIT
-                    }
-                },
-                | typ::Ptr(_) => {
-                    let mut scalar = scalar_unit(Primitive::Pointer);
-
-                    if let Some(start) = info.repr.valid_range_start {
-                        scalar.valid_range = start..=*scalar.valid_range.end();
-                    } else if info.flags.is_set(Flags::NON_NULL) {
-                        scalar.valid_range = 1..=*scalar.valid_range.end();
-                    }
-
-                    if let Some(end) = info.repr.valid_range_end {
-                        scalar.valid_range = *scalar.valid_range.start()..=end;
-                    }
-
-                    Layout::scalar(scalar, triple)
-                },
-                | typ::Box(_) => {
-                    let mut ptr = Scalar::new(Primitive::Pointer, triple);
-                    let gen = Scalar::new(Primitive::Int(Integer::ISize, false), triple);
-
-                    ptr.valid_range = 1..=*ptr.valid_range.end();
-
-                    scalar_pair(ptr, gen, triple)
-                },
-                | typ::Tuple(ref ts) => {
-                    let fields = ts.iter().map(|&t| self.layout_of(triple, t)).collect::<Vec<_>>();
-
-                    struct_layout(&info, &fields, triple)
-                },
-                | typ::Func(_) => {
-                    let mut scalar = scalar_unit(Primitive::Pointer);
-
-                    scalar.valid_range = 1..=*scalar.valid_range.end();
-
-                    Layout::scalar(scalar, triple)
-                },
-                | typ::Generic(_, t) => self.layout_of(triple, t).layout,
-                | typ::Var(_) => unreachable!(),
-                | typ::Def(id, ref subst) => {
-                    let def = &self[id];
-
-                    match &def.body {
-                        | None => Layout::UNINHABITED,
-                        | Some(body) => match body {
-                            | TypeDefBody::Struct { fields } => {
-                                let fields = fields
-                                    .iter()
-                                    .map(|f| {
-                                        let ty = if let Some(subst) = subst { f.ty.subst(subst, 0) } else { f.ty };
-
-                                        self.layout_of(triple, ty)
-                                    })
-                                    .collect::<Vec<_>>();
-
-                                struct_layout(&info, &fields, triple)
-                            },
-                            | TypeDefBody::Union { fields } => {
-                                let fields = fields
-                                    .iter()
-                                    .map(|f| {
-                                        let ty = if let Some(subst) = subst { f.ty.subst(subst, 0) } else { f.ty };
-
-                                        self.layout_of(triple, ty)
-                                    })
-                                    .collect::<Vec<_>>();
-
-                                union_layout(&info, &fields, triple)
-                            },
-                            | TypeDefBody::Enum { variants } => {
-                                let variants = variants
-                                    .iter()
-                                    .map(|v| {
-                                        v.payload.map(|p| {
-                                            let ty = if let Some(subst) = subst { p.subst(subst, 0) } else { p };
-
-                                            self.layout_of(triple, ty).layout
-                                        })
-                                    })
-                                    .collect::<Vec<_>>();
-
-                                enum_layout(&info, &variants, triple)
-                            },
-                        },
-                    }
-                },
-            };
-
-            let mut int = LAYOUT_INTERNER.write().unwrap();
-
-            int.vec.resize(ty.idx() + 1, None);
-            int.vec[ty.idx()] = Some(layout.clone());
-
-            TyAndLayout { ty, layout }
+        if let Some(start) = info.repr.valid_range_start {
+            scalar.valid_range = start..=*scalar.valid_range.end();
         }
-    }
+
+        if let Some(end) = info.repr.valid_range_end {
+            scalar.valid_range = *scalar.valid_range.start()..=end;
+        }
+
+        Layout::scalar(scalar, &triple)
+    };
+
+    let layout = match info.kind {
+        | typ::Unit => {
+            if let Some(prim) = info.repr.scalar {
+                scalar(prim)
+            } else {
+                Layout::UNIT
+            }
+        },
+        | typ::Ptr(_) => {
+            let mut scalar = scalar_unit(Primitive::Pointer);
+
+            if let Some(start) = info.repr.valid_range_start {
+                scalar.valid_range = start..=*scalar.valid_range.end();
+            } else if info.flags.is_set(Flags::NON_NULL) {
+                scalar.valid_range = 1..=*scalar.valid_range.end();
+            }
+
+            if let Some(end) = info.repr.valid_range_end {
+                scalar.valid_range = *scalar.valid_range.start()..=end;
+            }
+
+            Layout::scalar(scalar, &triple)
+        },
+        | typ::Box(_) => {
+            let mut ptr = Scalar::new(Primitive::Pointer, &triple);
+            let gen = Scalar::new(Primitive::Int(Integer::ISize, false), &triple);
+
+            ptr.valid_range = 1..=*ptr.valid_range.end();
+
+            scalar_pair(ptr, gen, &triple)
+        },
+        | typ::Tuple(ref ts) => {
+            let fields = ts.iter().map(|&t| db.layout_of(t)).collect::<Vec<_>>();
+
+            struct_layout(&info, &fields, &triple)
+        },
+        | typ::Func(_) => {
+            let mut scalar = scalar_unit(Primitive::Pointer);
+
+            scalar.valid_range = 1..=*scalar.valid_range.end();
+
+            Layout::scalar(scalar, &triple)
+        },
+        | typ::Generic(_, t) => db.layout_of(t).layout,
+        | typ::Var(_) => unreachable!(),
+        | typ::Def(id, ref subst) => {
+            unimplemented!();
+            // let def = &self[id];
+            //
+            // match &def.body {
+            //     | None => Layout::UNINHABITED,
+            //     | Some(body) => match body {
+            //         | TypeDefBody::Struct { fields } => {
+            //             let fields = fields
+            //                 .iter()
+            //                 .map(|f| {
+            //                     let ty = if let Some(subst) = subst { f.ty.subst(db, subst, 0) } else { f.ty };
+            //
+            //                     db.layout_of(ty)
+            //                 })
+            //                 .collect::<Vec<_>>();
+            //
+            //             struct_layout(&info, &fields, &triple)
+            //         },
+            //         | TypeDefBody::Union { fields } => {
+            //             let fields = fields
+            //                 .iter()
+            //                 .map(|f| {
+            //                     let ty = if let Some(subst) = subst { f.ty.subst(db, subst, 0) } else { f.ty };
+            //
+            //                     db.layout_of(ty)
+            //                 })
+            //                 .collect::<Vec<_>>();
+            //
+            //             union_layout(&info, &fields, &triple)
+            //         },
+            //         | TypeDefBody::Enum { variants } => {
+            //             let variants = variants
+            //                 .iter()
+            //                 .map(|v| {
+            //                     v.payload.map(|p| {
+            //                         let ty = if let Some(subst) = subst { p.subst(db, subst, 0) } else { p };
+            //
+            //                         db.layout_of(ty).layout
+            //                     })
+            //                 })
+            //                 .collect::<Vec<_>>();
+            //
+            //             enum_layout(&info, &variants, &triple)
+            //         },
+            //     },
+            // }
+        },
+    };
+
+    TyAndLayout { ty, layout }
 }
 
 fn scalar_pair(a: Scalar, b: Scalar, triple: &Triple) -> Layout {

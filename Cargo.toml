@@ -5,4 +5,5 @@ members = [
     "ir",
 
     "backend-llvm",
+    "backend-clif",
 ]
