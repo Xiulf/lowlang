@@ -5,38 +5,9 @@ impl Module {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            types: Arena::default(),
             funcs: Arena::default(),
             bodies: Arena::default(),
         }
-    }
-
-    pub fn declare_type(&mut self, name: impl Into<String>) -> TypeId {
-        let idx = self.types.alloc(TypeDef {
-            name: name.into(),
-            generic_params: Vec::new(),
-            body: None,
-        });
-
-        TypeId(idx)
-    }
-
-    pub fn define_struct(&mut self, id: TypeId, fields: impl IntoIterator<Item = TypeDefField>) {
-        self[id].body = Some(TypeDefBody::Struct {
-            fields: fields.into_iter().collect(),
-        });
-    }
-
-    pub fn define_union(&mut self, id: TypeId, fields: impl IntoIterator<Item = TypeDefField>) {
-        self[id].body = Some(TypeDefBody::Union {
-            fields: fields.into_iter().collect(),
-        });
-    }
-
-    pub fn define_enum(&mut self, id: TypeId, variants: impl IntoIterator<Item = TypeDefVariant>) {
-        self[id].body = Some(TypeDefBody::Enum {
-            variants: variants.into_iter().collect(),
-        });
     }
 
     pub fn declare_func(&mut self, name: impl Into<String>, linkage: Linkage, sig: Ty) -> FuncId {
@@ -71,10 +42,59 @@ impl Module {
 }
 
 impl TypeDef {
-    pub fn add_generic_param(&mut self, param: GenericParam) -> GenericVar {
-        let id = GenericVar(0, self.generic_params.len() as u8);
+    pub fn declare(db: &dyn IrDatabase, name: impl Into<String>) -> TypeDefId {
+        TypeDef {
+            name: name.into(),
+            generic_params: Vec::new(),
+            body: None,
+        }
+        .intern(db)
+    }
 
-        self.generic_params.push(param);
+    pub fn define_struct(self: &Arc<Self>, fields: impl IntoIterator<Item = TypeDefField>) {
+        let body = TypeDefBody::Struct {
+            fields: fields.into_iter().collect(),
+        };
+
+        let this = Arc::as_ptr(self) as *mut TypeDef;
+
+        unsafe {
+            (*this).body = Some(body);
+        }
+    }
+
+    pub fn define_union(self: &Arc<Self>, fields: impl IntoIterator<Item = TypeDefField>) {
+        let body = TypeDefBody::Union {
+            fields: fields.into_iter().collect(),
+        };
+
+        let this = Arc::as_ptr(self) as *mut TypeDef;
+
+        unsafe {
+            (*this).body = Some(body);
+        }
+    }
+
+    pub fn define_enum(self: &Arc<Self>, variants: impl IntoIterator<Item = TypeDefVariant>) {
+        let body = TypeDefBody::Enum {
+            variants: variants.into_iter().collect(),
+        };
+
+        let this = Arc::as_ptr(self) as *mut TypeDef;
+
+        unsafe {
+            (*this).body = Some(body);
+        }
+    }
+
+    pub fn add_generic_param(self: &Arc<Self>, param: GenericParam) -> GenericVar {
+        let id = GenericVar(0, self.generic_params.len() as u8);
+        let this = Arc::as_ptr(self) as *mut TypeDef;
+
+        unsafe {
+            (*this).generic_params.push(param);
+        }
+
         id
     }
 }

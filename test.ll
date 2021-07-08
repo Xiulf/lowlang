@@ -30,7 +30,7 @@ enum Option<type T> {
 body main {
 
 entry(argc : $i32, argv : $**u8):
-    union = stack_alloc $UnionTest
+    ; union = stack_alloc $UnionTest
 
     identity = func_ref identity
     argv = apply identity<$**u8>(argv)

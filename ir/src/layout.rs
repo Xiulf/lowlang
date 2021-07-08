@@ -513,52 +513,51 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
         | typ::Generic(_, t) => db.layout_of(t).layout,
         | typ::Var(_) => unreachable!(),
         | typ::Def(id, ref subst) => {
-            unimplemented!();
-            // let def = &self[id];
-            //
-            // match &def.body {
-            //     | None => Layout::UNINHABITED,
-            //     | Some(body) => match body {
-            //         | TypeDefBody::Struct { fields } => {
-            //             let fields = fields
-            //                 .iter()
-            //                 .map(|f| {
-            //                     let ty = if let Some(subst) = subst { f.ty.subst(db, subst, 0) } else { f.ty };
-            //
-            //                     db.layout_of(ty)
-            //                 })
-            //                 .collect::<Vec<_>>();
-            //
-            //             struct_layout(&info, &fields, &triple)
-            //         },
-            //         | TypeDefBody::Union { fields } => {
-            //             let fields = fields
-            //                 .iter()
-            //                 .map(|f| {
-            //                     let ty = if let Some(subst) = subst { f.ty.subst(db, subst, 0) } else { f.ty };
-            //
-            //                     db.layout_of(ty)
-            //                 })
-            //                 .collect::<Vec<_>>();
-            //
-            //             union_layout(&info, &fields, &triple)
-            //         },
-            //         | TypeDefBody::Enum { variants } => {
-            //             let variants = variants
-            //                 .iter()
-            //                 .map(|v| {
-            //                     v.payload.map(|p| {
-            //                         let ty = if let Some(subst) = subst { p.subst(db, subst, 0) } else { p };
-            //
-            //                         db.layout_of(ty).layout
-            //                     })
-            //                 })
-            //                 .collect::<Vec<_>>();
-            //
-            //             enum_layout(&info, &variants, &triple)
-            //         },
-            //     },
-            // }
+            let def = id.lookup(db);
+
+            match &def.body {
+                | None => Layout::UNINHABITED,
+                | Some(body) => match body {
+                    | TypeDefBody::Struct { fields } => {
+                        let fields = fields
+                            .iter()
+                            .map(|f| {
+                                let ty = if let Some(subst) = subst { f.ty.subst(db, subst, 0) } else { f.ty };
+
+                                db.layout_of(ty)
+                            })
+                            .collect::<Vec<_>>();
+
+                        struct_layout(&info, &fields, &triple)
+                    },
+                    | TypeDefBody::Union { fields } => {
+                        let fields = fields
+                            .iter()
+                            .map(|f| {
+                                let ty = if let Some(subst) = subst { f.ty.subst(db, subst, 0) } else { f.ty };
+
+                                db.layout_of(ty)
+                            })
+                            .collect::<Vec<_>>();
+
+                        union_layout(&info, &fields, &triple)
+                    },
+                    | TypeDefBody::Enum { variants } => {
+                        let variants = variants
+                            .iter()
+                            .map(|v| {
+                                v.payload.map(|p| {
+                                    let ty = if let Some(subst) = subst { p.subst(db, subst, 0) } else { p };
+
+                                    db.layout_of(ty).layout
+                                })
+                            })
+                            .collect::<Vec<_>>();
+
+                        enum_layout(&info, &variants, &triple)
+                    },
+                },
+            }
         },
     };
 

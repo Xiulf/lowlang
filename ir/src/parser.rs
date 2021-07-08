@@ -112,7 +112,7 @@ pub struct Parser<'a> {
     db: &'a dyn IrDatabase,
     lexer: Peekable<Lexer<'a, Token<'a>>>,
     module: Module,
-    types: HashMap<&'a str, TypeId>,
+    types: HashMap<&'a str, TypeDefId>,
     funcs: HashMap<&'a str, FuncId>,
     generics: Vec<HashMap<&'a str, GenericVar>>,
 }
@@ -173,7 +173,7 @@ impl<'a> Parser<'a> {
 
     fn parse_type_decl(&mut self) -> Option<()> {
         let name = self.def_name()?;
-        let id = self.module.declare_type(name);
+        let id = TypeDef::declare(self.db, name);
 
         self.types.insert(name, id);
         Some(())
@@ -206,7 +206,7 @@ impl<'a> Parser<'a> {
                 };
 
                 let name = self.ident()?;
-                let id = self.module[id].add_generic_param(kind);
+                let id = id.lookup(self.db).add_generic_param(kind);
 
                 self.generics.last_mut().unwrap().insert(name, id);
             }
@@ -233,9 +233,9 @@ impl<'a> Parser<'a> {
         self.expect(RBrace)?;
 
         if is_union {
-            self.module.define_union(id, fields);
+            id.lookup(self.db).define_union(fields);
         } else {
-            self.module.define_struct(id, fields);
+            id.lookup(self.db).define_struct(fields);
         }
 
         Some(())
@@ -257,7 +257,7 @@ impl<'a> Parser<'a> {
                 };
 
                 let name = self.ident()?;
-                let id = self.module[id].add_generic_param(kind);
+                let id = id.lookup(self.db).add_generic_param(kind);
 
                 self.generics.last_mut().unwrap().insert(name, id);
             }
@@ -288,7 +288,7 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(RBrace)?;
-        self.module.define_enum(id, variants);
+        id.lookup(self.db).define_enum(variants);
 
         Some(())
     }

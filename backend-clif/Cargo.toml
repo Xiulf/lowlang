@@ -9,5 +9,8 @@ crate-type = ["cdylib"]
 [dependencies]
 ir = { path = "../ir" }
 arena = { git = "https://github.com/Xiulf/arena.git" }
+cranelift = "0.74.0"
+cranelift-module = "0.74.0"
+cranelift-object = "0.74.0"
 target-lexicon = "0.12.0"
 tempfile = "3.2.0"

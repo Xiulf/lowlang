@@ -4,9 +4,9 @@ use std::fmt;
 
 pub struct IrDisplay<'a, T>(&'a T, &'a dyn IrDatabase);
 
-impl fmt::Display for TypeId {
+impl fmt::Display for TypeDefId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let id: u32 = self.0.into_raw().into();
+        let id = self.0.as_u32();
 
         write!(f, "type{}", id)
     }
@@ -59,12 +59,6 @@ impl fmt::Display for IrDisplay<'_, Module> {
 
         for (id, func) in this.funcs.iter() {
             writeln!(f, "{}: {}", FuncId(id), func.display(db))?;
-        }
-
-        writeln!(f)?;
-
-        for (id, ty) in this.types.iter() {
-            writeln!(f, "{}: {}", TypeId(id), ty.display(db))?;
         }
 
         writeln!(f)?;

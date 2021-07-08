@@ -1,7 +1,7 @@
 use crate::db::IrDatabase;
 pub use crate::layout::Integer;
 use crate::layout::Primitive;
-use crate::{Flags, TypeId};
+use crate::{Flags, TypeDefId};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -48,7 +48,7 @@ pub enum TypeKind {
     Var(GenericVar),
     Func(Signature),
     Generic(Vec<GenericParam>, Ty),
-    Def(TypeId, Option<Vec<Subst>>),
+    Def(TypeDefId, Option<Vec<Subst>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -66,7 +66,7 @@ pub struct SigParam {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GenericVar(pub(crate) u8, pub(crate) u8);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GenericParam {
     Type,
     Figure,
@@ -95,10 +95,6 @@ impl Ty {
 
     fn intern(db: &dyn IrDatabase, ty: Arc<Type>) -> Self {
         db.intern_type(ty)
-    }
-
-    pub(crate) fn idx(self) -> usize {
-        self.0.as_usize()
     }
 
     pub fn new(db: &dyn IrDatabase, kind: TypeKind) -> Self {
@@ -160,6 +156,22 @@ impl Ty {
         match self.lookup(db).kind {
             | typ::Ptr(to) => Some(to),
             | _ => None,
+        }
+    }
+
+    pub fn get_sig(self, db: &dyn IrDatabase) -> (Vec<GenericParam>, Signature) {
+        let mut generic_params = Vec::new();
+        let mut ty = self;
+
+        while let typ::Generic(ref params, ret) = ty.lookup(db).kind {
+            generic_params.extend(params.iter().copied());
+            ty = ret;
+        }
+
+        if let typ::Func(ref sig) = ty.lookup(db).kind {
+            (generic_params, sig.clone())
+        } else {
+            unreachable!();
         }
     }
 

@@ -10,18 +10,18 @@ pub mod ty;
 
 use arena::{Arena, Idx};
 use std::ops::{Index, IndexMut};
+use std::sync::Arc;
 use ty::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub name: String,
-    pub types: Arena<TypeDef>,
     pub funcs: Arena<Func>,
     bodies: Arena<Body>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TypeId(pub Idx<TypeDef>);
+pub struct TypeDefId(salsa::InternId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FuncId(pub Idx<Func>);
@@ -35,27 +35,27 @@ pub struct Var(pub Idx<VarInfo>);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Block(pub Idx<BlockData>);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeDef {
     pub name: String,
     pub generic_params: Vec<GenericParam>,
     pub body: Option<TypeDefBody>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeDefBody {
     Struct { fields: Vec<TypeDefField> },
     Union { fields: Vec<TypeDefField> },
     Enum { variants: Vec<TypeDefVariant> },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeDefField {
     pub name: String,
     pub ty: Ty,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeDefVariant {
     pub name: String,
     pub payload: Option<Ty>,
@@ -249,17 +249,25 @@ impl Flags {
     }
 }
 
-impl Index<TypeId> for Module {
-    type Output = TypeDef;
-
-    fn index(&self, id: TypeId) -> &Self::Output {
-        &self.types[id.0]
+impl TypeDef {
+    pub fn intern(self, db: &dyn db::IrDatabase) -> TypeDefId {
+        db.intern_typedef(Arc::new(self))
     }
 }
 
-impl IndexMut<TypeId> for Module {
-    fn index_mut(&mut self, id: TypeId) -> &mut Self::Output {
-        &mut self.types[id.0]
+impl TypeDefId {
+    pub fn lookup(self, db: &dyn db::IrDatabase) -> Arc<TypeDef> {
+        db.lookup_intern_typedef(self)
+    }
+}
+
+impl salsa::InternKey for TypeDefId {
+    fn from_intern_id(v: salsa::InternId) -> Self {
+        Self(v)
+    }
+
+    fn as_intern_id(&self) -> salsa::InternId {
+        self.0
     }
 }
 

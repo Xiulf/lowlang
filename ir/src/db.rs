@@ -1,5 +1,6 @@
 use crate::layout::TyAndLayout;
 use crate::ty::{Ty, Type};
+use crate::{TypeDef, TypeDefId};
 use std::collections::HashMap;
 use std::sync::Arc;
 use target_lexicon::Triple;
@@ -11,6 +12,9 @@ pub trait IrDatabase {
 
     #[salsa::invoke(crate::layout::layout_of)]
     fn layout_of(&self, ty: Ty) -> TyAndLayout;
+
+    #[salsa::interned]
+    fn intern_typedef(&self, def: Arc<TypeDef>) -> TypeDefId;
 
     #[salsa::interned]
     fn intern_type(&self, ty: Arc<Type>) -> Ty;
