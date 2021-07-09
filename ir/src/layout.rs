@@ -104,6 +104,15 @@ pub enum TagEncoding {
     },
 }
 
+impl TyAndLayout {
+    pub fn pointee(&self, db: &dyn IrDatabase) -> TyAndLayout {
+        match self.ty.lookup(db).kind {
+            | typ::Ptr(to) => db.layout_of(to),
+            | _ => unreachable!(),
+        }
+    }
+}
+
 impl Layout {
     pub const UNIT: Self = Self {
         size: Size::ZERO,

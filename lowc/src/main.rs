@@ -22,7 +22,7 @@ fn main() {
 
     println!("{}", module.display(&db));
 
-    let obj_file = codegen::compile_module(&db, &module, codegen::Backend::Llvm);
+    let obj_file = codegen::compile_module(&db, &module, codegen::Backend::Clif);
     let _ = std::fs::copy(obj_file.path(), "test.o").unwrap();
     let link_args = [
         "-dynamic-linker",

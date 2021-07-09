@@ -48,34 +48,42 @@ impl<'ctx> CodegenCtx<'ctx> {
         let ptr_type = self.module.target_config().pointer_type();
 
         for ret in &sig.rets {
-            match self.pass_mode(&self.db.layout_of(ret.ty)) {
-                | PassMode::NoPass => {},
-                | PassMode::ByVal(t) => {
-                    res.returns.push(clif::AbiParam::new(t));
-                },
-                | PassMode::ByValPair(a, b) => {
-                    res.returns.push(clif::AbiParam::new(a));
-                    res.returns.push(clif::AbiParam::new(b));
-                },
-                | PassMode::ByRef { .. } => {
-                    res.params.push(clif::AbiParam::new(ptr_type));
-                },
+            if ret.flags.is_set(ir::Flags::OUT) {
+                res.params.push(clif::AbiParam::new(ptr_type));
+            } else {
+                match self.pass_mode(&self.db.layout_of(ret.ty)) {
+                    | PassMode::NoPass => {},
+                    | PassMode::ByVal(t) => {
+                        res.returns.push(clif::AbiParam::new(t));
+                    },
+                    | PassMode::ByValPair(a, b) => {
+                        res.returns.push(clif::AbiParam::new(a));
+                        res.returns.push(clif::AbiParam::new(b));
+                    },
+                    | PassMode::ByRef { .. } => {
+                        res.params.push(clif::AbiParam::new(ptr_type));
+                    },
+                }
             }
         }
 
         for param in &sig.params {
-            match self.pass_mode(&self.db.layout_of(param.ty)) {
-                | PassMode::NoPass => {},
-                | PassMode::ByVal(t) => {
-                    res.params.push(clif::AbiParam::new(t));
-                },
-                | PassMode::ByValPair(a, b) => {
-                    res.params.push(clif::AbiParam::new(a));
-                    res.params.push(clif::AbiParam::new(b));
-                },
-                | PassMode::ByRef { .. } => {
-                    res.params.push(clif::AbiParam::new(ptr_type));
-                },
+            if param.flags.is_set(ir::Flags::IN) {
+                res.params.push(clif::AbiParam::new(ptr_type));
+            } else {
+                match self.pass_mode(&self.db.layout_of(param.ty)) {
+                    | PassMode::NoPass => {},
+                    | PassMode::ByVal(t) => {
+                        res.params.push(clif::AbiParam::new(t));
+                    },
+                    | PassMode::ByValPair(a, b) => {
+                        res.params.push(clif::AbiParam::new(a));
+                        res.params.push(clif::AbiParam::new(b));
+                    },
+                    | PassMode::ByRef { .. } => {
+                        res.params.push(clif::AbiParam::new(ptr_type));
+                    },
+                }
             }
         }
 

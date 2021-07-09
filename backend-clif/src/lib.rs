@@ -1,13 +1,17 @@
+mod intrinsic;
 mod pass;
 mod ptr;
 mod ty;
 mod value;
 
 use arena::{ArenaMap, Idx};
+use clif::InstBuilder;
 use cranelift_module::Module;
 use ir::db::IrDatabase;
+use ptr::Pointer;
 use std::io::Write;
 use tempfile::NamedTempFile;
+use value::Val;
 
 mod clif {
     pub use cranelift::codegen::binemit::{NullRelocSink, NullStackMapSink, NullTrapSink};
@@ -53,7 +57,8 @@ pub struct BodyCtx<'a, 'ctx> {
     func: Idx<ir::Func>,
     body: &'ctx ir::Body,
     blocks: ArenaMap<Idx<ir::BlockData>, clif::Block>,
-    vars: ArenaMap<Idx<ir::VarInfo>, clif::Value>,
+    vars: ArenaMap<Idx<ir::VarInfo>, value::Val>,
+    rets: Vec<Option<Pointer>>,
 }
 
 impl<'a, 'ctx> std::ops::Deref for BodyCtx<'a, 'ctx> {
@@ -116,6 +121,7 @@ impl<'ctx> CodegenCtx<'ctx> {
             cx: self,
             blocks: ArenaMap::default(),
             vars: ArenaMap::default(),
+            rets: Vec::new(),
         }
         .lower();
     }
@@ -131,22 +137,287 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         self.bcx.func.signature = sig;
         self.bcx.switch_to_block(entry);
 
-        for ret in &sig2.rets {
-            let layout = self.db.layout_of(ret.ty);
+        let mut params = Vec::new();
 
-            match self.pass_mode(&layout) {
-                | pass::PassMode::NoPass => {},
-                | pass::PassMode::ByVal(t) => {
-                    let val = self.bcx.append_block_param(entry, t);
-                },
-                | pass::PassMode::ByValPair(a, b) => {
-                    let a = self.bcx.append_block_param(entry, a);
-                    let b = self.bcx.append_block_param(entry, b);
-                },
-                | pass::PassMode::ByRef { .. } => {
+        self.rets = sig2
+            .rets
+            .iter()
+            .map(|ret| {
+                if ret.flags.is_set(ir::Flags::OUT) {
                     let val = self.bcx.append_block_param(entry, ptr_type);
-                },
+
+                    params.push(val);
+                    None
+                } else {
+                    let layout = self.db.layout_of(ret.ty);
+
+                    match self.pass_mode(&layout) {
+                        | pass::PassMode::ByRef { .. } => {
+                            let val = self.bcx.append_block_param(entry, ptr_type);
+
+                            Some(Pointer::addr(val))
+                        },
+                        | _ => None,
+                    }
+                }
+            })
+            .collect();
+
+        for param in &sig2.params {
+            if param.flags.is_set(ir::Flags::IN) {
+                let val = self.bcx.append_block_param(entry, ptr_type);
+
+                params.push(val);
+            } else {
+                let layout = self.db.layout_of(param.ty);
+
+                match self.pass_mode(&layout) {
+                    | pass::PassMode::NoPass => {},
+                    | pass::PassMode::ByVal(t) => {
+                        let val = self.bcx.append_block_param(entry, t);
+
+                        params.push(val);
+                    },
+                    | pass::PassMode::ByValPair(a, b) => {
+                        let a = self.bcx.append_block_param(entry, a);
+                        let b = self.bcx.append_block_param(entry, b);
+
+                        params.push(a);
+                        params.push(b);
+                    },
+                    | pass::PassMode::ByRef { .. } => {
+                        let val = self.bcx.append_block_param(entry, ptr_type);
+
+                        params.push(val);
+                    },
+                }
             }
+        }
+
+        for (idx, block) in self.body.blocks.iter() {
+            let id = self.bcx.create_block();
+
+            for &param in &block.params {
+                let layout = self.db.layout_of(self.body[param].ty);
+                let val = match self.pass_mode(&layout) {
+                    | pass::PassMode::NoPass => Val::new_zst(layout),
+                    | pass::PassMode::ByVal(t) => {
+                        let val = self.bcx.append_block_param(id, t);
+
+                        Val::new_val(val, layout)
+                    },
+                    | pass::PassMode::ByValPair(a, b) => {
+                        let a = self.bcx.append_block_param(id, a);
+                        let b = self.bcx.append_block_param(id, b);
+
+                        Val::new_val_pair(a, b, layout)
+                    },
+                    | pass::PassMode::ByRef { .. } => {
+                        let val = self.bcx.append_block_param(id, ptr_type);
+
+                        Val::new_ref(Pointer::addr(val), layout)
+                    },
+                };
+
+                self.vars.insert(param.0, val);
+            }
+
+            self.blocks.insert(idx, id);
+        }
+
+        self.bcx.ins().jump(self.blocks[ir::Block::ENTRY.0], &params);
+        self.bcx.seal_block(entry);
+
+        for (idx, block) in self.body.blocks.iter() {
+            let bb = self.blocks[idx];
+
+            self.lower_block(bb, ir::Block(idx), block);
+        }
+
+        self.bcx.seal_all_blocks();
+        self.bcx.finalize();
+        self.cx.ctx.compute_cfg();
+        self.cx.ctx.compute_domtree();
+        self.cx.ctx.eliminate_unreachable_code(self.cx.module.isa()).unwrap();
+
+        eprintln!("{}", self.bcx.func);
+
+        self.cx
+            .module
+            .define_function(id, self.cx.ctx, &mut clif::NullTrapSink {}, &mut clif::NullStackMapSink {})
+            .unwrap();
+        self.cx.ctx.clear();
+    }
+
+    fn lower_block(&mut self, bb: clif::Block, _id: ir::Block, block: &ir::BlockData) {
+        self.bcx.switch_to_block(bb);
+
+        for instr in &block.instrs {
+            self.lower_instr(instr);
+        }
+
+        self.lower_term(block.term.as_ref().unwrap());
+    }
+
+    fn lower_term(&mut self, term: &ir::Term) {
+        match *term {
+            | ir::Term::Unreachable => {
+                self.bcx.ins().trap(clif::TrapCode::UnreachableCodeReached);
+            },
+            | ir::Term::Return { ref vals } => {
+                let vals = vals
+                    .iter()
+                    .zip(self.rets.clone())
+                    .filter_map(|(v, r)| match r {
+                        | Some(ptr) => {
+                            self.vars[v.0].clone().store_to(self, ptr);
+                            None
+                        },
+                        | None => Some(self.value_for_ret(self.vars[v.0].clone())),
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                self.bcx.ins().return_(&vals);
+            },
+            | ir::Term::Br { ref to } => {
+                let args = to.args.iter().flat_map(|a| self.value_for_arg(self.vars[a.0].clone())).collect::<Vec<_>>();
+
+                self.bcx.ins().jump(self.blocks[to.block.0], &args);
+            },
+            | ir::Term::Switch { pred, ref cases, ref default } => {
+                let mut switch = clif::Switch::new();
+                let pred = self.vars[pred.0].clone().load(self);
+
+                for case in cases {
+                    switch.set_entry(case.val, self.blocks[case.to.block.0]);
+                }
+
+                switch.emit(&mut self.bcx, pred, self.blocks[default.block.0]);
+            },
+        }
+    }
+
+    fn lower_instr(&mut self, instr: &ir::Instr) {
+        let ptr_type = self.module.target_config().pointer_type();
+
+        match *instr {
+            | ir::Instr::Load { ret, addr } => {
+                let addr = self.vars[addr.0].clone().load(self);
+                let layout = self.db.layout_of(self.body[ret].ty);
+                let res = Val::new_ref(Pointer::addr(addr), layout);
+
+                self.vars.insert(ret.0, res);
+            },
+            | ir::Instr::ConstInt { ret, val } => {
+                let layout = self.db.layout_of(self.body[ret].ty);
+                let val = Val::new_const(self, val, layout);
+
+                self.vars.insert(ret.0, val);
+            },
+            | ir::Instr::FuncRef { ret, func } => {
+                let (id, _) = self.func_ids[func.0];
+                let func = self.cx.module.declare_func_in_func(id, &mut self.cx.ctx.func);
+                let val = self.bcx.ins().func_addr(ptr_type, func);
+                let layout = self.db.layout_of(self.body[ret].ty);
+
+                self.vars.insert(ret.0, Val::new_val(val, layout));
+            },
+            | ir::Instr::Apply {
+                ref rets,
+                func,
+                ref args,
+                subst: _,
+            } => {
+                let mut ret_ptrs = Vec::new();
+                let mut sig = self.cx.module.make_signature();
+
+                for &ret in rets {
+                    let layout = self.db.layout_of(self.body[ret].ty);
+
+                    match self.pass_mode(&layout) {
+                        | pass::PassMode::NoPass => {},
+                        | pass::PassMode::ByVal(t) => {
+                            sig.returns.push(clif::AbiParam::new(t));
+                        },
+                        | pass::PassMode::ByValPair(a, b) => {
+                            sig.returns.push(clif::AbiParam::new(a));
+                            sig.returns.push(clif::AbiParam::new(b));
+                        },
+                        | pass::PassMode::ByRef { .. } => {
+                            let ss = self.bcx.create_stack_slot(clif::StackSlotData {
+                                kind: clif::StackSlotKind::ExplicitSlot,
+                                size: layout.size.bytes() as u32,
+                                offset: None,
+                            });
+
+                            ret_ptrs.push(Pointer::stack(ss));
+                            sig.params.push(clif::AbiParam::new(ptr_type));
+                        },
+                    }
+                }
+
+                let args = args
+                    .iter()
+                    .flat_map(|arg| match self.pass_mode(self.vars[arg.0].layout()) {
+                        | pass::PassMode::NoPass => pass::EmptySinglePair::Empty,
+                        | pass::PassMode::ByVal(t) => {
+                            sig.params.push(clif::AbiParam::new(t));
+                            pass::EmptySinglePair::Single(self.vars[arg.0].clone().load(self))
+                        },
+                        | pass::PassMode::ByValPair(a, b) => {
+                            sig.params.push(clif::AbiParam::new(a));
+                            sig.params.push(clif::AbiParam::new(b));
+
+                            let (a, b) = self.vars[arg.0].clone().load_pair(self);
+
+                            pass::EmptySinglePair::Pair(a, b)
+                        },
+                        | pass::PassMode::ByRef { .. } => {
+                            sig.params.push(clif::AbiParam::new(ptr_type));
+
+                            match self.vars[arg.0].clone().on_stack(self) {
+                                | (ptr, None) => pass::EmptySinglePair::Single(ptr.get_addr(self)),
+                                | (ptr, Some(meta)) => pass::EmptySinglePair::Pair(ptr.get_addr(self), meta),
+                            }
+                        },
+                    })
+                    .collect::<Vec<_>>();
+
+                let args = ret_ptrs.iter().map(|p| p.get_addr(self)).chain(args).collect::<Vec<_>>();
+                let func = self.vars[func.0].clone().load(self);
+                let sig = self.bcx.import_signature(sig);
+                let call = self.bcx.ins().call_indirect(sig, func, &args);
+                let mut res = self.bcx.inst_results(call).to_vec().into_iter();
+                let mut ret_ptrs = ret_ptrs.into_iter();
+
+                for &ret in rets {
+                    let layout = self.db.layout_of(self.body[ret].ty);
+
+                    match self.pass_mode(&layout) {
+                        | pass::PassMode::NoPass => {
+                            self.vars.insert(ret.0, Val::new_zst(layout));
+                        },
+                        | pass::PassMode::ByVal(_) => {
+                            self.vars.insert(ret.0, Val::new_val(res.next().unwrap(), layout));
+                        },
+                        | pass::PassMode::ByValPair(_, _) => {
+                            self.vars.insert(ret.0, Val::new_val_pair(res.next().unwrap(), res.next().unwrap(), layout));
+                        },
+                        | pass::PassMode::ByRef { .. } => {
+                            self.vars.insert(ret.0, Val::new_ref(ret_ptrs.next().unwrap(), layout));
+                        },
+                    }
+                }
+            },
+            | ir::Instr::Intrinsic {
+                ref rets, ref name, ref args, ..
+            } => {
+                let args = args.iter().map(|a| self.vars[a.0].clone()).collect();
+
+                self.lower_intrinsic(name.as_str(), rets, args);
+            },
+            | _ => unimplemented!("{}", instr.display(self.db, self.body)),
         }
     }
 }
