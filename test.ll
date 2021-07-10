@@ -5,7 +5,7 @@ module test
 ; type Option
 
 export main : $(i32, **u8) -> i32
-; export identity : $<type T>([in] T) -> [out] T
+export identity : $<type T>([in] T) -> [out] T
 local  print_args : $(i32, **u8) -> ()
 import puts : $(*u8) -> i32
 ; import write : $(i32, *u8, usize) -> isize
@@ -32,8 +32,8 @@ body main {
 entry(argc : $i32, argv : $**u8):
     ; union = stack_alloc $UnionTest
 
-    ; identity = func_ref identity
-    ; argv = apply identity<$**u8>(argv)
+    identity = func_ref identity
+    argv = apply identity<$**u8>(argv)
     print_args = func_ref print_args
     apply print_args(argc, argv)
     zero = const_int 0, $i32
@@ -63,9 +63,9 @@ exit:
 }
 
 
-; body identity <type T> {
-; 
-; entry(ret : $*T, x : $*T):
-;     copy_addr x, ret [init]
-;     return
-; }
+body identity <type T> {
+
+entry(ret : $*T, x : $*T):
+    copy_addr x, ret [init]
+    return
+}

@@ -111,6 +111,28 @@ impl TyAndLayout {
             | _ => unreachable!(),
         }
     }
+
+    pub fn field(&self, db: &dyn IrDatabase, idx: usize) -> TyAndLayout {
+        match self.ty.lookup(db).kind {
+            | typ::Box(of) => match idx {
+                | 0 => db.layout_of(of.ptr(db)),
+                | 1 => db.layout_of(Ty::int(db, Integer::ISize, false)),
+                | _ => unreachable!(),
+            },
+            | typ::Tuple(ref ts) => db.layout_of(ts[idx]),
+            | typ::Def(id, ref subst) => {
+                let subst = subst.as_deref().unwrap_or(&[]);
+                let info = id.lookup(db);
+                let body = info.body.as_ref().unwrap();
+
+                match body {
+                    | TypeDefBody::Struct { fields } => db.layout_of(fields[idx].ty.subst(db, subst, 0)),
+                    | _ => unimplemented!(),
+                }
+            },
+            | _ => unreachable!(),
+        }
+    }
 }
 
 impl Layout {

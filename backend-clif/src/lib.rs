@@ -1,6 +1,9 @@
+#![feature(once_cell)]
+
 mod intrinsic;
 mod pass;
 mod ptr;
+mod runtime;
 mod ty;
 mod value;
 
@@ -49,6 +52,7 @@ pub struct CodegenCtx<'ctx> {
     fcx: &'ctx mut clif::FunctionBuilderContext,
     module: clif::ObjectModule,
     func_ids: ArenaMap<Idx<ir::Func>, (clif::FuncId, clif::Signature)>,
+    runtime_defs: runtime::RuntimeDefs,
 }
 
 pub struct BodyCtx<'a, 'ctx> {
@@ -56,6 +60,7 @@ pub struct BodyCtx<'a, 'ctx> {
     bcx: clif::FunctionBuilder<'ctx>,
     func: Idx<ir::Func>,
     body: &'ctx ir::Body,
+    generic_params: Vec<Val>,
     blocks: ArenaMap<Idx<ir::BlockData>, clif::Block>,
     vars: ArenaMap<Idx<ir::VarInfo>, value::Val>,
     rets: Vec<Option<Pointer>>,
@@ -85,6 +90,7 @@ pub fn with_codegen_ctx<T>(db: &dyn IrDatabase, ir: &ir::Module, f: impl FnOnce(
         fcx: &mut fcx,
         module,
         func_ids: ArenaMap::default(),
+        runtime_defs: runtime::RuntimeDefs::default(),
     };
 
     f(ctx)
@@ -119,6 +125,7 @@ impl<'ctx> CodegenCtx<'ctx> {
             func: id,
             body: &self.ir[body],
             cx: self,
+            generic_params: Vec::new(),
             blocks: ArenaMap::default(),
             vars: ArenaMap::default(),
             rets: Vec::new(),
@@ -130,7 +137,7 @@ impl<'ctx> CodegenCtx<'ctx> {
 impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
     fn lower(&mut self) {
         let (id, sig) = self.func_ids[self.func].clone();
-        let (_, sig2) = self.ir.funcs[self.func].sig.get_sig(self.db);
+        let (generics, sig2) = self.ir.funcs[self.func].sig.get_sig(self.db);
         let ptr_type = self.module.target_config().pointer_type();
         let entry = self.bcx.create_block();
 
@@ -191,6 +198,19 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                         params.push(val);
                     },
                 }
+            }
+        }
+
+        for gen in generics {
+            match gen {
+                | ir::ty::GenericParam::Type => {
+                    let val = self.bcx.append_block_param(entry, ptr_type);
+                    let layout = self.db.layout_of(self.cx.typ());
+                    let val = Val::new_ref(Pointer::addr(val), layout);
+
+                    self.generic_params.push(val);
+                },
+                | _ => unimplemented!(),
             }
         }
 
@@ -270,7 +290,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     .zip(self.rets.clone())
                     .filter_map(|(v, r)| match r {
                         | Some(ptr) => {
-                            self.vars[v.0].clone().store_to(self, ptr);
+                            self.vars[v.0].clone().store_to(self, ptr, clif::MemFlags::trusted());
                             None
                         },
                         | None => Some(self.value_for_ret(self.vars[v.0].clone())),
@@ -302,12 +322,69 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         let ptr_type = self.module.target_config().pointer_type();
 
         match *instr {
+            | ir::Instr::StackAlloc { ret, ty } => {
+                let layout = self.db.layout_of(ty);
+                let size = layout.size.bytes();
+                let ss = self.bcx.create_stack_slot(clif::StackSlotData {
+                    kind: clif::StackSlotKind::ExplicitSlot,
+                    size: size as u32,
+                    offset: None,
+                });
+
+                let addr = self.bcx.ins().stack_addr(ptr_type, ss, 0);
+                let layout = self.db.layout_of(self.body[ret].ty);
+
+                self.vars.insert(ret.0, Val::new_val(addr, layout));
+            },
+            | ir::Instr::StackFree { addr: _ } => {},
             | ir::Instr::Load { ret, addr } => {
                 let addr = self.vars[addr.0].clone().load(self);
                 let layout = self.db.layout_of(self.body[ret].ty);
                 let res = Val::new_ref(Pointer::addr(addr), layout);
 
                 self.vars.insert(ret.0, res);
+            },
+            | ir::Instr::Store { val, addr } => {
+                let addr = self.vars[addr.0].clone().load(self);
+                let val = self.vars[val.0].clone();
+
+                val.store_to(self, Pointer::addr(addr), clif::MemFlags::new());
+            },
+            | ir::Instr::CopyAddr { old, new, flags: _ } => {
+                let elem_ty = self.body[old].ty.pointee(self.db).unwrap();
+                let old = self.vars[old.0].clone();
+                let new = self.vars[new.0].clone();
+
+                if let ir::ty::typ::Var(var) = elem_ty.lookup(self.db).kind {
+                    let typ = self.generic_params[var.idx()].clone();
+                    let vwt = typ.clone().field(self, 0).deref(self);
+                    let copy = vwt.field(self, 3);
+                    let sig = self.ty_as_sig(copy.layout().ty);
+                    let sig = self.bcx.import_signature(sig);
+                    let copy = copy.load(self);
+                    let typ = typ.as_ptr().0.get_addr(self);
+                    let old = old.load(self);
+                    let new = new.load(self);
+
+                    self.bcx.ins().call_indirect(sig, copy, &[new, old, typ]);
+                } else {
+                    let old_align = old.layout().align;
+                    let new_align = new.layout().align;
+                    let size = old.layout().size;
+                    let old = old.load(self);
+                    let new = new.load(self);
+
+                    self.bcx.emit_small_memory_copy(
+                        self.cx.module.target_config(),
+                        new,
+                        old,
+                        size.bytes(),
+                        new_align.bytes() as u8,
+                        old_align.bytes() as u8,
+                        true,
+                        clif::MemFlags::new(),
+                    );
+                }
             },
             | ir::Instr::ConstInt { ret, val } => {
                 let layout = self.db.layout_of(self.body[ret].ty);
@@ -318,10 +395,9 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             | ir::Instr::FuncRef { ret, func } => {
                 let (id, _) = self.func_ids[func.0];
                 let func = self.cx.module.declare_func_in_func(id, &mut self.cx.ctx.func);
-                let val = self.bcx.ins().func_addr(ptr_type, func);
                 let layout = self.db.layout_of(self.body[ret].ty);
 
-                self.vars.insert(ret.0, Val::new_val(val, layout));
+                self.vars.insert(ret.0, Val::new_func(func, layout));
             },
             | ir::Instr::Apply {
                 ref rets,
@@ -376,7 +452,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                         | pass::PassMode::ByRef { .. } => {
                             sig.params.push(clif::AbiParam::new(ptr_type));
 
-                            match self.vars[arg.0].clone().on_stack(self) {
+                            match self.vars[arg.0].clone().as_ptr() {
                                 | (ptr, None) => pass::EmptySinglePair::Single(ptr.get_addr(self)),
                                 | (ptr, Some(meta)) => pass::EmptySinglePair::Pair(ptr.get_addr(self), meta),
                             }
@@ -385,9 +461,15 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     .collect::<Vec<_>>();
 
                 let args = ret_ptrs.iter().map(|p| p.get_addr(self)).chain(args).collect::<Vec<_>>();
-                let func = self.vars[func.0].clone().load(self);
-                let sig = self.bcx.import_signature(sig);
-                let call = self.bcx.ins().call_indirect(sig, func, &args);
+                let call = if let Some(func) = self.vars[func.0].as_func() {
+                    self.bcx.ins().call(func, &args)
+                } else {
+                    let func = self.vars[func.0].clone().load(self);
+                    let sig = self.bcx.import_signature(sig);
+
+                    self.bcx.ins().call_indirect(sig, func, &args)
+                };
+
                 let mut res = self.bcx.inst_results(call).to_vec().into_iter();
                 let mut ret_ptrs = ret_ptrs.into_iter();
 

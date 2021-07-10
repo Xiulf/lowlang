@@ -13,6 +13,7 @@ pub enum ValInner {
     Value(clif::Value),
     ValuePair(clif::Value, clif::Value),
     Ref(Pointer, Option<clif::Value>),
+    Func(clif::ir::FuncRef),
 }
 
 impl Val {
@@ -40,6 +41,13 @@ impl Val {
     pub fn new_ref_meta(ptr: Pointer, meta: clif::Value, layout: TyAndLayout) -> Self {
         Self {
             inner: ValInner::Ref(ptr, Some(meta)),
+            layout,
+        }
+    }
+
+    pub fn new_func(func: clif::ir::FuncRef, layout: TyAndLayout) -> Self {
+        Self {
+            inner: ValInner::Func(func),
             layout,
         }
     }
@@ -107,14 +115,95 @@ impl Val {
         }
     }
 
-    pub fn on_stack(self, ctx: &mut BodyCtx) -> (Pointer, Option<clif::Value>) {
+    pub fn as_ptr(&self) -> (Pointer, Option<clif::Value>) {
         match self.inner {
             | ValInner::Ref(ptr, meta) => (ptr, meta),
-            | ValInner::Value(_) | ValInner::ValuePair(_, _) => unreachable!(),
+            | ValInner::Value(_) | ValInner::ValuePair(_, _) | ValInner::Func(_) => unreachable!(),
         }
     }
 
-    pub fn store_to(self, ctx: &mut BodyCtx, ptr: Pointer) {
+    pub fn as_func(&self) -> Option<clif::ir::FuncRef> {
+        match self.inner {
+            | ValInner::Func(func) => Some(func),
+            | _ => None,
+        }
+    }
+
+    pub fn deref(self, ctx: &mut BodyCtx) -> Self {
+        let pointee = self.layout().pointee(ctx.db);
+        let val = self.load(ctx);
+
+        Val::new_ref(Pointer::addr(val), pointee)
+    }
+
+    pub fn field(self, ctx: &mut BodyCtx, idx: usize) -> Self {
+        let layout = self.layout().field(ctx.db, idx);
+
+        match self.inner {
+            | ValInner::Value(val) => match self.layout().abi {
+                | Abi::Vector { .. } => {
+                    let lane = ctx.bcx.ins().extractlane(val, idx as u8);
+
+                    Self::new_val(lane, layout)
+                },
+                | _ => unreachable!(),
+            },
+            | ValInner::ValuePair(a, b) => match self.layout().abi {
+                | Abi::ScalarPair(_, _) => {
+                    let val = match idx {
+                        | 0 => a,
+                        | 1 => b,
+                        | _ => unreachable!(),
+                    };
+
+                    Self::new_val(val, layout)
+                },
+                | _ => unreachable!(),
+            },
+            | ValInner::Ref(ptr, None) => {
+                let offset = self.layout().fields.offset(idx).bytes();
+                let ptr = ptr.offset_i64(ctx, offset as i64);
+
+                Self::new_ref(ptr, layout)
+            },
+            | ValInner::Ref(_, Some(_)) => todo!(),
+            | ValInner::Func(_) => unreachable!(),
+        }
+    }
+
+    pub fn store_to(self, ctx: &mut BodyCtx, ptr: Pointer, flags: clif::MemFlags) {
+        match self.inner {
+            | ValInner::Func(func) => {
+                let ptr_type = ctx.module.target_config().pointer_type();
+                let addr = ctx.bcx.ins().func_addr(ptr_type, func);
+
+                ptr.store(ctx, addr, flags);
+            },
+            | ValInner::Value(val) => {
+                ptr.store(ctx, val, flags);
+            },
+            | ValInner::ValuePair(a, b) => {
+                let (sa, sb) = match &self.layout().abi {
+                    | Abi::ScalarPair(a, b) => (a, b),
+                    | _ => unreachable!(),
+                };
+
+                let b_offset = scalar_pair_calculabe_b_offset(ctx, sa, sb);
+
+                ptr.store(ctx, a, flags);
+                ptr.offset(ctx, b_offset).store(ctx, b, flags);
+            },
+            | ValInner::Ref(src, None) => {
+                let align = self.layout().align.bytes() as u8;
+                let size = self.layout().size.bytes();
+                let dst = ptr.get_addr(ctx);
+                let src = src.get_addr(ctx);
+
+                ctx.bcx
+                    .emit_small_memory_copy(ctx.cx.module.target_config(), dst, src, size, align, align, true, flags);
+            },
+            | ValInner::Ref(_, Some(_)) => unimplemented!(),
+        }
     }
 }
 
