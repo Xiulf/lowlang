@@ -45,6 +45,7 @@ pub enum TypeKind {
     Ptr(Ty),
     Box(Ty),
     Tuple(Vec<Ty>),
+    Array(Ty, u64),
     Var(GenericVar),
     Func(Signature),
     Generic(Vec<GenericParam>, Ty),
@@ -117,6 +118,10 @@ impl Ty {
 
     pub fn boxed(self, db: &dyn IrDatabase) -> Self {
         Self::new(db, typ::Box(self))
+    }
+
+    pub fn array(self, db: &dyn IrDatabase, len: u64) -> Self {
+        Self::new(db, typ::Array(self, len))
     }
 
     pub fn owned(self, db: &dyn IrDatabase) -> Self {
@@ -196,6 +201,8 @@ impl Ty {
                 | Subst::Type(t) => t,
                 | _ => panic!("Cannot substitute type"),
             },
+            | typ::Tuple(ref ts) => Ty::new(db, typ::Tuple(ts.iter().map(|t| t.subst(db, args, depth)).collect())),
+            | typ::Array(of, len) => Ty::new(db, typ::Array(of.subst(db, args, depth), len)),
             | typ::Func(ref sig) => Ty::new(
                 db,
                 typ::Func(Signature {

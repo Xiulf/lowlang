@@ -1,8 +1,8 @@
 module test
 
-; type Pair
-; type UnionTest
-; type Option
+type Pair
+type UnionTest
+type Option
 
 export main : $(i32, **u8) -> i32
 export identity : $<type T>([in] T) -> [out] T
@@ -11,27 +11,25 @@ import puts : $(*u8) -> i32
 ; import write : $(i32, *u8, usize) -> isize
 
 
-; struct Pair<type T> {
-;     a : $T,
-;     b : $T,
-; }
-; 
-; union UnionTest {
-;     a : $i32,
-;     b : $u16,
-; }
-; 
-; enum Option<type T> {
-;     None,
-;     Some : $(T),
-; }
+struct Pair<type T> {
+    a : $T,
+    b : $T,
+}
+
+union UnionTest {
+    a : $i32,
+    b : $u16,
+}
+
+enum Option<type T> {
+    None,
+    Some : $(T),
+}
 
 
 body main {
 
 entry(argc : $i32, argv : $**u8):
-    ; union = stack_alloc $UnionTest
-
     identity = func_ref identity
     argv = apply identity<$**u8>(argv)
     print_args = func_ref print_args

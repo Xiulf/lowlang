@@ -11,6 +11,7 @@ pub(super) struct RuntimeDefs {
     // runtime/metadata
     vwt: OnceCell<Ty>,
     typ: OnceCell<Ty>,
+    trivial_metas: OnceCell<clif::DataId>,
 }
 
 impl<'ctx> CodegenCtx<'ctx> {
@@ -84,7 +85,7 @@ impl<'ctx> CodegenCtx<'ctx> {
 
             vwt.lookup(self.db).define_struct(fields);
 
-            let ty = Ty::new(self.db, typ::Def(vwt, None));
+            let ty = Ty::new(self.db, typ::Def(vwt, None)).flag(self.db, ir::Flags::C_REPR);
 
             self.init_typ(typ, ty);
             ty
@@ -105,6 +106,18 @@ impl<'ctx> CodegenCtx<'ctx> {
         }];
 
         typ.lookup(self.db).define_struct(fields);
-        self.runtime_defs.typ.set(Ty::new(self.db, typ::Def(typ, None))).unwrap();
+
+        let ty = Ty::new(self.db, typ::Def(typ, None)).flag(self.db, ir::Flags::C_REPR);
+
+        self.runtime_defs.typ.set(ty).unwrap();
+    }
+
+    pub fn trivial_metas(&mut self) -> clif::DataId {
+        let module = &mut self.module;
+
+        *self
+            .runtime_defs
+            .trivial_metas
+            .get_or_init(|| module.declare_data("TRIVIAL_METAS", clif::Linkage::Import, false, false).unwrap())
     }
 }

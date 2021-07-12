@@ -43,6 +43,11 @@ impl AsBasicType for Ty {
 
                 ctx.context.struct_type(&ts, false).into()
             },
+            | typ::Array(of, len) => {
+                let of = of.as_basic_type(ctx);
+
+                of.array_type(len as u32).into()
+            },
             | typ::Var(_) => ctx.context.struct_type(&[], false).into(),
             | typ::Func(_) => {
                 let fn_type = self.as_func_type(ctx);

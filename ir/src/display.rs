@@ -441,6 +441,7 @@ impl fmt::Display for IrDisplay<'_, Ty> {
                 list(f, ts, |t, f| t.display(db).fmt(f))?;
                 write!(f, ")")
             },
+            | typ::Array(of, len) => write!(f, "[{}]{}", len, of.display(db)),
             | typ::Var(tv) => tv.fmt(f),
             | typ::Func(ref sig) => sig.display(db).fmt(f),
             | typ::Generic(ref params, ty) => {

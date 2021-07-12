@@ -310,6 +310,7 @@ impl<'a> Parser<'a> {
 
     fn parse_type(&mut self) -> Option<Ty> {
         let owned = self.eat(Flag("owned"));
+        let non_null = self.eat(Flag("non_null"));
         let mut ty = match self.lexer.next()? {
             | Star => self.parse_type().map(|t| t.ptr(self.db)),
             | Ident("box") => self.parse_type().map(|t| t.boxed(self.db)),
@@ -420,6 +421,10 @@ impl<'a> Parser<'a> {
 
         if owned {
             ty = ty.map(|t| t.owned(self.db));
+        }
+
+        if non_null {
+            ty = ty.map(|t| t.flag(self.db, Flags::NON_NULL));
         }
 
         ty

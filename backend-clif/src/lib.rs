@@ -1,6 +1,7 @@
 #![feature(once_cell)]
 
 mod intrinsic;
+mod metadata;
 mod pass;
 mod ptr;
 mod runtime;
@@ -324,31 +325,29 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         match *instr {
             | ir::Instr::StackAlloc { ret, ty } => {
                 let layout = self.db.layout_of(ty);
-                let size = layout.size.bytes();
                 let ss = self.bcx.create_stack_slot(clif::StackSlotData {
                     kind: clif::StackSlotKind::ExplicitSlot,
-                    size: size as u32,
+                    size: layout.size.bytes() as u32,
                     offset: None,
                 });
 
-                let addr = self.bcx.ins().stack_addr(ptr_type, ss, 0);
                 let layout = self.db.layout_of(self.body[ret].ty);
 
-                self.vars.insert(ret.0, Val::new_val(addr, layout));
+                self.vars.insert(ret.0, Val::new_addr(Pointer::stack(ss), layout));
             },
             | ir::Instr::StackFree { addr: _ } => {},
             | ir::Instr::Load { ret, addr } => {
-                let addr = self.vars[addr.0].clone().load(self);
+                let ptr = self.vars[addr.0].clone().as_ptr();
                 let layout = self.db.layout_of(self.body[ret].ty);
-                let res = Val::new_ref(Pointer::addr(addr), layout);
+                let res = Val::new_ref(ptr, layout);
 
                 self.vars.insert(ret.0, res);
             },
             | ir::Instr::Store { val, addr } => {
-                let addr = self.vars[addr.0].clone().load(self);
+                let ptr = self.vars[addr.0].clone().as_ptr();
                 let val = self.vars[val.0].clone();
 
-                val.store_to(self, Pointer::addr(addr), clif::MemFlags::new());
+                val.store_to(self, ptr, clif::MemFlags::new());
             },
             | ir::Instr::CopyAddr { old, new, flags: _ } => {
                 let elem_ty = self.body[old].ty.pointee(self.db).unwrap();
@@ -362,7 +361,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     let sig = self.ty_as_sig(copy.layout().ty);
                     let sig = self.bcx.import_signature(sig);
                     let copy = copy.load(self);
-                    let typ = typ.as_ptr().0.get_addr(self);
+                    let typ = typ.as_ref().0.get_addr(self);
                     let old = old.load(self);
                     let new = new.load(self);
 
@@ -399,11 +398,48 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
 
                 self.vars.insert(ret.0, Val::new_func(func, layout));
             },
+            | ir::Instr::Tuple { ret, ref vals } => {
+                let layout = self.db.layout_of(self.body[ret].ty);
+                let ss = self.bcx.create_stack_slot(clif::StackSlotData {
+                    kind: clif::StackSlotKind::ExplicitSlot,
+                    size: layout.size.bytes() as u32,
+                    offset: None,
+                });
+
+                let res = Val::new_ref(Pointer::stack(ss), layout);
+
+                for (i, val) in vals.iter().enumerate() {
+                    let (ptr, _) = res.clone().field(self, i).as_ref();
+
+                    self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::trusted());
+                }
+
+                self.vars.insert(ret.0, res);
+            },
+            | ir::Instr::TupleExtract { ret, tuple, field } => {
+                let field = self.vars[tuple.0].clone().field(self, field);
+
+                self.vars.insert(ret.0, field);
+            },
+            | ir::Instr::TupleInsert { tuple, field, val } => {
+                let field = self.vars[tuple.0].clone().field(self, field);
+                let (ptr, _) = field.as_ref();
+
+                self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::new());
+            },
+            | ir::Instr::TupleAddr { ret, tuple, field } => {
+                let layout = self.db.layout_of(self.body[ret].ty);
+                let field = self.vars[tuple.0].clone().field(self, field);
+                let (ptr, _) = field.as_ref();
+                let addr = Val::new_val(ptr.get_addr(self), layout);
+
+                self.vars.insert(ret.0, addr);
+            },
             | ir::Instr::Apply {
                 ref rets,
                 func,
                 ref args,
-                subst: _,
+                ref subst,
             } => {
                 let mut ret_ptrs = Vec::new();
                 let mut sig = self.cx.module.make_signature();
@@ -452,7 +488,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                         | pass::PassMode::ByRef { .. } => {
                             sig.params.push(clif::AbiParam::new(ptr_type));
 
-                            match self.vars[arg.0].clone().as_ptr() {
+                            match self.vars[arg.0].clone().as_ref() {
                                 | (ptr, None) => pass::EmptySinglePair::Single(ptr.get_addr(self)),
                                 | (ptr, Some(meta)) => pass::EmptySinglePair::Pair(ptr.get_addr(self), meta),
                             }
@@ -460,7 +496,19 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     })
                     .collect::<Vec<_>>();
 
-                let args = ret_ptrs.iter().map(|p| p.get_addr(self)).chain(args).collect::<Vec<_>>();
+                let gen_args = subst
+                    .iter()
+                    .flat_map(|sub| match *sub {
+                        | ir::ty::Subst::Type(t) => {
+                            sig.params.push(clif::AbiParam::new(ptr_type));
+                            pass::EmptySinglePair::Single(self.find_type_metadata(t).unwrap().load(self))
+                        },
+                        | _ => unimplemented!(),
+                    })
+                    .collect::<Vec<_>>();
+
+                let args = ret_ptrs.iter().map(|p| p.get_addr(self)).chain(args).chain(gen_args).collect::<Vec<_>>();
+
                 let call = if let Some(func) = self.vars[func.0].as_func() {
                     self.bcx.ins().call(func, &args)
                 } else {
@@ -500,6 +548,59 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 self.lower_intrinsic(name.as_str(), rets, args);
             },
             | _ => unimplemented!("{}", instr.display(self.db, self.body)),
+        }
+    }
+
+    fn emit_memcpy(
+        &mut self,
+        dst: clif::Value,
+        src: clif::Value,
+        size: ir::layout::Size,
+        align: ir::layout::Align,
+        non_overlapping: bool,
+        mut flags: clif::MemFlags,
+    ) {
+        const THRESHOLD: u64 = 4;
+
+        if size == ir::layout::Size::ZERO {
+            return;
+        }
+
+        let ptr_type = self.module.target_config().pointer_type();
+        let rest = size % (align as u64);
+        let access_size = (size as i64 & -(size as i64)) as u64;
+        let (access_size, int_type) = if access_size <= 8 {
+            (access_size, clif::Type::int((access_size * 8) as u16).unwrap())
+        } else {
+            (8, clif::types::I64)
+        };
+
+        let load_and_store_amount = size / access_size;
+
+        if load_and_store_amount > THRESHOLD {
+            let size_value = self.bcx.ins().iconst(ptr_type, size as i64);
+
+            if non_overlapping {
+                self.bcx.call_memcpy(self.cx.module.target_config(), dst, src, size_value);
+            } else {
+                self.bcx.call_memmove(self.cx.module.target_config(), dst, src, size_value);
+            }
+
+            return;
+        }
+
+        flags.set_aligned();
+
+        let registers = (0..load_and_store_amount)
+            .map(|i| {
+                let offset = (access_size * i) as i32;
+
+                (self.bcx.ins().load(int_type, flags, src, offset), offset)
+            })
+            .collect::<Vec<_>>();
+
+        for (value, offset) in registers {
+            self.bcx.ins().store(flags, value, dst, offset);
         }
     }
 }

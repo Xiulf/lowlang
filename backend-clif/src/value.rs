@@ -14,6 +14,7 @@ pub enum ValInner {
     ValuePair(clif::Value, clif::Value),
     Ref(Pointer, Option<clif::Value>),
     Func(clif::ir::FuncRef),
+    Addr(Pointer),
 }
 
 impl Val {
@@ -48,6 +49,13 @@ impl Val {
     pub fn new_func(func: clif::ir::FuncRef, layout: TyAndLayout) -> Self {
         Self {
             inner: ValInner::Func(func),
+            layout,
+        }
+    }
+
+    pub fn new_addr(ptr: Pointer, layout: TyAndLayout) -> Self {
+        Self {
+            inner: ValInner::Addr(ptr),
             layout,
         }
     }
@@ -90,6 +98,7 @@ impl Val {
 
                 ptr.load(ctx, ty, clif::MemFlags::new())
             },
+            | ValInner::Addr(ptr) => ptr.get_addr(ctx),
             | _ => unreachable!(),
         }
     }
@@ -115,10 +124,18 @@ impl Val {
         }
     }
 
-    pub fn as_ptr(&self) -> (Pointer, Option<clif::Value>) {
+    pub fn as_ptr(&self) -> Pointer {
+        match self.inner {
+            | ValInner::Addr(ptr) => ptr,
+            | ValInner::Value(addr) => Pointer::addr(addr),
+            | _ => unreachable!(),
+        }
+    }
+
+    pub fn as_ref(&self) -> (Pointer, Option<clif::Value>) {
         match self.inner {
             | ValInner::Ref(ptr, meta) => (ptr, meta),
-            | ValInner::Value(_) | ValInner::ValuePair(_, _) | ValInner::Func(_) => unreachable!(),
+            | _ => unreachable!(),
         }
     }
 
@@ -168,6 +185,7 @@ impl Val {
             },
             | ValInner::Ref(_, Some(_)) => todo!(),
             | ValInner::Func(_) => unreachable!(),
+            | ValInner::Addr(_) => unreachable!(),
         }
     }
 
@@ -199,8 +217,14 @@ impl Val {
                 let dst = ptr.get_addr(ctx);
                 let src = src.get_addr(ctx);
 
-                ctx.bcx
-                    .emit_small_memory_copy(ctx.cx.module.target_config(), dst, src, size, align, align, true, flags);
+                ctx.emit_memcpy(dst, src, size, align, align, true, flags);
+                // ctx.bcx
+                //     .emit_small_memory_copy(ctx.cx.module.target_config(), dst, src, size, align, align, true, flags);
+            },
+            | ValInner::Addr(addr) => {
+                let addr = addr.get_addr(ctx);
+
+                ptr.store(ctx, addr, flags);
             },
             | ValInner::Ref(_, Some(_)) => unimplemented!(),
         }

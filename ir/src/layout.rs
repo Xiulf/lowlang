@@ -57,7 +57,7 @@ pub enum Primitive {
     Pointer,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub enum Integer {
     I8,
     I16,
@@ -384,6 +384,16 @@ impl Integer {
             | _ => Integer::I128,
         }
     }
+
+    pub fn for_align(wanted: Align, triple: &Triple) -> Option<Self> {
+        for candidate in [Self::I8, Self::I16, Self::I32, Self::I64, Self::I128] {
+            if wanted == candidate.align(triple) && wanted.bytes() == candidate.size(triple).bytes() {
+                return Some(candidate);
+            }
+        }
+
+        None
+    }
 }
 
 impl Fields {
@@ -534,6 +544,22 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
 
             struct_layout(&info, &fields, &triple)
         },
+        | typ::Array(of, len) => {
+            let of_layout = db.layout_of(of);
+
+            Layout {
+                size: of_layout.stride * len,
+                align: of_layout.align,
+                stride: of_layout.stride * len,
+                abi: Abi::Aggregate { sized: true },
+                fields: Fields::Array {
+                    stride: of_layout.stride,
+                    count: len,
+                },
+                variants: Variants::Single { index: 0 },
+                largest_niche: None,
+            }
+        },
         | typ::Func(_) => {
             let mut scalar = scalar_unit(Primitive::Pointer);
 
@@ -545,6 +571,7 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
         | typ::Var(_) => unreachable!(),
         | typ::Def(id, ref subst) => {
             let def = id.lookup(db);
+            let subst = subst.as_deref().unwrap_or(&[]);
 
             match &def.body {
                 | None => Layout::UNINHABITED,
@@ -553,7 +580,7 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
                         let fields = fields
                             .iter()
                             .map(|f| {
-                                let ty = if let Some(subst) = subst { f.ty.subst(db, subst, 0) } else { f.ty };
+                                let ty = f.ty.subst(db, subst, 0);
 
                                 db.layout_of(ty)
                             })
@@ -565,7 +592,7 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
                         let fields = fields
                             .iter()
                             .map(|f| {
-                                let ty = if let Some(subst) = subst { f.ty.subst(db, subst, 0) } else { f.ty };
+                                let ty = f.ty.subst(db, subst, 0);
 
                                 db.layout_of(ty)
                             })
@@ -578,7 +605,7 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
                             .iter()
                             .map(|v| {
                                 v.payload.map(|p| {
-                                    let ty = if let Some(subst) = subst { p.subst(db, subst, 0) } else { p };
+                                    let ty = p.subst(db, subst, 0);
 
                                     db.layout_of(ty).layout
                                 })
@@ -906,6 +933,7 @@ fn enum_layout(info: &Type, variants: &[Option<Layout>], triple: &Triple) -> Lay
     let mut align = Align::ONE;
     let mut size = Size::ZERO;
     let mut prefix_align = discr.align(triple);
+    let mut start_align = Align::from_bytes(256);
 
     if info.flags.is_set(Flags::C_REPR) {
         for v in variants {
@@ -915,17 +943,14 @@ fn enum_layout(info: &Type, variants: &[Option<Layout>], triple: &Triple) -> Lay
         }
     }
 
-    let prefix_size = discr.size(triple).align_to(prefix_align);
-    let layout_variants = variants
+    let mut layout_variants = variants
         .iter()
         .enumerate()
         .map(|(i, payload)| {
             let mut st = payload.clone().unwrap_or(Layout::UNIT);
 
-            if let Fields::Arbitrary { offsets, .. } = &mut st.fields {
-                for offset in offsets {
-                    *offset = *offset + prefix_size;
-                }
+            if !st.is_zst() || st.align.bytes() != 1 {
+                start_align = start_align.min(st.align);
             }
 
             size = size.max(st.size);
@@ -935,13 +960,30 @@ fn enum_layout(info: &Type, variants: &[Option<Layout>], triple: &Triple) -> Lay
         })
         .collect::<Vec<_>>();
 
-    size = size + prefix_size;
+    let mut ity = if info.flags.is_set(Flags::C_REPR) {
+        discr
+    } else {
+        Integer::for_align(start_align, triple).unwrap_or(discr)
+    };
+
+    if ity <= discr {
+        ity = discr;
+    }
+
+    size = size + ity.size(triple);
+
+    for lyt in &mut layout_variants {
+        if let Fields::Arbitrary { offsets, .. } = &mut lyt.fields {
+            for offset in offsets {
+                *offset = *offset + ity.size(triple);
+            }
+        }
+    }
 
     let stride = size.align_to(align);
-    let tag_mask = !0u128 >> (128 - discr.size(triple).bits());
     let tag = Scalar {
-        value: Primitive::Int(discr, false),
-        valid_range: (0 & tag_mask)..=(variants.len() as u128 & tag_mask),
+        value: Primitive::Int(ity, false),
+        valid_range: 0..=(variants.len() - 1) as u128,
     };
 
     let mut abi = Abi::Aggregate { sized: true };

@@ -69,7 +69,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
 
                 EmptySinglePair::Pair(a, b)
             },
-            | PassMode::ByRef { .. } => match val.as_ptr() {
+            | PassMode::ByRef { .. } => match val.as_ref() {
                 | (ptr, None) => EmptySinglePair::Single(ptr.get_addr(self)),
                 | (ptr, Some(meta)) => EmptySinglePair::Pair(ptr.get_addr(self), meta),
             },
