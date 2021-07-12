@@ -323,8 +323,9 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
             | Instr::ConstStr { ret, val } => write!(f, "{} = const_str {:?}", ret, val),
             | Instr::FuncRef { ret, func } => write!(f, "{} = func_ref {}", ret, func),
             | Instr::Tuple { ret, vals } => {
-                write!(f, "{} = tuple ", ret)?;
-                list(f, vals, Var::fmt)
+                write!(f, "{} = tuple (", ret)?;
+                list(f, vals, Var::fmt)?;
+                write!(f, ")")
             },
             | Instr::TupleExtract { ret, tuple, field } => write!(f, "{} = tuple_extract {}, {}", ret, tuple, field),
             | Instr::TupleInsert { tuple, field, val } => write!(f, "tuple_field {}, {}, {}", tuple, field, val),

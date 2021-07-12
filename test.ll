@@ -30,6 +30,8 @@ enum Option<type T> {
 body main {
 
 entry(argc : $i32, argv : $**u8):
+    test = struct $Pair<$i32> (argc, argc)
+
     identity = func_ref identity
     argv = apply identity<$**u8>(argv)
     print_args = func_ref print_args

@@ -12,6 +12,7 @@ use arena::{ArenaMap, Idx};
 use clif::InstBuilder;
 use cranelift_module::Module;
 use ir::db::IrDatabase;
+use ir::layout::Abi;
 use ptr::Pointer;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -367,22 +368,10 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
 
                     self.bcx.ins().call_indirect(sig, copy, &[new, old, typ]);
                 } else {
-                    let old_align = old.layout().align;
-                    let new_align = new.layout().align;
-                    let size = old.layout().size;
-                    let old = old.load(self);
-                    let new = new.load(self);
+                    let align = old.layout().align.bytes();
+                    let size = old.layout().size.bytes();
 
-                    self.bcx.emit_small_memory_copy(
-                        self.cx.module.target_config(),
-                        new,
-                        old,
-                        size.bytes(),
-                        new_align.bytes() as u8,
-                        old_align.bytes() as u8,
-                        true,
-                        clif::MemFlags::new(),
-                    );
+                    self.emit_memcpy(new.as_ptr(), old.as_ptr(), size, align, true, clif::MemFlags::new());
                 }
             },
             | ir::Instr::ConstInt { ret, val } => {
@@ -400,19 +389,38 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             },
             | ir::Instr::Tuple { ret, ref vals } => {
                 let layout = self.db.layout_of(self.body[ret].ty);
-                let ss = self.bcx.create_stack_slot(clif::StackSlotData {
-                    kind: clif::StackSlotKind::ExplicitSlot,
-                    size: layout.size.bytes() as u32,
-                    offset: None,
-                });
+                let res = match &layout.abi {
+                    | Abi::Scalar(_) => {
+                        assert_eq!(vals.len(), 1);
+                        let val = self.vars[vals[0].0].clone().load(self);
 
-                let res = Val::new_ref(Pointer::stack(ss), layout);
+                        Val::new_val(val, layout)
+                    },
+                    | Abi::ScalarPair(_, _) => {
+                        assert_eq!(vals.len(), 2);
+                        let a = self.vars[vals[0].0].clone().load(self);
+                        let b = self.vars[vals[1].0].clone().load(self);
 
-                for (i, val) in vals.iter().enumerate() {
-                    let (ptr, _) = res.clone().field(self, i).as_ref();
+                        Val::new_val_pair(a, b, layout)
+                    },
+                    | _ => {
+                        let ss = self.bcx.create_stack_slot(clif::StackSlotData {
+                            kind: clif::StackSlotKind::ExplicitSlot,
+                            size: layout.size.bytes() as u32,
+                            offset: None,
+                        });
 
-                    self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::trusted());
-                }
+                        let res = Val::new_ref(Pointer::stack(ss), layout);
+
+                        for (i, val) in vals.iter().enumerate() {
+                            let (ptr, _) = res.clone().field(self, i).as_ref();
+
+                            self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::trusted());
+                        }
+
+                        res
+                    },
+                };
 
                 self.vars.insert(ret.0, res);
             },
@@ -422,16 +430,38 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 self.vars.insert(ret.0, field);
             },
             | ir::Instr::TupleInsert { tuple, field, val } => {
-                let field = self.vars[tuple.0].clone().field(self, field);
-                let (ptr, _) = field.as_ref();
+                let tuple_val = self.vars[tuple.0].clone();
 
-                self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::new());
+                match &tuple_val.layout().abi {
+                    | Abi::Scalar(_) => {
+                        assert_eq!(field, 0);
+
+                        let val = self.vars[val.0].clone();
+
+                        self.vars.insert(tuple.0, val);
+                    },
+                    | Abi::ScalarPair(_, _) => {
+                        assert!(field < 2);
+
+                        let layout = tuple_val.layout().clone();
+                        let (_, b) = tuple_val.load_pair(self);
+                        let a = self.vars[val.0].clone().load(self);
+
+                        self.vars.insert(tuple.0, Val::new_val_pair(a, b, layout));
+                    },
+                    | _ => {
+                        let field = tuple_val.field(self, field);
+                        let (ptr, _) = field.as_ref();
+
+                        self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::new());
+                    },
+                }
             },
             | ir::Instr::TupleAddr { ret, tuple, field } => {
-                let layout = self.db.layout_of(self.body[ret].ty);
-                let field = self.vars[tuple.0].clone().field(self, field);
-                let (ptr, _) = field.as_ref();
-                let addr = Val::new_val(ptr.get_addr(self), layout);
+                let layout = self.db.layout_of(self.body[tuple].ty).pointee(self.db);
+                let offset = layout.fields.offset(field).bytes() as i64;
+                let ptr = self.vars[tuple.0].as_ptr();
+                let addr = Val::new_addr(ptr.offset_i64(self, offset), layout);
 
                 self.vars.insert(ret.0, addr);
             },
@@ -551,56 +581,55 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         }
     }
 
-    fn emit_memcpy(
-        &mut self,
-        dst: clif::Value,
-        src: clif::Value,
-        size: ir::layout::Size,
-        align: ir::layout::Align,
-        non_overlapping: bool,
-        mut flags: clif::MemFlags,
-    ) {
+    fn emit_memcpy(&mut self, dst: Pointer, src: Pointer, mut size: u64, mut align: u64, non_overlapping: bool, mut flags: clif::MemFlags) {
         const THRESHOLD: u64 = 4;
 
-        if size == ir::layout::Size::ZERO {
-            return;
-        }
+        let mut offset = 0;
+        let mut registers = Vec::new();
 
-        let ptr_type = self.module.target_config().pointer_type();
-        let rest = size % (align as u64);
-        let access_size = (size as i64 & -(size as i64)) as u64;
-        let (access_size, int_type) = if access_size <= 8 {
-            (access_size, clif::Type::int((access_size * 8) as u16).unwrap())
-        } else {
-            (8, clif::types::I64)
-        };
-
-        let load_and_store_amount = size / access_size;
-
-        if load_and_store_amount > THRESHOLD {
-            let size_value = self.bcx.ins().iconst(ptr_type, size as i64);
-
-            if non_overlapping {
-                self.bcx.call_memcpy(self.cx.module.target_config(), dst, src, size_value);
+        while size != 0 {
+            let access_size = (size as i64 & -(size as i64)) as u64;
+            let access_size = access_size.max(align);
+            let (access_size, int_type) = if access_size <= 8 {
+                (access_size, clif::Type::int((access_size * 8) as u16).unwrap())
             } else {
-                self.bcx.call_memmove(self.cx.module.target_config(), dst, src, size_value);
+                (8, clif::types::I64)
+            };
+
+            let rest = size % access_size;
+            let load_and_store_amount = size / access_size;
+
+            if load_and_store_amount > THRESHOLD {
+                let ptr_type = self.module.target_config().pointer_type();
+                let size_value = self.bcx.ins().iconst(ptr_type, size as i64);
+                let dst = dst.get_addr(self);
+                let src = src.get_addr(self);
+
+                if non_overlapping {
+                    self.bcx.call_memcpy(self.cx.module.target_config(), dst, src, size_value);
+                } else {
+                    self.bcx.call_memmove(self.cx.module.target_config(), dst, src, size_value);
+                }
+
+                return;
             }
 
-            return;
+            flags.set_aligned();
+            registers.reserve(load_and_store_amount as usize);
+
+            for i in 0..load_and_store_amount {
+                let offset = (access_size * i) as i32 + offset;
+
+                registers.push((src.offset(self, offset).load(self, int_type, flags), offset));
+            }
+
+            size = rest;
+            align = rest;
+            offset += (access_size * load_and_store_amount) as i32;
         }
 
-        flags.set_aligned();
-
-        let registers = (0..load_and_store_amount)
-            .map(|i| {
-                let offset = (access_size * i) as i32;
-
-                (self.bcx.ins().load(int_type, flags, src, offset), offset)
-            })
-            .collect::<Vec<_>>();
-
         for (value, offset) in registers {
-            self.bcx.ins().store(flags, value, dst, offset);
+            dst.offset(self, offset).store(self, value, flags);
         }
     }
 }

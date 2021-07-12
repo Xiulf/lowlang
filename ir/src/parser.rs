@@ -843,16 +843,19 @@ impl<'a, 'b> BodyParser<'a, 'b> {
             },
             | "tuple" => {
                 let mut vals = Vec::new();
+                let _ = self.expect(LParen)?;
 
-                if let Some(var) = self.peek_var() {
-                    self.lexer.next()?;
+                if self.lexer.peek() != Some(&RParen) {
+                    let var = self.ident()?;
+
                     vals.push(self.vars[var]);
 
-                    while self.eat(Comma) {
-                        let var = self.ident()?;
-                        vals.push(self.vars[var]);
+                    if self.lexer.peek() != Some(&RParen) {
+                        self.expect(Comma)?;
                     }
                 }
+
+                self.expect(RParen)?;
 
                 let ret = self.builder.tuple(vals);
 

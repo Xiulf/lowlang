@@ -82,8 +82,8 @@ impl Pointer {
         };
     }
 
-    pub fn offset(self, ctx: &mut BodyCtx, offset: Offset32) -> Self {
-        self.offset_i64(ctx, offset.into())
+    pub fn offset(self, ctx: &mut BodyCtx, offset: impl Into<Offset32>) -> Self {
+        self.offset_i64(ctx, offset.into().into())
     }
 
     pub fn offset_i64(self, ctx: &mut BodyCtx, offset: i64) -> Self {

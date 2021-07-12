@@ -112,10 +112,11 @@ impl Val {
                     | _ => unreachable!(),
                 };
 
-                let b_offset = scalar_pair_calculabe_b_offset(ctx, a, b);
                 let ty1 = ctx.scalar_type(a);
                 let ty2 = ctx.scalar_type(b);
-                let val1 = ptr.load(ctx, ty1, clif::MemFlags::new());
+                let a_offset = self.layout().fields.offset(0).bytes() as i32;
+                let b_offset = self.layout().fields.offset(1).bytes() as i32;
+                let val1 = ptr.offset(ctx, a_offset).load(ctx, ty1, clif::MemFlags::new());
                 let val2 = ptr.offset(ctx, b_offset).load(ctx, ty2, clif::MemFlags::new());
 
                 (val1, val2)
@@ -201,25 +202,17 @@ impl Val {
                 ptr.store(ctx, val, flags);
             },
             | ValInner::ValuePair(a, b) => {
-                let (sa, sb) = match &self.layout().abi {
-                    | Abi::ScalarPair(a, b) => (a, b),
-                    | _ => unreachable!(),
-                };
+                let a_offset = self.layout().fields.offset(0).bytes() as i32;
+                let b_offset = self.layout().fields.offset(1).bytes() as i32;
 
-                let b_offset = scalar_pair_calculabe_b_offset(ctx, sa, sb);
-
-                ptr.store(ctx, a, flags);
+                ptr.offset(ctx, a_offset).store(ctx, a, flags);
                 ptr.offset(ctx, b_offset).store(ctx, b, flags);
             },
             | ValInner::Ref(src, None) => {
-                let align = self.layout().align.bytes() as u8;
+                let align = self.layout().align.bytes();
                 let size = self.layout().size.bytes();
-                let dst = ptr.get_addr(ctx);
-                let src = src.get_addr(ctx);
 
-                ctx.emit_memcpy(dst, src, size, align, align, true, flags);
-                // ctx.bcx
-                //     .emit_small_memory_copy(ctx.cx.module.target_config(), dst, src, size, align, align, true, flags);
+                ctx.emit_memcpy(ptr, src, size, align, true, flags);
             },
             | ValInner::Addr(addr) => {
                 let addr = addr.get_addr(ctx);
