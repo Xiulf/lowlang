@@ -698,6 +698,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
             "drop_addr",
             "drop_value",
             "tuple_insert",
+            "struct_insert",
             "apply",
             "intrinsic",
         ];
@@ -888,6 +889,57 @@ impl<'a, 'b> BodyParser<'a, 'b> {
                 let _ = self.expect(Comma)?;
                 let field = self.int()? as usize;
                 let ret = self.builder.tuple_addr(tuple, field);
+
+                vec![ret]
+            },
+            | "struct" => {
+                let _ = self.expect(Dollar)?;
+                let ty = self.parse_type()?;
+                let mut vals = Vec::new();
+                let _ = self.expect(LParen)?;
+
+                while self.lexer.peek() != Some(&RParen) {
+                    let lbl = self.ident()?;
+                    let _ = self.expect(Colon)?;
+                    let var = self.ident()?;
+
+                    vals.push((lbl.to_string(), self.vars[var]));
+
+                    if self.lexer.peek() != Some(&RParen) {
+                        self.expect(Comma)?;
+                    }
+                }
+
+                self.expect(RParen)?;
+
+                let ret = self.builder.struct_(ty, vals);
+
+                vec![ret]
+            },
+            | "struct_extract" => {
+                let struc = self.ident()?;
+                let _ = self.expect(Comma)?;
+                let field = self.ident()?;
+                let ret = self.builder.struct_extract(self.vars[struc], field);
+
+                vec![ret]
+            },
+            | "struct_insert" => {
+                let struc = self.ident()?;
+                let _ = self.expect(Comma)?;
+                let field = self.ident()?;
+                let _ = self.expect(Comma)?;
+                let val = self.ident()?;
+
+                self.builder.struct_insert(self.vars[struc], field, self.vars[val]);
+
+                Vec::new()
+            },
+            | "struct_addr" => {
+                let struc = self.ident()?;
+                let _ = self.expect(Comma)?;
+                let field = self.ident()?;
+                let ret = self.builder.struct_addr(self.vars[struc], field);
 
                 vec![ret]
             },

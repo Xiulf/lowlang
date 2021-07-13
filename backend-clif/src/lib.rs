@@ -397,9 +397,15 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                         Val::new_val(val, layout)
                     },
                     | Abi::ScalarPair(_, _) => {
-                        assert_eq!(vals.len(), 2);
-                        let a = self.vars[vals[0].0].clone().load(self);
-                        let b = self.vars[vals[1].0].clone().load(self);
+                        assert!(vals.len() <= 2);
+
+                        let (a, b) = if vals.len() == 1 {
+                            self.vars[vals[0].0].clone().load_pair(self)
+                        } else {
+                            let a = self.vars[vals[0].0].clone().load(self);
+                            let b = self.vars[vals[1].0].clone().load(self);
+                            (a, b)
+                        };
 
                         Val::new_val_pair(a, b, layout)
                     },
@@ -464,6 +470,47 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 let addr = Val::new_addr(ptr.offset_i64(self, offset), layout);
 
                 self.vars.insert(ret.0, addr);
+            },
+            | ir::Instr::Struct { ret, ty, fields: ref vals } => {
+                if let ir::ty::typ::Def(id, _) = ty.lookup(self.db).kind {
+                    let def = id.lookup(self.db);
+
+                    if let Some(ir::TypeDefBody::Struct { ref fields } | ir::TypeDefBody::Union { ref fields }) = def.body {
+                        let layout = self.db.layout_of(ty);
+                        let res = match &layout.abi {
+                            | Abi::Scalar(_) => {
+                                assert_eq!(fields.len(), 1);
+                                let val = self.vars[(vals[0].1).0].clone().load(self);
+
+                                Val::new_val(val, layout)
+                            },
+                            | Abi::ScalarPair(_, _) => {
+                                assert!(fields.len() <= 2);
+                                unimplemented!()
+                            },
+                            | _ => {
+                                let ss = self.bcx.create_stack_slot(clif::StackSlotData {
+                                    kind: clif::StackSlotKind::ExplicitSlot,
+                                    size: layout.size.bytes() as u32,
+                                    offset: None,
+                                });
+
+                                let res = Val::new_ref(Pointer::stack(ss), layout);
+
+                                for (name, val) in vals {
+                                    let idx = fields.iter().position(|f| f.name == *name).unwrap();
+                                    let (ptr, _) = res.clone().field(self, idx).as_ref();
+
+                                    self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::trusted());
+                                }
+
+                                res
+                            },
+                        };
+
+                        self.vars.insert(ret.0, res);
+                    }
+                }
             },
             | ir::Instr::Apply {
                 ref rets,

@@ -330,6 +330,14 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
             | Instr::TupleExtract { ret, tuple, field } => write!(f, "{} = tuple_extract {}, {}", ret, tuple, field),
             | Instr::TupleInsert { tuple, field, val } => write!(f, "tuple_field {}, {}, {}", tuple, field, val),
             | Instr::TupleAddr { ret, tuple, field } => write!(f, "{} = tuple_addr {}, {}", ret, tuple, field),
+            | Instr::Struct { ret, ty, fields } => {
+                write!(f, "{} = struct ${} (", ret, ty.display(self.db))?;
+                list(f, fields, |v, f| write!(f, "{}: {}", v.0, v.1))?;
+                write!(f, ")")
+            },
+            | Instr::StructExtract { ret, struc, field } => write!(f, "{} = struct_extract {}, {}", ret, struc, field),
+            | Instr::StructInsert { struc, field, val } => write!(f, "struct_insert {}, {}, {}", struc, field, val),
+            | Instr::StructAddr { ret, struc, field } => write!(f, "{} = struct_addr {}, {}", ret, struc, field),
             | Instr::Apply { rets, func, args, subst } => {
                 if !rets.is_empty() {
                     list(f, rets, Var::fmt)?;

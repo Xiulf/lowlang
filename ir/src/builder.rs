@@ -1,5 +1,6 @@
 use crate::db::IrDatabase;
 use crate::*;
+use std::iter::FromIterator;
 
 impl Module {
     pub fn new(name: impl Into<String>) -> Self {
@@ -53,7 +54,7 @@ impl TypeDef {
 
     pub fn define_struct(self: &Arc<Self>, fields: impl IntoIterator<Item = TypeDefField>) {
         let body = TypeDefBody::Struct {
-            fields: fields.into_iter().collect(),
+            fields: Vec::from_iter(fields),
         };
 
         let this = Arc::as_ptr(self) as *mut TypeDef;
@@ -65,7 +66,7 @@ impl TypeDef {
 
     pub fn define_union(self: &Arc<Self>, fields: impl IntoIterator<Item = TypeDefField>) {
         let body = TypeDefBody::Union {
-            fields: fields.into_iter().collect(),
+            fields: Vec::from_iter(fields),
         };
 
         let this = Arc::as_ptr(self) as *mut TypeDef;
@@ -77,7 +78,7 @@ impl TypeDef {
 
     pub fn define_enum(self: &Arc<Self>, variants: impl IntoIterator<Item = TypeDefVariant>) {
         let body = TypeDefBody::Enum {
-            variants: variants.into_iter().collect(),
+            variants: Vec::from_iter(variants),
         };
 
         let this = Arc::as_ptr(self) as *mut TypeDef;
@@ -406,7 +407,7 @@ impl<'a> Builder<'a> {
 
     /// Create a new tuple of type `(t1, t2, ...tn)`.
     pub fn tuple(&mut self, vals: impl IntoIterator<Item = Var>) -> Var {
-        let vals = vals.into_iter().collect::<Vec<_>>();
+        let vals = Vec::from_iter(vals);
         let tys = vals.iter().map(|&v| self.body()[v].ty).collect();
         let ty = Ty::new(self.db, typ::Tuple(tys));
         let ret = self.create_var(ty);
@@ -450,6 +451,79 @@ impl<'a> Builder<'a> {
             } else {
                 panic!("Cannot get the address to a field of a non-tuple type");
             }
+        } else {
+            panic!("Cannot get the address to a field of a non-address type");
+        }
+    }
+
+    /// Create a new struct or union of type `ty`.
+    pub fn struct_(&mut self, ty: Ty, fields: impl IntoIterator<Item = (String, Var)>) -> Var {
+        let ret = self.create_var(ty);
+
+        self.block().instrs.push(Instr::Struct {
+            ret,
+            ty,
+            fields: Vec::from_iter(fields),
+        });
+
+        ret
+    }
+
+    /// Extract field `field` of struct or union `struc`.
+    /// The return var will have the type of the `field`.
+    pub fn struct_extract(&mut self, struc: Var, field: impl Into<String>) -> Var {
+        if let typ::Def(id, ref subst) = self.body()[struc].ty.lookup(self.db).kind {
+            let subst = subst.as_deref().unwrap_or(&[]);
+            let field = field.into();
+            let def = id.lookup(self.db);
+
+            match def.body {
+                | Some(TypeDefBody::Struct { ref fields } | TypeDefBody::Union { ref fields }) => {
+                    let ty = fields.iter().find_map(|f| if f.name == field { Some(f.ty) } else { None }).unwrap();
+                    let ret = self.create_var(ty);
+
+                    self.block().instrs.push(Instr::StructExtract { ret, struc, field });
+
+                    return ret;
+                },
+                | _ => {},
+            }
+        }
+
+        panic!("Cannot extract the field of a non- struct or union type");
+    }
+
+    /// Insert value `val` into the struct or union at field `field`.
+    // @TODO: typecheck field
+    pub fn struct_insert(&mut self, struc: Var, field: impl Into<String>, val: Var) {
+        self.block().instrs.push(Instr::StructInsert {
+            struc,
+            val,
+            field: field.into(),
+        });
+    }
+
+    /// Get the address of struct field `field`.
+    /// The given struct must be of type `*ty`.
+    /// The return var will be of type `*tn`.
+    pub fn struct_addr(&mut self, struc: Var, field: impl Into<String>) -> Var {
+        if let typ::Ptr(to) = self.body()[struc].ty.lookup(self.db).kind {
+            if let typ::Def(id, ref subst) = to.lookup(self.db).kind {
+                let subst = subst.as_deref().unwrap_or(&[]);
+                let field = field.into();
+                let def = id.lookup(self.db);
+
+                if let Some(TypeDefBody::Struct { ref fields }) = def.body {
+                    let ty = fields.iter().find_map(|f| if f.name == field { Some(f.ty) } else { None }).unwrap();
+                    let ret = self.create_var(ty.ptr(self.db));
+
+                    self.block().instrs.push(Instr::StructAddr { ret, struc, field });
+
+                    return ret;
+                }
+            }
+
+            panic!("Cannot get the address to a field of a non-struct type");
         } else {
             panic!("Cannot get the address to a field of a non-address type");
         }

@@ -185,6 +185,28 @@ pub enum Instr {
         field: usize,
     },
 
+    // Structs
+    Struct {
+        ret: Var,
+        ty: Ty,
+        fields: Vec<(String, Var)>,
+    },
+    StructExtract {
+        ret: Var,
+        struc: Var,
+        field: String,
+    },
+    StructInsert {
+        struc: Var,
+        field: String,
+        val: Var,
+    },
+    StructAddr {
+        ret: Var,
+        struc: Var,
+        field: String,
+    },
+
     // Apply
     Apply {
         rets: Vec<Var>,

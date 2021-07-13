@@ -223,10 +223,3 @@ impl Val {
         }
     }
 }
-
-fn scalar_pair_calculabe_b_offset(ctx: &mut BodyCtx, a: &Scalar, b: &Scalar) -> clif::ir::immediates::Offset32 {
-    let triple = ctx.db.triple();
-    let b_offset = a.value.size(&triple).align_to(b.value.align(&triple));
-
-    clif::ir::immediates::Offset32::new(b_offset.bytes() as i32)
-}
