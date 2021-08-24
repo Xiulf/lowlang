@@ -1,0 +1,9 @@
+[package]
+name = "eval"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+bytemuck = "1.7.2"
+ir = { path = "../ir" }
+arena = { git = "https://github.com/Xiulf/arena.git" }

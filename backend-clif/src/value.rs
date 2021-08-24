@@ -1,5 +1,5 @@
 use super::*;
-use ir::layout::{Abi, Primitive, Scalar, TyAndLayout};
+use ir::layout::{Abi, Primitive, TyAndLayout};
 use ptr::Pointer;
 
 #[derive(Clone)]
@@ -145,6 +145,10 @@ impl Val {
             | ValInner::Func(func) => Some(func),
             | _ => None,
         }
+    }
+
+    pub fn cast(self, layout: TyAndLayout) -> Self {
+        Self { layout, ..self }
     }
 
     pub fn deref(self, ctx: &mut BodyCtx) -> Self {

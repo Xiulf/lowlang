@@ -824,7 +824,7 @@ fn enum_layout(info: &Type, variants: &[Option<Layout>], triple: &Triple) -> Lay
         (present_variants.next(), present_variants.next())
     };
 
-    let present_first = match present_first {
+    let _present_first = match present_first {
         | Some(present_first) => present_first,
         | None => return Layout::UNINHABITED,
     };

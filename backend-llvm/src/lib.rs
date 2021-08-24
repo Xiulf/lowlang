@@ -197,7 +197,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         Some(())
     }
 
-    fn lower_block(&mut self, bb: BasicBlock<'ctx>, id: ir::Block, block: &ir::BlockData) -> Option<()> {
+    fn lower_block(&mut self, bb: BasicBlock<'ctx>, _id: ir::Block, block: &ir::BlockData) -> Option<()> {
         self.cx.builder.position_at_end(bb);
 
         for param in &block.params {
@@ -243,7 +243,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             | ir::Term::Switch { pred, cases, default } => {
                 let pred = self.vars[pred.0].into_int_value();
                 let pred_ty = pred.get_type();
-                let bb = self.cx.builder.get_insert_block().unwrap();
+                let _bb = self.cx.builder.get_insert_block().unwrap();
                 let cases = cases
                     .iter()
                     .map(|case| {
@@ -313,7 +313,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
 
                 self.cx.builder.build_store(addr, val);
             },
-            | ir::Instr::CopyAddr { old, new, flags } => {
+            | ir::Instr::CopyAddr { old, new, flags: _ } => {
                 let elem_ty = self.body[old].ty.pointee(self.db).unwrap();
                 let old = self.vars[old.0].into_pointer_value();
                 let new = self.vars[new.0].into_pointer_value();

@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 codegen = { path = "../codegen" }
+eval = { path = "../eval" }
 ir = { path = "../ir" }
 salsa = "0.16.0"
 mun_lld = "110.0.0"

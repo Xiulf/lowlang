@@ -450,10 +450,19 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                         assert!(field < 2);
 
                         let layout = tuple_val.layout().clone();
-                        let (_, b) = tuple_val.load_pair(self);
-                        let a = self.vars[val.0].clone().load(self);
+                        let val = if field == 0 {
+                            let (_, b) = tuple_val.load_pair(self);
+                            let a = self.vars[val.0].clone().load(self);
 
-                        self.vars.insert(tuple.0, Val::new_val_pair(a, b, layout));
+                            Val::new_val_pair(a, b, layout)
+                        } else {
+                            let (a, _) = tuple_val.load_pair(self);
+                            let b = self.vars[val.0].clone().load(self);
+
+                            Val::new_val_pair(a, b, layout)
+                        };
+
+                        self.vars.insert(tuple.0, val);
                     },
                     | _ => {
                         let field = tuple_val.field(self, field);
@@ -467,6 +476,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 let layout = self.db.layout_of(self.body[tuple].ty).pointee(self.db);
                 let offset = layout.fields.offset(field).bytes() as i64;
                 let ptr = self.vars[tuple.0].as_ptr();
+                let layout = self.db.layout_of(layout.field(self.db, field).ty.ptr(self.db));
                 let addr = Val::new_addr(ptr.offset_i64(self, offset), layout);
 
                 self.vars.insert(ret.0, addr);
@@ -486,7 +496,21 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                             },
                             | Abi::ScalarPair(_, _) => {
                                 assert!(fields.len() <= 2);
-                                unimplemented!()
+
+                                let (a, b) = if vals.len() == 1 {
+                                    self.vars[(vals[0].1).0].clone().load_pair(self)
+                                } else {
+                                    let a = self.vars[(vals[0].1).0].clone().load(self);
+                                    let b = self.vars[(vals[1].1).0].clone().load(self);
+
+                                    if let Some(0) = fields.iter().position(|f| f.name == vals[0].0) {
+                                        (a, b)
+                                    } else {
+                                        (b, a)
+                                    }
+                                };
+
+                                Val::new_val_pair(a, b, layout)
                             },
                             | _ => {
                                 let ss = self.bcx.create_stack_slot(clif::StackSlotData {
@@ -509,6 +533,108 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                         };
 
                         self.vars.insert(ret.0, res);
+                    }
+                }
+            },
+            | ir::Instr::StructExtract { ret, struc, ref field } => {
+                let struc = self.vars[struc.0].clone();
+
+                if let ir::ty::typ::Def(id, _) = struc.layout().ty.lookup(self.db).kind {
+                    let def = id.lookup(self.db);
+
+                    match def.body {
+                        | Some(ir::TypeDefBody::Struct { ref fields }) => {
+                            let field = fields.iter().position(|f| f.name == *field).unwrap();
+                            let field = struc.field(self, field);
+
+                            self.vars.insert(ret.0, field);
+                        },
+                        | Some(ir::TypeDefBody::Union { .. }) => {
+                            let layout = self.db.layout_of(self.body[ret].ty);
+
+                            self.vars.insert(ret.0, struc.cast(layout));
+                        },
+                        | _ => unreachable!(),
+                    }
+                }
+            },
+            | ir::Instr::StructInsert { struc, ref field, val } => {
+                let struct_val = self.vars[struc.0].clone();
+
+                if let ir::ty::typ::Def(id, _) = struct_val.layout().ty.lookup(self.db).kind {
+                    let def = id.lookup(self.db);
+
+                    match def.body {
+                        | Some(ir::TypeDefBody::Struct { ref fields }) => match &struct_val.layout().abi {
+                            | Abi::Scalar(_) => {
+                                let val = self.vars[val.0].clone();
+
+                                self.vars.insert(struc.0, val);
+                            },
+                            | Abi::ScalarPair(_, _) => {
+                                let field = fields.iter().position(|f| f.name == *field).unwrap();
+                                let layout = struct_val.layout().clone();
+                                let val = if field == 0 {
+                                    let (_, b) = struct_val.load_pair(self);
+                                    let a = self.vars[val.0].clone().load(self);
+
+                                    Val::new_val_pair(a, b, layout)
+                                } else {
+                                    let (a, _) = struct_val.load_pair(self);
+                                    let b = self.vars[val.0].clone().load(self);
+
+                                    Val::new_val_pair(a, b, layout)
+                                };
+
+                                self.vars.insert(struc.0, val);
+                            },
+                            | _ => {
+                                let field = fields.iter().position(|f| f.name == *field).unwrap();
+                                let field = struct_val.field(self, field);
+                                let (ptr, _) = field.as_ref();
+
+                                self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::new());
+                            },
+                        },
+                        | Some(ir::TypeDefBody::Union { .. }) => match &struct_val.layout().abi {
+                            | Abi::Aggregate { .. } => {
+                                let (ptr, _) = struct_val.as_ref();
+
+                                self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::new());
+                            },
+                            | _ => {
+                                let val = self.vars[val.0].clone();
+
+                                self.vars.insert(struc.0, val);
+                            },
+                        },
+                        | _ => unreachable!(),
+                    }
+                }
+            },
+            | ir::Instr::StructAddr { ret, struc, ref field } => {
+                let layout = self.db.layout_of(self.body[struc].ty).pointee(self.db);
+
+                if let ir::ty::typ::Def(id, _) = layout.ty.lookup(self.db).kind {
+                    let def = id.lookup(self.db);
+
+                    match def.body {
+                        | Some(ir::TypeDefBody::Struct { ref fields }) => {
+                            let field = fields.iter().position(|f| f.name == *field).unwrap();
+                            let offset = layout.fields.offset(field).bytes() as i64;
+                            let ptr = self.vars[struc.0].as_ptr();
+                            let layout = self.vars[ret.0].layout().clone();
+                            let addr = Val::new_addr(ptr.offset_i64(self, offset), layout);
+
+                            self.vars.insert(ret.0, addr)
+                        },
+                        | Some(ir::TypeDefBody::Union { .. }) => {
+                            let layout = self.vars[ret.0].layout().clone();
+                            let addr = self.vars[struc.0].clone().cast(layout);
+
+                            self.vars.insert(ret.0, addr);
+                        },
+                        | _ => unreachable!(),
                     }
                 }
             },

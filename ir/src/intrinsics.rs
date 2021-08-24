@@ -9,7 +9,6 @@ pub fn intrinsics(db: &dyn IrDatabase) -> Arc<HashMap<&'static str, Ty>> {
     let int32 = Ty::int(db, Integer::I32, true);
     let isize = Ty::int(db, Integer::ISize, true);
     let boolean = Ty::int(db, Integer::I8, false);
-    let ptr = Ty::unit(db).ptr(db);
 
     map.insert("add_i32", sig!(db; int32, int32 => int32));
     map.insert("sub_i32", sig!(db; int32, int32 => int32));

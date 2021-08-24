@@ -22,6 +22,12 @@ fn main() {
 
     println!("{}", module.display(&db));
 
+    // let mut vm = eval::VM::new(&db, &module);
+    // let main = module.func("main").unwrap();
+    // let res = vm.apply(main, Vec::new()).unwrap();
+    //
+    // dbg!(res);
+
     let obj_file = codegen::compile_module(&db, &module, codegen::Backend::Clif);
     let _ = std::fs::copy(obj_file.path(), "test.o").unwrap();
     let link_args = [

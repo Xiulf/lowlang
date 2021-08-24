@@ -273,7 +273,7 @@ impl<'a> Builder<'a> {
     pub fn box_free(&mut self, boxed: Var) {
         let ty = self.body().var_type(boxed).lookup(self.db);
 
-        if let typ::Box(to) = ty.kind {
+        if let typ::Box(_) = ty.kind {
             if ty.flags.is_set(Flags::OWNED) {
                 self.block().instrs.push(Instr::BoxFree { boxed });
             } else {
@@ -480,7 +480,7 @@ impl<'a> Builder<'a> {
             match def.body {
                 | Some(TypeDefBody::Struct { ref fields } | TypeDefBody::Union { ref fields }) => {
                     let ty = fields.iter().find_map(|f| if f.name == field { Some(f.ty) } else { None }).unwrap();
-                    let ret = self.create_var(ty);
+                    let ret = self.create_var(ty.subst(self.db, subst, 0));
 
                     self.block().instrs.push(Instr::StructExtract { ret, struc, field });
 
@@ -503,8 +503,8 @@ impl<'a> Builder<'a> {
         });
     }
 
-    /// Get the address of struct field `field`.
-    /// The given struct must be of type `*ty`.
+    /// Get the address of struct or union at field `field`.
+    /// The given struct or union must be of type `*ty`.
     /// The return var will be of type `*tn`.
     pub fn struct_addr(&mut self, struc: Var, field: impl Into<String>) -> Var {
         if let typ::Ptr(to) = self.body()[struc].ty.lookup(self.db).kind {
@@ -513,17 +513,20 @@ impl<'a> Builder<'a> {
                 let field = field.into();
                 let def = id.lookup(self.db);
 
-                if let Some(TypeDefBody::Struct { ref fields }) = def.body {
-                    let ty = fields.iter().find_map(|f| if f.name == field { Some(f.ty) } else { None }).unwrap();
-                    let ret = self.create_var(ty.ptr(self.db));
+                match def.body {
+                    | Some(TypeDefBody::Struct { ref fields } | TypeDefBody::Union { ref fields }) => {
+                        let ty = fields.iter().find_map(|f| if f.name == field { Some(f.ty) } else { None }).unwrap();
+                        let ret = self.create_var(ty.subst(self.db, subst, 0).ptr(self.db));
 
-                    self.block().instrs.push(Instr::StructAddr { ret, struc, field });
+                        self.block().instrs.push(Instr::StructAddr { ret, struc, field });
 
-                    return ret;
+                        return ret;
+                    },
+                    | _ => {},
                 }
             }
 
-            panic!("Cannot get the address to a field of a non-struct type");
+            panic!("Cannot get the address to a field of a non- struct or union type");
         } else {
             panic!("Cannot get the address to a field of a non-address type");
         }
@@ -559,7 +562,7 @@ impl<'a> Builder<'a> {
                 .collect::<Vec<_>>();
 
             let mut indirect_args = Vec::new();
-            let mut args = ret_args
+            let args = ret_args
                 .iter()
                 .copied()
                 .chain(args.into_iter().zip(&sig.params).map(|(arg, param)| {

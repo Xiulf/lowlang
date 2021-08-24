@@ -2,6 +2,7 @@
 members = [
     "lowc",
     "codegen",
+    "eval",
     "ir",
 
     "backend-llvm",

@@ -245,6 +245,12 @@ pub struct BrTarget {
     pub args: Vec<Var>,
 }
 
+impl Module {
+    pub fn func(&self, name: &str) -> Option<BodyId> {
+        self.funcs.iter().find(|(_, f)| f.name == name).and_then(|(_, f)| f.body)
+    }
+}
+
 impl Block {
     pub const ENTRY: Self = Self(Idx::DUMMY);
 }
