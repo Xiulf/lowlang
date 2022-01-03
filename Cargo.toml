@@ -6,6 +6,6 @@ members = [
     "eval",
     "ir",
 
-    "backend-llvm",
+    # "backend-llvm",
     "backend-clif",
 ]

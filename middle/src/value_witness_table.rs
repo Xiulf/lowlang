@@ -33,7 +33,7 @@ impl<B: BackendMethods> ValueWitnessTables<B> {
         })
     }
 
-    pub fn get(&mut self, b: &mut B, ty: Ty) -> B::DataId {
+    pub fn get(&self, b: &B, ty: Ty) -> B::DataId {
         todo!();
     }
 }
