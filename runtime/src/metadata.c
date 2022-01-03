@@ -1,10 +1,13 @@
 #include "../include/gen_alloc.h"
+#include "../include/rc_alloc.h"
 #include "../include/metadata.h"
 #include "memory.h"
+#include "stdlib.h"
 
-void copy_zst(Opaque *dst, Opaque *src, Type *t);
-void move_zst(Opaque *dst, Opaque *src, Type *t);
-void drop_owned_box(Opaque *val, Type *t);
+void copy_zst(Opaque* dst, Opaque* src, Type* t);
+void move_zst(Opaque* dst, Opaque* src, Type* t);
+void drop_owned_box(Opaque* val, Type* t);
+void drop_rc_box(Opaque* val, Type* t);
 
 ValueWitnessTable OWNED_BOX_VWT = {
     .size = sizeof(size_t) * 2,
@@ -22,6 +25,15 @@ ValueWitnessTable UNOWNED_BOX_VWT = {
     .copy = copy_trivial,
     .move = move_trivial,
     .drop = drop_trivial,
+};
+
+ValueWitnessTable RC_BOX_VWT = {
+    .size = sizeof(size_t),
+    .align = sizeof(size_t),
+    .stride = sizeof(size_t),
+    .copy = copy_trivial,
+    .move = move_trivial,
+    .drop = drop_rc_box,
 };
 
 ValueWitnessTable TRIVIAL_VWT[6] = {
@@ -114,6 +126,14 @@ void copy_zst(Opaque *dst, Opaque *src, Type *t) {}
 void move_zst(Opaque *dst, Opaque *src, Type *t) {}
 
 void drop_owned_box(Opaque *val, Type *t) {
-  Box *box = (Box *)val;
+  GenBox *box = (GenBox*)val;
   gen_free(box->ptr, t->vwt->size);
+}
+
+void drop_rc_box(Opaque* val, Type* t) {
+    RcBox* box = (RcBox*)val;
+    RcBoxType* type = (RcBoxType*)t;
+
+    type->T->vwt->drop((Opaque*)&box->val, type->T);
+    free(val);
 }

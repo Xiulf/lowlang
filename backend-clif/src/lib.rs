@@ -262,6 +262,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         self.cx.ctx.compute_domtree();
         self.cx.ctx.eliminate_unreachable_code(self.cx.module.isa()).unwrap();
 
+        eprintln!("{}", self.ir.funcs[self.func].name);
         eprintln!("{}", self.bcx.func);
 
         self.cx
@@ -621,15 +622,20 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     match def.body {
                         | Some(ir::TypeDefBody::Struct { ref fields }) => {
                             let field = fields.iter().position(|f| f.name == *field).unwrap();
-                            let offset = layout.fields.offset(field).bytes() as i64;
                             let ptr = self.vars[struc.0].as_ptr();
-                            let layout = self.vars[ret.0].layout().clone();
-                            let addr = Val::new_addr(ptr.offset_i64(self, offset), layout);
+                            let ptr = if layout.abi.is_unsized() {
+                                self.dynamic_offset(ptr, &layout, field)
+                            } else {
+                                ptr.offset_i64(self, layout.fields.offset(field).bytes() as i64)
+                            };
+
+                            let layout = self.db.layout_of(self.body[ret].ty);
+                            let addr = Val::new_addr(ptr, layout);
 
                             self.vars.insert(ret.0, addr)
                         },
                         | Some(ir::TypeDefBody::Union { .. }) => {
-                            let layout = self.vars[ret.0].layout().clone();
+                            let layout = self.db.layout_of(self.body[ret].ty);
                             let addr = self.vars[struc.0].clone().cast(layout);
 
                             self.vars.insert(ret.0, addr);

@@ -1,3 +1,9 @@
+use ir::{
+    layout::{Fields, Size, TyAndLayout},
+    ty::typ,
+    TypeDefBody,
+};
+
 use super::*;
 
 impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
@@ -38,5 +44,69 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         let layout = self.db.layout_of(typ.ptr(self.db));
 
         Some(Val::new_val(addr, layout))
+    }
+
+    pub fn dynamic_offset(&mut self, mut ptr: Pointer, layout: &TyAndLayout, field: usize) -> Pointer {
+        if let Fields::Arbitrary { offsets, memory_index } = &layout.fields {
+            let inverse_index = ir::layout::invert_mapping(memory_index);
+            let mut offset = Size::ZERO;
+
+            match layout.ty.lookup(self.db).kind {
+                | typ::Tuple(ref fields) => {
+                    for (i, j) in inverse_index.into_iter().enumerate() {
+                        if j == field {
+                            break;
+                        }
+
+                        if let typ::Var(var) = fields[j].lookup(self.db).kind {
+                            let typ = self.generic_params[var.idx()].clone();
+                            let vwt = typ.clone().field(self, 0).deref(self);
+                            let stride = vwt.field(self, 2);
+                            let stride = stride.load(self);
+
+                            ptr = ptr.offset_i64(self, offset.bytes() as i64);
+                            ptr = ptr.offset_value(self, stride);
+                            offset = Size::ZERO;
+                        } else {
+                            offset = offsets[i];
+                        }
+                    }
+                },
+                | typ::Def(id, ref subst) => {
+                    let subst = subst.as_deref().unwrap_or(&[]);
+                    let info = id.lookup(self.db);
+                    let body = info.body.as_ref().unwrap();
+
+                    match body {
+                        | TypeDefBody::Struct { fields } => {
+                            for (i, j) in inverse_index.into_iter().enumerate() {
+                                if j == field {
+                                    break;
+                                }
+
+                                if let typ::Var(var) = fields[j].ty.subst(self.db, subst, 0).lookup(self.db).kind {
+                                    let typ = self.generic_params[var.idx()].clone();
+                                    let vwt = typ.clone().field(self, 0).deref(self);
+                                    let stride = vwt.field(self, 2);
+                                    let stride = stride.load(self);
+
+                                    ptr = ptr.offset_i64(self, offset.bytes() as i64);
+                                    ptr = ptr.offset_value(self, stride);
+                                    offset = Size::ZERO;
+                                } else {
+                                    offset = offsets[i];
+                                }
+                            }
+                        },
+                        | _ => unreachable!(),
+                    }
+                },
+                | _ => unreachable!(),
+            }
+
+            ptr.offset_i64(self, offset.bytes() as i64)
+        } else {
+            ptr.offset_i64(self, layout.fields.offset(field).bytes() as i64)
+        }
     }
 }

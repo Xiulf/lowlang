@@ -2,13 +2,13 @@ use super::*;
 use ir::layout::{Abi, Primitive, TyAndLayout};
 use ptr::Pointer;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Val {
     inner: ValInner,
     layout: TyAndLayout,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum ValInner {
     Value(clif::Value),
     ValuePair(clif::Value, clif::Value),

@@ -1,11 +1,11 @@
 module test
 
 type Pair
-type UnionTest
-type Option
+type List
 
 export main : $(i32, **u8) -> i32
 export identity : $<type T>([in] T) -> [out] T
+export first : $<type T>([in] Pair<$T>) -> [out] T
 local  print_args : $(i32, **u8) -> ()
 import puts : $(*u8) -> i32
 ; import write : $(i32, *u8, usize) -> isize
@@ -16,14 +16,9 @@ struct Pair<type T> {
     b : $T,
 }
 
-union UnionTest {
-    a : $i32,
-    b : $u16,
-}
-
-enum Option<type T> {
-    None,
-    Some : $(T),
+enum List<type T> {
+    Nil,
+    Cons : $(T, List<$T>),
 }
 
 
@@ -65,5 +60,14 @@ body identity <type T> {
 
 entry(ret : $*T, x : $*T):
     copy_addr x, ret [init]
+    return
+}
+
+
+body first <type T> {
+
+entry(ret : $*T, pair : $*Pair<$T>):
+    a = struct_addr pair, b
+    copy_addr a, ret [init]
     return
 }

@@ -114,7 +114,7 @@ impl TyAndLayout {
 
     pub fn field(&self, db: &dyn IrDatabase, idx: usize) -> TyAndLayout {
         match self.ty.lookup(db).kind {
-            | typ::Box(of) => match idx {
+            | typ::Box(BoxKind::Gen, of) => match idx {
                 | 0 => db.layout_of(of.ptr(db)),
                 | 1 => db.layout_of(Ty::int(db, Integer::ISize, false)),
                 | _ => unreachable!(),
@@ -132,6 +132,51 @@ impl TyAndLayout {
             },
             | _ => unreachable!(),
         }
+    }
+
+    pub fn unknown_offset(&self, db: &dyn IrDatabase, idx: usize) -> bool {
+        if let Fields::Arbitrary { memory_index, .. } = &self.fields {
+            let inverse_index = invert_mapping(memory_index);
+
+            match self.ty.lookup(db).kind {
+                | typ::Tuple(ref fields) => {
+                    for i in inverse_index {
+                        if i == idx {
+                            break;
+                        }
+
+                        if db.layout_of(fields[i]).abi.is_unsized() {
+                            return true;
+                        }
+                    }
+                },
+                | typ::Def(id, ref subst) => {
+                    let subst = subst.as_deref().unwrap_or(&[]);
+                    let info = id.lookup(db);
+                    let body = info.body.as_ref().unwrap();
+
+                    match body {
+                        | TypeDefBody::Struct { fields } => {
+                            for i in inverse_index {
+                                if i == idx {
+                                    break;
+                                }
+
+                                let field = &fields[i];
+
+                                if db.layout_of(field.ty.subst(db, subst, 0)).abi.is_unsized() {
+                                    return true;
+                                }
+                            }
+                        },
+                        | _ => unimplemented!(),
+                    }
+                },
+                | _ => unreachable!(),
+            }
+        }
+
+        false
     }
 }
 
@@ -531,7 +576,14 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
 
             Layout::scalar(scalar, &triple)
         },
-        | typ::Box(_) => {
+        | typ::Box(BoxKind::Rc, _) => {
+            let mut ptr = Scalar::new(Primitive::Pointer, &triple);
+
+            ptr.valid_range = 1..=*ptr.valid_range.end();
+
+            Layout::scalar(ptr, &triple)
+        },
+        | typ::Box(BoxKind::Gen, _) => {
             let mut ptr = Scalar::new(Primitive::Pointer, &triple);
             let gen = Scalar::new(Primitive::Int(Integer::ISize, false), &triple);
 
@@ -568,7 +620,15 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
             Layout::scalar(scalar, &triple)
         },
         | typ::Generic(_, t) => db.layout_of(t).layout,
-        | typ::Var(_) => unreachable!(),
+        | typ::Var(_) => Layout {
+            size: Size::ZERO,
+            align: Align::ONE,
+            stride: Size::ZERO,
+            abi: Abi::Aggregate { sized: false },
+            fields: Fields::Primitive,
+            variants: Variants::Single { index: 0 },
+            largest_niche: None,
+        },
         | typ::Def(id, ref subst) => {
             let def = id.lookup(db);
             let subst = subst.as_deref().unwrap_or(&[]);
@@ -670,10 +730,6 @@ fn struct_layout(info: &Type, fields: &[TyAndLayout], triple: &Triple) -> Layout
 
     for &i in &inverse_memory_index {
         let field = &fields[i];
-
-        if !sized {
-            panic!("struct_layout: field after unsized field");
-        }
 
         if field.abi.is_unsized() {
             sized = false;
@@ -1025,7 +1081,7 @@ fn enum_layout(info: &Type, variants: &[Option<Layout>], triple: &Triple) -> Lay
     }
 }
 
-fn invert_mapping(map: &[usize]) -> Vec<usize> {
+pub fn invert_mapping(map: &[usize]) -> Vec<usize> {
     let mut inverse = vec![0; map.len()];
 
     for i in 0..map.len() {

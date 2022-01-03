@@ -67,11 +67,11 @@ size_t next_power_of_2(size_t x) {
     return value;
 }
 
-GenAllocResult gen_alloc(size_t size) {
+GenBox gen_alloc(size_t size) {
     size_t ptr_size = sizeof(size_t);
     size_t new_size = next_power_of_2(ptr_size + size);
     FreeEntry* free_entry = free_list_find(new_size);
-    GenAllocResult result;
+    GenBox result;
 
     if (free_entry) {
         result.ptr = free_entry->ptr;

@@ -2,6 +2,7 @@ use crate::db::IrDatabase;
 pub use crate::layout::Integer;
 use crate::layout::Primitive;
 use crate::{Flags, TypeDefId};
+use std::iter::FromIterator;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,13 +44,19 @@ pub struct Repr {
 pub enum TypeKind {
     Unit,
     Ptr(Ty),
-    Box(Ty),
+    Box(BoxKind, Ty),
     Tuple(Vec<Ty>),
     Array(Ty, u64),
     Var(GenericVar),
     Func(Signature),
     Generic(Vec<GenericParam>, Ty),
     Def(TypeDefId, Option<Vec<Subst>>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BoxKind {
+    Gen,
+    Rc,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -116,12 +123,24 @@ impl Ty {
         Self::new(db, typ::Ptr(self))
     }
 
-    pub fn boxed(self, db: &dyn IrDatabase) -> Self {
-        Self::new(db, typ::Box(self))
+    pub fn boxed(self, kind: BoxKind, db: &dyn IrDatabase) -> Self {
+        Self::new(db, typ::Box(kind, self))
+    }
+
+    pub fn gen_box(self, db: &dyn IrDatabase) -> Self {
+        Self::new(db, typ::Box(BoxKind::Gen, self))
+    }
+
+    pub fn rc_box(self, db: &dyn IrDatabase) -> Self {
+        Self::new(db, typ::Box(BoxKind::Rc, self))
     }
 
     pub fn array(self, db: &dyn IrDatabase, len: u64) -> Self {
         Self::new(db, typ::Array(self, len))
+    }
+
+    pub fn tuple(db: &dyn IrDatabase, types: impl IntoIterator<Item = Self>) -> Self {
+        Self::new(db, typ::Tuple(Vec::from_iter(types)))
     }
 
     pub fn owned(self, db: &dyn IrDatabase) -> Self {
@@ -196,7 +215,7 @@ impl Ty {
     pub fn subst(self, db: &dyn IrDatabase, args: &[Subst], depth: u8) -> Self {
         match self.lookup(db).kind {
             | typ::Ptr(to) => Ty::new(db, typ::Ptr(to.subst(db, args, depth))),
-            | typ::Box(to) => Ty::new(db, typ::Box(to.subst(db, args, depth))),
+            | typ::Box(k, to) => Ty::new(db, typ::Box(k, to.subst(db, args, depth))),
             | typ::Var(GenericVar(d2, idx)) if depth == d2 => match args[idx as usize] {
                 | Subst::Type(t) => t,
                 | _ => panic!("Cannot substitute type"),
@@ -276,6 +295,10 @@ impl Signature {
 
         self.rets.push(SigParam { ty, flags });
         self
+    }
+
+    pub fn to_ty(self, db: &dyn IrDatabase) -> Ty {
+        Ty::new(db, TypeKind::Func(self))
     }
 }
 

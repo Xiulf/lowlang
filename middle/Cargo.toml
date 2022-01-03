@@ -1,0 +1,8 @@
+[package]
+name = "middle"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ir = { path = "../ir" }
+rustc-hash = "1.1.0"

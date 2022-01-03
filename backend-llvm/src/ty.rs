@@ -32,7 +32,13 @@ impl AsBasicType for Ty {
                 | None => ctx.context.struct_type(&[], false).into(),
             },
             | typ::Ptr(to) => to.as_basic_type(ctx).ptr_type(AddressSpace::Generic).into(),
-            | typ::Box(to) => {
+            | typ::Box(BoxKind::Gen, to) => {
+                let fst = to.as_basic_type(ctx).ptr_type(AddressSpace::Generic).into();
+                let snd = ctx.context.ptr_sized_int_type(&ctx.target_data, None).into();
+
+                ctx.context.struct_type(&[fst, snd], false).into()
+            },
+            | typ::Box(BoxKind::Rc, to) => {
                 let fst = to.as_basic_type(ctx).ptr_type(AddressSpace::Generic).into();
                 let snd = ctx.context.ptr_sized_int_type(&ctx.target_data, None).into();
 

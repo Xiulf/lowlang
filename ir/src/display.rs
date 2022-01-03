@@ -226,8 +226,8 @@ impl fmt::Display for IrDisplay<'_, Body> {
 
         writeln!(f, "{{")?;
 
-        // for (id, var) in self.vars.iter() {
-        //     writeln!(f, "    {} : ${}", Var(id), var.ty)?;
+        // for (id, var) in this.vars.iter() {
+        //     writeln!(f, "    {} : ${}", Var(id), var.ty.display(db))?;
         // }
 
         for (id, block) in this.blocks.iter() {
@@ -444,7 +444,8 @@ impl fmt::Display for IrDisplay<'_, Ty> {
             },
             | typ::Def(id, None) => write!(f, "{}", id),
             | typ::Ptr(to) => write!(f, "*{}", to.display(db)),
-            | typ::Box(to) => write!(f, "box {}", to.display(db)),
+            | typ::Box(BoxKind::Gen, to) => write!(f, "box {}", to.display(db)),
+            | typ::Box(BoxKind::Rc, to) => write!(f, "rc {}", to.display(db)),
             | typ::Tuple(ref ts) => {
                 write!(f, "(")?;
                 list(f, ts, |t, f| t.display(db).fmt(f))?;

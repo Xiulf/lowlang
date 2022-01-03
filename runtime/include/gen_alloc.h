@@ -3,17 +3,12 @@
 #ifndef include_runtime_gen_alloc
 #define include_runtime_gen_alloc
 
-typedef struct GenAllocResultS {
+typedef struct GenBoxS {
     void* ptr;
     size_t generation;
-} GenAllocResult;
+} GenBox;
 
-typedef struct BoxS {
-    void* ptr;
-    size_t generation;
-} Box;
-
-GenAllocResult gen_alloc(size_t size);
+GenBox gen_alloc(size_t size);
 void gen_free(void* ptr, size_t size);
 size_t gen_generation(void* ptr);
 

@@ -10,10 +10,10 @@ typedef struct ValueWitnessTableS ValueWitnessTable;
 
 typedef struct TypeS {
   ValueWitnessTable *vwt;
-  char flags;
+  size_t flags;
 } Type;
 
-const char TYPE_FLAG_TRIVIAL = 1 << 0;
+const size_t TYPE_FLAG_TRIVIAL = 1 << 0;
 
 typedef struct ValueWitnessTableS {
   size_t size;
@@ -26,6 +26,7 @@ typedef struct ValueWitnessTableS {
 
 extern ValueWitnessTable OWNED_BOX_VWT;
 extern ValueWitnessTable UNOWNED_BOX_VWT;
+extern ValueWitnessTable RC_BOX_VWT;
 extern ValueWitnessTable TRIVIAL_VWT[6];
 extern Type TRIVIAL_METAS[6];
 

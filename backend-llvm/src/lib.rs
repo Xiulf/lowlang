@@ -288,7 +288,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 self.vars.insert(ret.0, val);
             },
             | ir::Instr::BoxFree { boxed } => {
-                if let ir::ty::typ::Box(of) = self.body[boxed].ty.lookup(self.db).kind {
+                if let ir::ty::typ::Box(ir::ty::BoxKind::Gen, of) = self.body[boxed].ty.lookup(self.db).kind {
                     use inkwell::types::BasicType;
                     let ty = of.as_basic_type(self.cx);
                     let size = ty.size_of().unwrap();

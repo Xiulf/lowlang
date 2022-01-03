@@ -313,7 +313,8 @@ impl<'a> Parser<'a> {
         let non_null = self.eat(Flag("non_null"));
         let mut ty = match self.lexer.next()? {
             | Star => self.parse_type().map(|t| t.ptr(self.db)),
-            | Ident("box") => self.parse_type().map(|t| t.boxed(self.db)),
+            | Ident("box") => self.parse_type().map(|t| t.gen_box(self.db)),
+            | Ident("rc") => self.parse_type().map(|t| t.rc_box(self.db)),
             | Ident(other) => match other {
                 | "u8" => Some(Ty::int(self.db, Integer::I8, false)),
                 | "u16" => Some(Ty::int(self.db, Integer::I16, false)),
@@ -745,9 +746,14 @@ impl<'a, 'b> BodyParser<'a, 'b> {
                 Vec::new()
             },
             | "box_alloc" => {
+                let kind = match self.lexer.peek() {
+                    | Some(&Ident("rc")) => BoxKind::Rc,
+                    | _ => BoxKind::Gen,
+                };
+
                 let _ = self.expect(Dollar)?;
                 let ty = self.parse_type()?;
-                let ret = self.builder.box_alloc(ty);
+                let ret = self.builder.box_alloc(kind, ty);
 
                 vec![ret]
             },

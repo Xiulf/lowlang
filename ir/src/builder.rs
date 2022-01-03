@@ -261,8 +261,8 @@ impl<'a> Builder<'a> {
     /// Boxes in this language are generational references
     /// with a single owner.
     /// The return var has type `box ty`.
-    pub fn box_alloc(&mut self, ty: Ty) -> Var {
-        let ret = self.create_var(ty.clone().boxed(self.db).owned(self.db));
+    pub fn box_alloc(&mut self, kind: BoxKind, ty: Ty) -> Var {
+        let ret = self.create_var(ty.clone().boxed(kind, self.db).owned(self.db));
 
         self.block().instrs.push(Instr::BoxAlloc { ret, ty });
 
@@ -273,21 +273,18 @@ impl<'a> Builder<'a> {
     pub fn box_free(&mut self, boxed: Var) {
         let ty = self.body().var_type(boxed).lookup(self.db);
 
-        if let typ::Box(_) = ty.kind {
-            if ty.flags.is_set(Flags::OWNED) {
+        match ty.kind {
+            | typ::Box(_, _) => {
                 self.block().instrs.push(Instr::BoxFree { boxed });
-            } else {
-                panic!("Only owned boxes can be box_free'd.");
-            }
-        } else {
-            panic!("Only boxed types can be box_free'd");
+            },
+            | _ => panic!("Only boxed types can be box_free'd"),
         }
     }
 
     /// Get the address of a boxed value of type `box ty`.
     /// The returned var has type `*ty`.
     pub fn box_addr(&mut self, boxed: Var) -> Var {
-        if let typ::Box(of) = self.body().var_type(boxed).lookup(self.db).kind {
+        if let typ::Box(_, of) = self.body().var_type(boxed).lookup(self.db).kind {
             let ret = self.create_var(of.ptr(self.db));
 
             self.block().instrs.push(Instr::BoxAddr { ret, boxed });
