@@ -80,28 +80,28 @@ unsafe fn mk_pair_ti(vwt: *const ValueWitnessTable, T: *const TypeInfo) -> TypeI
     }
 }
 
-///	export identity : $<type T>([in] T) -> [out] T
-///	
-///	body identity {
-///	
-///	entry(ret : $*T, x: $*T):
-///		copy_addr x [take], ret [init]
-///		return
-///	}
+/// export identity : $<type T>([in] T) -> [out] T
+/// 
+/// body identity {
+/// 
+/// entry(ret : $*T, x: $*T):
+///     copy_addr x [take], ret [init]
+///     return
+/// }
 unsafe fn identity(ret: *mut u8, x: *mut u8, T: *const TypeInfo) {
     ((*(*T).vwt).move_fn)(ret, x, T);
 }
 
-///	export second : $<type T>([in] Pair<$T>) -> [out] T
-///	
-///	body second {
-///	
-///	entry(ret : $*T, pair: $*Pair<$T>):
-///		y = struct_addr pair, y
-///		copy_addr y, ret [init]
-///		drop_addr pair
-///		return
-///	}
+/// export second : $<type T>([in] Pair<$T>) -> [out] T
+/// 
+/// body second {
+/// 
+/// entry(ret : $*T, pair: $*Pair<$T>):
+///     y = struct_addr pair, y
+///     copy_addr y, ret [init]
+///     drop_addr pair
+///     return
+/// }
 unsafe fn second(ret: *mut u8, pair: *mut u8, T: *const TypeInfo) {
     let TP_VWT = mk_pair_vwt(T);
     let TP = mk_pair_ti(&TP_VWT, T);
@@ -111,35 +111,35 @@ unsafe fn second(ret: *mut u8, pair: *mut u8, T: *const TypeInfo) {
     ((*TP.vwt).drop_fn)(pair, &TP as *const _ as *const TypeInfo);
 }
 
-///	export pair : $<type T>([in] T) -> [out] Pair<$T>
-///	
-///	body pair {
-///	
-///	entry(ret : $*Pair<$T>, val: $*T):
-///		x = struct_addr ret, x
-///		y = struct_addr ret, y
-///		copy_addr val, x [init]
-///		copy_addr val [take], y [init]
-///		return
-///	}
+/// export pair : $<type T>([in] T) -> [out] Pair<$T>
+/// 
+/// body pair {
+/// 
+/// entry(ret : $*Pair<$T>, val: $*T):
+///     x = struct_addr ret, x
+///     y = struct_addr ret, y
+///     copy_addr val, x [init]
+///     copy_addr val [take], y [init]
+///     return
+/// }
 unsafe fn pair(ret: *mut u8, x: *mut u8, T: *const TypeInfo) {
     ((*(*T).vwt).copy_fn)(ret, x, T);
     ((*(*T).vwt).move_fn)(ret.add((*(*T).vwt).stride), x, T);
 }
 
-///	export combo : $<type T>([in] T) -> [out] Pair<$T>
-///	
-///	body combo {
-///	
-///	entry(ret : $*Pair<$T>, x : $*T):
-///		pair = func_ref Pair
-///		identity = func_ref identity
-///		tmp = stack_alloc $T
-///		apply pair<$T>(tmp, x)
-///		apply identity<$Pair<$T>>(ret, tmp)
-///		stack_free tmp
-///		return
-///	}
+/// export combo : $<type T>([in] T) -> [out] Pair<$T>
+///
+/// body combo {
+///
+/// entry(ret : $*Pair<$T>, x : $*T):
+///     pair = func_ref Pair
+///     identity = func_ref identity
+///     tmp = stack_alloc $T
+///     apply pair<$T>(tmp, x)
+///     apply identity<$Pair<$T>>(ret, tmp)
+///     stack_free tmp
+///     return
+/// }
 unsafe fn combo(ret: *mut u8, x: *mut u8, T: *const TypeInfo) {
     let TP_VWT = mk_pair_vwt(T);
     let TP = mk_pair_ti(&TP_VWT, T);
