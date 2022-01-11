@@ -12,44 +12,51 @@ struct Pair<T> {
 struct TypeInfoPair {
     vwt: *const ValueWitnessTable,
     flags: usize,
+    generics: GenericsPair,
+    fields: [usize; 2],
+}
+
+#[derive(Clone, Copy)]
+struct GenericsPair {
     T: *const TypeInfo,
-    x: usize,
-    y: usize,
 }
 
 unsafe extern "C" fn copy_pair(dst: *mut u8, src: *const u8, TP: *const TypeInfoPair) {
-    let T = (*TP).T;
-    let x = (*TP).x;
-    let y = (*TP).y;
+    let T = (*TP).generics.T;
+    let [x,y] = (*TP).fields;
 
     ((*(*T).vwt).copy_fn)(dst.add(x), src.add(x), T);
     ((*(*T).vwt).copy_fn)(dst.add(y), src.add(y), T);
 }
 
 unsafe extern "C" fn move_pair(dst: *mut u8, src: *const u8, TP: *const TypeInfoPair) {
-    let T = (*TP).T;
-    let x = (*TP).x;
-    let y = (*TP).y;
+    let T = (*TP).generics.T;
+    let [x, y] = (*TP).fields;
 
     ((*(*T).vwt).move_fn)(dst.add(x), src.add(x), T);
     ((*(*T).vwt).move_fn)(dst.add(y), src.add(y), T);
 }
 
 unsafe extern "C" fn drop_pair(val: *mut u8, TP: *const TypeInfoPair) {
-    let T = (*TP).T;
-    let x = (*TP).x;
-    let y = (*TP).y;
+    let T = (*TP).generics.T;
+    let [x, y] = (*TP).fields;
 
     ((*(*T).vwt).drop_fn)(val.add(x), T);
     ((*(*T).vwt).drop_fn)(val.add(y), T);
 }
 
-unsafe fn mk_pair_vwt(T: *const TypeInfo) -> ValueWitnessTable {
-    if (*T).flags & FLAG_TRIVIAL == 1 {
+unsafe fn mk_pair_generics(T: *const TypeInfo) -> GenericsPair {
+    GenericsPair {
+        T
+    }
+}
+
+unsafe fn mk_pair_vwt(generics: GenericsPair) -> ValueWitnessTable {
+    if (*generics.T).flags & FLAG_TRIVIAL == 1 {
         ValueWitnessTable {
-            size: (*(*T).vwt).size * 2,
-            align: (*(*T).vwt).align,
-            stride: (*(*T).vwt).stride * 2,
+            size: (*(*generics.T).vwt).size * 2,
+            align: (*(*generics.T).vwt).align,
+            stride: (*(*generics.T).vwt).stride * 2,
             copy_fn: copy_trivial,
             move_fn: move_trivial,
             drop_fn: drop_trivial,
@@ -60,9 +67,9 @@ unsafe fn mk_pair_vwt(T: *const TypeInfo) -> ValueWitnessTable {
         let drop_pair = drop_pair as unsafe extern "C" fn(*mut u8, *const TypeInfoPair);
 
         ValueWitnessTable {
-            size: (*(*T).vwt).size * 2,
-            align: (*(*T).vwt).align,
-            stride: (*(*T).vwt).stride * 2,
+            size: (*(*generics.T).vwt).size * 2,
+            align: (*(*generics.T).vwt).align,
+            stride: (*(*generics.T).vwt).stride * 2,
             copy_fn: ::std::mem::transmute(copy_pair),
             move_fn: ::std::mem::transmute(move_pair),
             drop_fn: ::std::mem::transmute(drop_pair),
@@ -70,13 +77,12 @@ unsafe fn mk_pair_vwt(T: *const TypeInfo) -> ValueWitnessTable {
     }
 }
 
-unsafe fn mk_pair_ti(vwt: *const ValueWitnessTable, T: *const TypeInfo) -> TypeInfoPair {
+unsafe fn mk_pair_ti(vwt: *const ValueWitnessTable, generics: GenericsPair) -> TypeInfoPair {
     TypeInfoPair {
         vwt,
-        T,
-        flags: (*T).flags,
-        x: 0,
-        y: (*(*T).vwt).stride,
+        generics,
+        flags: (*generics.T).flags | FLAG_STRUCT,
+        fields: [0, (*(*generics.T).vwt).stride],
     }
 }
 
@@ -103,11 +109,12 @@ unsafe fn identity(ret: *mut u8, x: *mut u8, T: *const TypeInfo) {
 ///     return
 /// }
 unsafe fn second(ret: *mut u8, pair: *mut u8, T: *const TypeInfo) {
-    let TP_VWT = mk_pair_vwt(T);
-    let TP = mk_pair_ti(&TP_VWT, T);
-    let field = pair.add((*(*T).vwt).stride);
+    let TP_GENERICS = mk_pair_generics(T);
+    let TP_VWT = mk_pair_vwt(TP_GENERICS);
+    let TP = mk_pair_ti(&TP_VWT, TP_GENERICS);
+    let y = pair.add((*(*T).vwt).stride);
 
-    ((*(*T).vwt).move_fn)(ret, field, T);
+    ((*(*T).vwt).copy_fn)(ret, y, T);
     ((*TP.vwt).drop_fn)(pair, &TP as *const _ as *const TypeInfo);
 }
 
@@ -141,8 +148,9 @@ unsafe fn pair(ret: *mut u8, x: *mut u8, T: *const TypeInfo) {
 ///     return
 /// }
 unsafe fn combo(ret: *mut u8, x: *mut u8, T: *const TypeInfo) {
-    let TP_VWT = mk_pair_vwt(T);
-    let TP = mk_pair_ti(&TP_VWT, T);
+    let TP_GENERICS = mk_pair_generics(T);
+    let TP_VWT = mk_pair_vwt(TP_GENERICS);
+    let TP = mk_pair_ti(&TP_VWT, TP_GENERICS);
 
     let tmp = ::std::alloc::alloc(::std::alloc::Layout::from_size_align(
         (*TP.vwt).size,

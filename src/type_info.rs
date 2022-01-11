@@ -30,6 +30,9 @@ pub unsafe extern "C" fn copy_move_nop(_dst: *mut u8, _src: *const u8, _ti: *con
 pub unsafe extern "C" fn drop_trivial(_val: *mut u8, _ti: *const TypeInfo) {}
 
 pub const FLAG_TRIVIAL: usize = 1 << 0;
+pub const FLAG_PACKED: usize = 1 << 1;
+
+pub const FLAG_STRUCT: usize = 1 << 10;
 
 pub static TRIVIAL_TIS: [TypeInfo; 6] = [
     TypeInfo {
