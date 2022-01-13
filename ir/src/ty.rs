@@ -26,10 +26,11 @@ pub struct Type {
 }
 
 impl Flags {
-    pub const OWNED: Self = Self(1 << 0);
-    pub const C_REPR: Self = Self(1 << 1);
-    pub const PACKED: Self = Self(1 << 2);
-    pub const NON_NULL: Self = Self(1 << 3);
+    pub const TRIVIAL: Self = Self(1 << 0);
+    pub const OWNED: Self = Self(1 << 1);
+    pub const C_REPR: Self = Self(1 << 2);
+    pub const PACKED: Self = Self(1 << 3);
+    pub const NON_NULL: Self = Self(1 << 4);
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]

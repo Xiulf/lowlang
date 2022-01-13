@@ -16,6 +16,7 @@ use ty::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub name: String,
+    pub types: Vec<LocalTypeDef>,
     pub funcs: Arena<Func>,
     bodies: Arena<Body>,
 }
@@ -34,6 +35,12 @@ pub struct Var(pub Idx<VarInfo>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Block(pub Idx<BlockData>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalTypeDef {
+    pub id: TypeDefId,
+    pub linkage: Linkage,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeDef {
@@ -248,6 +255,34 @@ pub struct BrTarget {
 impl Module {
     pub fn func(&self, name: &str) -> Option<BodyId> {
         self.funcs.iter().find(|(_, f)| f.name == name).and_then(|(_, f)| f.body)
+    }
+}
+
+impl TypeDef {
+    pub fn is_trivial(&self, db: &dyn db::IrDatabase) -> bool {
+        match &self.body {
+            None => false,
+            Some(b) => b.is_trivial(db),
+        }
+    }
+}
+
+impl TypeDefBody {
+    pub fn is_trivial(&self, db: &dyn db::IrDatabase) -> bool {
+        match self {
+            TypeDefBody::Struct { fields } => fields.iter().all(|f| {
+                f.ty.lookup(db).flags.is_set(Flags::TRIVIAL)
+            }),
+            TypeDefBody::Union { fields } => fields.iter().all(|f| {
+                f.ty.lookup(db).flags.is_set(Flags::TRIVIAL)
+            }),
+            TypeDefBody::Enum { variants } => variants.iter().all(|v| {
+                match v.payload {
+                    None => true,
+                    Some(p) => p.lookup(db).flags.is_set(Flags::TRIVIAL),
+                }
+            }),
+        }
     }
 }
 

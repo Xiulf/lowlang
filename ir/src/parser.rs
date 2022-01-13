@@ -7,7 +7,7 @@ use std::collections::HashMap;
 #[derive(Debug, PartialEq, Eq, Logos)]
 pub enum Token<'a> {
     #[error]
-    #[regex(r"[ \t\n\f]+", logos::skip)]
+    #[regex(r"[ \t\r\n\f]+", logos::skip)]
     #[regex(r";[^\n]*\n", logos::skip)]
     Error,
 

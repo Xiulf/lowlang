@@ -1,0 +1,10 @@
+[package]
+name = "middle2"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ir = { path = "../ir" }
+rustc-hash = "1.1.0"
+salsa = "0.16.0"
+mangling = "0.2.3"

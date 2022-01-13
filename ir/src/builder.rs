@@ -6,6 +6,7 @@ impl Module {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            types: Vec::new(),
             funcs: Arena::default(),
             bodies: Arena::default(),
         }
