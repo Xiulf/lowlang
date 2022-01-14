@@ -159,10 +159,9 @@ impl<'a> Parser<'a> {
 
     fn parse_item(&mut self) -> Option<()> {
         match self.lexer.next()? {
-            | Ident("type") => self.parse_type_decl(),
-            | Ident("import") => self.parse_func(Linkage::Import),
-            | Ident("export") => self.parse_func(Linkage::Export),
-            | Ident("local") => self.parse_func(Linkage::Local),
+            | Ident("import") => self.parse_linkage(Linkage::Import),
+            | Ident("export") => self.parse_linkage(Linkage::Export),
+            | Ident("local") => self.parse_linkage(Linkage::Local),
             | Ident("struct") => self.parse_struct(false),
             | Ident("union") => self.parse_struct(true),
             | Ident("enum") => self.parse_enum(),
@@ -171,11 +170,22 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type_decl(&mut self) -> Option<()> {
+    fn parse_linkage(&mut self, linkage: Linkage) -> Option<()> {
+        match self.lexer.peek()? {
+            | Ident("type") => {
+                self.lexer.next()?;
+                self.parse_type_decl(linkage)
+            },
+            | _ => self.parse_func(linkage),
+        }
+    }
+
+    fn parse_type_decl(&mut self, linkage: Linkage) -> Option<()> {
         let name = self.def_name()?;
         let id = TypeDef::declare(self.db, name);
 
         self.types.insert(name, id);
+        self.module.add_type(linkage, id);
         Some(())
     }
 

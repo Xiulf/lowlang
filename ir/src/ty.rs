@@ -213,12 +213,14 @@ impl Ty {
         }
     }
 
+    #[track_caller]
     pub fn subst(self, db: &dyn IrDatabase, args: &[Subst], depth: u8) -> Self {
         match self.lookup(db).kind {
             | typ::Ptr(to) => Ty::new(db, typ::Ptr(to.subst(db, args, depth))),
             | typ::Box(k, to) => Ty::new(db, typ::Box(k, to.subst(db, args, depth))),
-            | typ::Var(GenericVar(d2, idx)) if depth == d2 => match args[idx as usize] {
-                | Subst::Type(t) => t,
+            | typ::Var(GenericVar(d2, idx)) if depth == d2 => match args.get(idx as usize) {
+                | None => self,
+                | Some(Subst::Type(t)) => *t,
                 | _ => panic!("Cannot substitute type"),
             },
             | typ::Tuple(ref ts) => Ty::new(db, typ::Tuple(ts.iter().map(|t| t.subst(db, args, depth)).collect())),

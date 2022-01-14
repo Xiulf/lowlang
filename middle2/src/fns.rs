@@ -13,6 +13,8 @@ pub trait FnBuilder<B: Backend> {
     fn offset_u64(&mut self, ptr: B::Value, offset: u64) -> B::Value;
 
     fn memcpy(&mut self, dst: B::Value, src: B::Value, bytes: u64);
+
+    fn ret(&mut self);
 }
 
 impl<B: Backend> State<B> {
@@ -43,13 +45,15 @@ impl<B: Backend> State<B> {
                             if fields[i].ty.lookup(db).flags.is_set(Flags::TRIVIAL) {
                                 let layout = db.layout_of(fields[i].ty);
 
-                                fx.memcpy(dst, src, layout.size.bytes());
+                                fx.memcpy(dst.clone(), src.clone(), layout.size.bytes());
                                 dst = fx.offset_u64(dst, layout.stride.bytes());
                                 src = fx.offset_u64(src, layout.stride.bytes());
                             } else {
-                                todo!();
+                                //todo!();
                             }
                         }
+
+                        fx.ret();
                     } else {
                         unreachable!();
                     }

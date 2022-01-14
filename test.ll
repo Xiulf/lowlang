@@ -1,7 +1,7 @@
 module test
 
-type Pair
-type List
+local type Pair
+local type List
 
 export main : $(i32, **u8) -> i32
 export identity : $<type T>([in] T) -> [out] T

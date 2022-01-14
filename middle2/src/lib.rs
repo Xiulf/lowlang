@@ -13,7 +13,7 @@ pub mod fns;
 pub trait Backend {
     type DataId: Copy + Eq + Hash;
     type FuncId: Copy + Eq + Hash;
-    type Value: Copy;
+    type Value: Clone;
 
     fn import_data(&mut self, name: &str) -> Self::DataId;
     fn import_fn(&mut self, name: &str, nparams: usize) -> Self::FuncId;
@@ -78,6 +78,12 @@ impl<B: Backend> Default for State<B> {
 }
 
 impl<B: Backend> State<B> {
+    pub fn register_types(&mut self, backend: &mut B, db: &dyn IrDatabase, module: &ir::Module) {
+        for local_type in &module.types {
+            self.register_type(backend, db, &module.name, local_type.linkage, local_type.id);
+        }
+    }
+
     pub fn register_type(&mut self, backend: &mut B, db: &dyn IrDatabase, module: &str, linkage: Linkage, id: TypeDefId) {
         let def = id.lookup(db);
         let ty = Ty::new(db, typ::Def(id, None));
@@ -119,7 +125,11 @@ impl<B: Backend> State<B> {
             self.def_to_ti.insert(id, info);
         } else if def.generic_params.is_empty() {
             let copy_fn = self.generate_def_copy(backend, db, module, linkage, &def, &layout);
+
+            todo!();
         } else {
+            let copy_fn = self.generate_def_copy(backend, db, module, linkage, &def, &layout);
+
             todo!();
         }
     }

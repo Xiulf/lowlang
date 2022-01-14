@@ -41,6 +41,13 @@ impl Module {
             block_id: Block::ENTRY,
         }
     }
+
+    pub fn add_type(&mut self, linkage: Linkage, id: TypeDefId) {
+        self.types.push(LocalTypeDef {
+            id,
+            linkage,
+        });
+    }
 }
 
 impl TypeDef {
