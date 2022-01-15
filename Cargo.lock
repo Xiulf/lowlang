@@ -37,6 +37,7 @@ dependencies = [
  "cranelift-module",
  "cranelift-object",
  "ir",
+ "middle",
  "target-lexicon",
  "tempfile",
 ]

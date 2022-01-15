@@ -112,6 +112,7 @@ impl TyAndLayout {
         }
     }
 
+    #[track_caller]
     pub fn field(&self, db: &dyn IrDatabase, idx: usize) -> TyAndLayout {
         match self.ty.lookup(db).kind {
             | typ::Box(BoxKind::Gen, of) => match idx {

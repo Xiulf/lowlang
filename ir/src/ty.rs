@@ -26,10 +26,11 @@ pub struct Type {
 }
 
 impl Flags {
-    pub const OWNED: Self = Self(1 << 0);
-    pub const C_REPR: Self = Self(1 << 1);
-    pub const PACKED: Self = Self(1 << 2);
-    pub const NON_NULL: Self = Self(1 << 3);
+    pub const TRIVIAL: Self = Self(1 << 0);
+    pub const OWNED: Self = Self(1 << 1);
+    pub const C_REPR: Self = Self(1 << 2);
+    pub const PACKED: Self = Self(1 << 3);
+    pub const NON_NULL: Self = Self(1 << 4);
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -105,10 +106,10 @@ impl Ty {
         db.intern_type(ty)
     }
 
-    pub fn new(db: &dyn IrDatabase, kind: TypeKind) -> Self {
+    pub fn new(db: &dyn IrDatabase, kind: TypeKind, flags: Flags) -> Self {
         let ty = Arc::new(Type {
-            flags: Flags::EMPTY,
             repr: Repr::default(),
+            flags,
             kind,
         });
 
@@ -116,31 +117,46 @@ impl Ty {
     }
 
     pub fn unit(db: &dyn IrDatabase) -> Self {
-        Self::new(db, typ::Unit)
+        Self::new(db, typ::Unit, Flags::TRIVIAL)
     }
 
     pub fn ptr(self, db: &dyn IrDatabase) -> Self {
-        Self::new(db, typ::Ptr(self))
+        Self::new(db, typ::Ptr(self), Flags::TRIVIAL)
     }
 
     pub fn boxed(self, kind: BoxKind, db: &dyn IrDatabase) -> Self {
-        Self::new(db, typ::Box(kind, self))
+        Self::new(db, typ::Box(kind, self), Flags::EMPTY)
     }
 
     pub fn gen_box(self, db: &dyn IrDatabase) -> Self {
-        Self::new(db, typ::Box(BoxKind::Gen, self))
+        Self::new(db, typ::Box(BoxKind::Gen, self), Flags::EMPTY)
     }
 
     pub fn rc_box(self, db: &dyn IrDatabase) -> Self {
-        Self::new(db, typ::Box(BoxKind::Rc, self))
+        Self::new(db, typ::Box(BoxKind::Rc, self), Flags::EMPTY)
     }
 
     pub fn array(self, db: &dyn IrDatabase, len: u64) -> Self {
-        Self::new(db, typ::Array(self, len))
+        Self::new(
+            db,
+            typ::Array(self, len),
+            if self.lookup(db).flags.is_set(Flags::TRIVIAL) {
+                Flags::TRIVIAL
+            } else {
+                Flags::EMPTY
+            },
+        )
     }
 
     pub fn tuple(db: &dyn IrDatabase, types: impl IntoIterator<Item = Self>) -> Self {
-        Self::new(db, typ::Tuple(Vec::from_iter(types)))
+        let types = Vec::from_iter(types);
+        let flags = if types.iter().all(|t| t.lookup(db).flags.is_set(Flags::TRIVIAL)) {
+            Flags::TRIVIAL
+        } else {
+            Flags::EMPTY
+        };
+
+        Self::new(db, typ::Tuple(types), flags)
     }
 
     pub fn owned(self, db: &dyn IrDatabase) -> Self {
@@ -166,7 +182,7 @@ impl Ty {
                     scalar: Some(Primitive::Int(int, sign)),
                     ..Repr::default()
                 },
-                flags: Flags::EMPTY,
+                flags: Flags::TRIVIAL,
                 kind: typ::Unit,
             }),
         )
@@ -213,15 +229,17 @@ impl Ty {
     }
 
     pub fn subst(self, db: &dyn IrDatabase, args: &[Subst], depth: u8) -> Self {
-        match self.lookup(db).kind {
-            | typ::Ptr(to) => Ty::new(db, typ::Ptr(to.subst(db, args, depth))),
-            | typ::Box(k, to) => Ty::new(db, typ::Box(k, to.subst(db, args, depth))),
+        let lookup  =self.lookup(db);
+
+        match lookup.kind {
+            | typ::Ptr(to) => Ty::new(db, typ::Ptr(to.subst(db, args, depth)), lookup.flags),
+            | typ::Box(k, to) => Ty::new(db, typ::Box(k, to.subst(db, args, depth)), lookup.flags),
             | typ::Var(GenericVar(d2, idx)) if depth == d2 => match args[idx as usize] {
                 | Subst::Type(t) => t,
                 | _ => panic!("Cannot substitute type"),
             },
-            | typ::Tuple(ref ts) => Ty::new(db, typ::Tuple(ts.iter().map(|t| t.subst(db, args, depth)).collect())),
-            | typ::Array(of, len) => Ty::new(db, typ::Array(of.subst(db, args, depth), len)),
+            | typ::Tuple(ref ts) => Ty::new(db, typ::Tuple(ts.iter().map(|t| t.subst(db, args, depth)).collect()), lookup.flags),
+            | typ::Array(of, len) => Ty::new(db, typ::Array(of.subst(db, args, depth), len), lookup.flags),
             | typ::Func(ref sig) => Ty::new(
                 db,
                 typ::Func(Signature {
@@ -242,8 +260,9 @@ impl Ty {
                         })
                         .collect(),
                 }),
+                lookup.flags,
             ),
-            | typ::Generic(ref params, ty) => Ty::new(db, typ::Generic(params.clone(), ty.subst(db, args, depth + 1))),
+            | typ::Generic(ref params, ty) => Ty::new(db, typ::Generic(params.clone(), ty.subst(db, args, depth + 1)), lookup.flags),
             | typ::Def(id, Some(ref sub)) => Ty::new(
                 db,
                 typ::Def(
@@ -258,6 +277,7 @@ impl Ty {
                             .collect(),
                     ),
                 ),
+                lookup.flags,
             ),
             | _ => self,
         }
@@ -298,7 +318,7 @@ impl Signature {
     }
 
     pub fn to_ty(self, db: &dyn IrDatabase) -> Ty {
-        Ty::new(db, TypeKind::Func(self))
+        Ty::new(db, TypeKind::Func(self), Flags::TRIVIAL)
     }
 }
 
@@ -327,7 +347,7 @@ impl GenericType {
     }
 
     pub fn finish(self, db: &dyn IrDatabase, ty: Ty) -> Ty {
-        Ty::new(db, typ::Generic(self.params, ty))
+        Ty::new(db, typ::Generic(self.params, ty), Flags::EMPTY)
     }
 }
 
@@ -343,7 +363,7 @@ macro_rules! sig {
                 ty: $ret,
                 flags: $crate::Flags::EMPTY
             }),*],
-        }))
+        }), $crate::Flags::EMPTY)
     };
 }
 
@@ -353,7 +373,7 @@ macro_rules! generic {
         let mut generic = $crate::ty::Ty::generic();
         $(
             let $p = generic.add_param($crate::ty::GenericParam::$kind);
-            let $p = $crate::ty::Ty::new($db, $crate::ty::typ::Var($p));
+            let $p = $crate::ty::Ty::new($db, $crate::ty::typ::Var($p), $crate::Flags::EMPTY);
         )*
 
         generic.finish($db, $t)

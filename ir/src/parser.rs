@@ -337,13 +337,13 @@ impl<'a> Parser<'a> {
                         .find_map(|(i, map)| map.get(other).map(|r| r.at(i as u8)));
 
                     if let Some(found) = found {
-                        Some(Ty::new(self.db, typ::Var(found)))
+                        Some(Ty::new(self.db, typ::Var(found), Flags::EMPTY))
                     } else {
                         let id = *self.types.get(other)?;
                         let subst = self.parse_substs()?;
                         let subst = if subst.is_empty() { None } else { Some(subst) };
 
-                        Some(Ty::new(self.db, typ::Def(id, subst)))
+                        Some(Ty::new(self.db, typ::Def(id, subst), Flags::EMPTY))
                     }
                 },
             },
@@ -412,9 +412,9 @@ impl<'a> Parser<'a> {
                         rets,
                     };
 
-                    Some(Ty::new(self.db, typ::Func(sig)))
+                    Some(Ty::new(self.db, typ::Func(sig), Flags::TRIVIAL))
                 } else {
-                    Some(Ty::new(self.db, typ::Tuple(tys)))
+                    Some(Ty::tuple(self.db, tys))
                 }
             },
             | _ => None,
@@ -789,18 +789,21 @@ impl<'a, 'b> BodyParser<'a, 'b> {
                 Vec::new()
             },
             | "copy_addr" => {
+                let mut flags = Flags::EMPTY;
                 let old = self.ident()?;
                 let old = self.vars[old];
+
+                if self.eat(Flag("take")) {
+                    flags = flags.set(Flags::TAKE);
+                }
+
                 let _ = self.expect(Comma)?;
                 let new = self.ident()?;
                 let new = self.vars[new];
-                let flags = if self.eat(Flag("take")) {
-                    Flags::TAKE
-                } else if self.eat(Flag("init")) {
-                    Flags::INIT
-                } else {
-                    Flags::EMPTY
-                };
+
+                if self.eat(Flag("init")) {
+                    flags = flags.set(Flags::INIT);
+                }
 
                 self.builder.copy_addr(old, new, flags);
                 Vec::new()

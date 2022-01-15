@@ -223,7 +223,7 @@ pub enum Instr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Flags(u32);
+pub struct Flags(pub u32);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Term {
