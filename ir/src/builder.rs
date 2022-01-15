@@ -413,8 +413,8 @@ impl<'a> Builder<'a> {
     /// Create a new tuple of type `(t1, t2, ...tn)`.
     pub fn tuple(&mut self, vals: impl IntoIterator<Item = Var>) -> Var {
         let vals = Vec::from_iter(vals);
-        let tys = vals.iter().map(|&v| self.body()[v].ty).collect();
-        let ty = Ty::new(self.db, typ::Tuple(tys));
+        let tys = vals.iter().map(|&v| self.body()[v].ty);
+        let ty = Ty::tuple(self.db, tys);
         let ret = self.create_var(ty);
 
         self.block().instrs.push(Instr::Tuple { ret, vals });
@@ -550,38 +550,14 @@ impl<'a> Builder<'a> {
         }
 
         if let typ::Func(ref sig) = sig.lookup(self.db).kind {
-            let mut ret_args = Vec::new();
-            let mut rets = sig
+            let rets = sig
                 .rets
                 .iter()
-                .filter_map(|ret| {
-                    if ret.flags.is_set(Flags::OUT) {
-                        let stack_slot = self.stack_alloc(ret.ty);
-
-                        ret_args.push(stack_slot);
-                        None
-                    } else {
-                        Some(self.create_var(ret.ty.clone()))
-                    }
-                })
+                .filter(|r| !r.flags.is_set(Flags::OUT))
+                .map(|r| self.create_var(r.ty.clone()))
                 .collect::<Vec<_>>();
 
-            let mut indirect_args = Vec::new();
-            let args = ret_args
-                .iter()
-                .copied()
-                .chain(args.into_iter().zip(&sig.params).map(|(arg, param)| {
-                    if param.flags.is_set(Flags::IN) {
-                        let stack_slot = self.stack_alloc(param.ty);
-
-                        self.store(arg, stack_slot);
-                        indirect_args.push(stack_slot);
-                        stack_slot
-                    } else {
-                        arg
-                    }
-                }))
-                .collect::<Vec<_>>();
+            let args = Vec::from_iter(args);
 
             self.block().instrs.push(Instr::Apply {
                 rets: rets.clone(),
@@ -589,22 +565,6 @@ impl<'a> Builder<'a> {
                 subst,
                 args,
             });
-
-            ret_args.reverse();
-
-            for arg in indirect_args.into_iter().rev() {
-                self.stack_free(arg);
-            }
-
-            for (i, ret) in sig.rets.iter().enumerate() {
-                if ret.flags.is_set(Flags::OUT) {
-                    let stack_slot = ret_args.pop().unwrap();
-                    let val = self.load(stack_slot);
-
-                    self.stack_free(stack_slot);
-                    rets.insert(i, val);
-                }
-            }
 
             rets
         } else {

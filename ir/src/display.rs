@@ -313,9 +313,13 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
             | Instr::BoxAddr { ret, boxed } => write!(f, "{} = box_addr {}", ret, boxed),
             | Instr::Load { ret, addr } => write!(f, "{} = load {}", ret, addr),
             | Instr::Store { val, addr } => write!(f, "store {}, {}", val, addr),
-            | Instr::CopyAddr { old, new, flags } if flags.is_set(Flags::TAKE) => write!(f, "copy_addr {}, {} [take]", old, new),
-            | Instr::CopyAddr { old, new, flags } if flags.is_set(Flags::INIT) => write!(f, "copy_addr {}, {} [init]", old, new),
-            | Instr::CopyAddr { old, new, .. } => write!(f, "copy_addr {}, {}", old, new),
+            | Instr::CopyAddr { old, new, flags } => {
+                write!(f, "copy_addr {}", old)?;
+                if flags.is_set(Flags::TAKE) { write!(f, " [take]")?; }
+                write!(f, ", {}", new)?;
+                if flags.is_set(Flags::INIT) { write!(f, " [init]")?; }
+                Ok(())
+            },
             | Instr::CopyValue { ret, val } => write!(f, "{} = copy_value {}", ret, val),
             | Instr::DropAddr { addr } => write!(f, "drop_addr {}", addr),
             | Instr::DropValue { val } => write!(f, "drop_value {}", val),

@@ -1,19 +1,22 @@
-#![feature(once_cell)]
+#![feature(once_cell, generic_associated_types)]
 
 mod intrinsic;
 mod metadata;
 mod middle2;
+mod middle;
 mod pass;
 mod ptr;
 mod runtime;
 mod ty;
 mod value;
 
+use self::middle::MiddleCtx;
 use arena::{ArenaMap, Idx};
 use clif::InstBuilder;
 use cranelift_module::Module;
 use ir::db::IrDatabase;
 use ir::layout::Abi;
+use ir::Flags;
 use ptr::Pointer;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -145,6 +148,20 @@ impl<'ctx> CodegenCtx<'ctx> {
         }
         .lower();
     }
+
+    pub fn middle(&mut self) -> MiddleCtx {
+        MiddleCtx {
+            db: self.db,
+            ctx: self.module.make_context(),
+            fcx: clif::FunctionBuilderContext::new(),
+            type_infos: &self.runtime_defs.type_infos,
+            value_witness_tables: &self.runtime_defs.value_witness_tables,
+            copy_trivial: &self.runtime_defs.copy_trivial,
+            move_trivial: &self.runtime_defs.move_trivial,
+            drop_trivial: &self.runtime_defs.drop_trivial,
+            module: &mut self.module,
+        }
+    }
 }
 
 impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
@@ -214,12 +231,18 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             }
         }
 
+        let generic_layout = self.db.layout_of(
+            self.cx
+                .runtime_defs
+                .type_infos
+                .type_info_ty(self.db, &self.cx.runtime_defs.value_witness_tables),
+        );
+
         for gen in generics {
             match gen {
                 | ir::ty::GenericParam::Type => {
                     let val = self.bcx.append_block_param(entry, ptr_type);
-                    let layout = self.db.layout_of(self.cx.typ());
-                    let val = Val::new_ref(Pointer::addr(val), layout);
+                    let val = Val::new_ref(Pointer::addr(val), generic_layout.clone());
 
                     self.generic_params.push(val);
                 },
@@ -362,7 +385,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
 
                 val.store_to(self, ptr, clif::MemFlags::new());
             },
-            | ir::Instr::CopyAddr { old, new, flags: _ } => {
+            | ir::Instr::CopyAddr { old, new, flags } => {
                 let elem_ty = self.body[old].ty.pointee(self.db).unwrap();
                 let old = self.vars[old.0].clone();
                 let new = self.vars[new.0].clone();
@@ -370,7 +393,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                 if let ir::ty::typ::Var(var) = elem_ty.lookup(self.db).kind {
                     let typ = self.generic_params[var.idx()].clone();
                     let vwt = typ.clone().field(self, 0).deref(self);
-                    let copy = vwt.field(self, 3);
+                    let copy = vwt.field(self, if flags.is_set(Flags::TAKE) { 4 } else { 3 });
                     let sig = self.ty_as_sig(copy.layout().ty);
                     let sig = self.bcx.import_signature(sig);
                     let copy = copy.load(self);
@@ -721,7 +744,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     .flat_map(|sub| match *sub {
                         | ir::ty::Subst::Type(t) => {
                             sig.params.push(clif::AbiParam::new(ptr_type));
-                            pass::EmptySinglePair::Single(self.find_type_metadata(t).unwrap().load(self))
+                            pass::EmptySinglePair::Single(self.get_type_metadata(t).load(self))
                         },
                         | _ => unimplemented!(),
                     })

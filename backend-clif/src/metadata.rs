@@ -1,26 +1,47 @@
+use super::*;
+use ::middle::BackendMethods;
 use ir::{
     layout::{Fields, Size, TyAndLayout},
     ty::typ,
-    TypeDefBody,
+    Flags, TypeDefBody,
 };
 
-use super::*;
-
 impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
-    pub fn find_type_metadata(&mut self, ty: ir::ty::Ty) -> Option<Val> {
-        if let ir::ty::typ::Var(var) = ty.lookup(self.db).kind {
+    pub fn get_type_metadata(&mut self, ty: ir::ty::Ty) -> Val {
+        let lookup = ty.lookup(self.db);
+
+        if let typ::Var(var) = lookup.kind {
             if var.depth() == 0 {
-                Some(self.generic_params[var.idx()].clone())
+                return self.generic_params[var.idx()].clone();
             } else {
                 unimplemented!();
             }
-        } else {
-            // for now assume the type is trivial
+        } else if lookup.flags.is_set(Flags::TRIVIAL) {
             let layout = self.db.layout_of(ty);
             let size = layout.size.bytes();
 
-            self.get_trivial_meta(size)
+            if let Some(val) = self.get_trivial_meta(size) {
+                return val;
+            }
         }
+
+        let middle = self.cx.middle();
+        let id = {
+            let info = middle.type_infos().get(&middle, ty);
+            dbg!(&info);
+            info.alloc(&middle)
+        };
+        let gv = self.cx.module.declare_data_in_func(id, &mut self.cx.ctx.func);
+        let ptr_type = self.module.target_config().pointer_type();
+        let ty = self
+            .runtime_defs
+            .type_infos
+            .type_info_ty(self.db, &self.runtime_defs.value_witness_tables)
+            .ptr(self.db);
+        let layout = self.db.layout_of(ty);
+        let value = self.bcx.ins().global_value(ptr_type, gv);
+
+        Val::new_val(value, layout)
     }
 
     pub fn get_trivial_meta(&mut self, size: u64) -> Option<Val> {
@@ -36,7 +57,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             | _ => return None,
         };
 
-        let typ = self.typ();
+        let typ = self.runtime_defs.type_infos.type_info_ty(self.db, &self.runtime_defs.value_witness_tables);
         let layout = self.db.layout_of(typ);
         let gv = self.cx.module.declare_data_in_func(trivial_metas, &mut self.bcx.func);
         let addr = self.bcx.ins().global_value(ptr_type, gv);

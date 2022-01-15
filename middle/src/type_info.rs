@@ -1,82 +1,121 @@
 use crate::{BackendMethods, ValueWitnessTables};
 use ir::db::IrDatabase;
 use ir::layout::{Fields, Integer};
-use ir::ty::{typ, Ty};
-use ir::{Flags, TypeDefBody};
+use ir::ty::{Subst, Ty, typ};
+use ir::Flags;
 use rustc_hash::FxHashMap;
-use std::cell::RefCell;
+use std::cell::{RefCell, Ref};
 use std::lazy::OnceCell;
 
-#[derive(Default)]
-pub struct TypeInfos<B: BackendMethods> {
+pub struct TypeInfos<DataId> {
     type_info_ty: OnceCell<Ty>,
-    ty_to_data: RefCell<FxHashMap<Ty, B::DataId>>,
-    data_to_info: RefCell<FxHashMap<B::DataId, TypeInfo<B>>>,
+    ty_to_data: RefCell<FxHashMap<Ty, DataId>>,
+    ty_to_info: RefCell<FxHashMap<Ty, TypeInfo<DataId>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TypeInfo<B: BackendMethods> {
-    pub vwt: B::DataId,
+pub struct TypeInfo<DataId> {
+    pub ty: Ty,
+    pub vwt: DataId,
     pub flags: Flags,
-    pub generics: usize,
-    pub fields: Vec<usize>,
+    pub generics: Vec<Option<DataId>>,
+    pub fields: Vec<u64>,
 }
 
-impl<B: BackendMethods> TypeInfos<B> {
-    pub fn type_info_ty(&self, db: &dyn IrDatabase) -> Ty {
+impl<DataId> Default for TypeInfos<DataId> {
+    fn default() -> Self {
+        Self {
+            type_info_ty: OnceCell::new(),
+            ty_to_data: RefCell::new(FxHashMap::default()),
+            ty_to_info: RefCell::new(FxHashMap::default()),
+        }
+    }
+}
+
+impl<DataId> TypeInfos<DataId> {
+    pub fn type_info_ty<FuncId>(&self, db: &dyn IrDatabase, vwts: &ValueWitnessTables<DataId, FuncId>) -> Ty {
         *self.type_info_ty.get_or_init(|| {
+            let vwt_ptr = vwts.vwt_ty(db).ptr(db);
             let int = Ty::int(db, Integer::ISize, false);
 
-            Ty::tuple(db, [int, int])
+            Ty::tuple(db, [vwt_ptr, int])
         })
     }
 
-    pub fn get(&self, b: &B, ty: Ty) -> B::DataId
+    pub fn get<B>(&self, b: &B, ty: Ty) -> Ref<TypeInfo<DataId>>
     where
-        B::DataId: Eq + std::hash::Hash,
+        B: BackendMethods<DataId = DataId>,
+        DataId: Copy,
     {
         {
-            let borrow = self.ty_to_data.borrow();
+            let borrow = self.ty_to_info.borrow();
 
-            if let Some(&id) = borrow.get(&ty) {
-                return id;
+            if borrow.contains_key(&ty) {
+                return Ref::map(borrow, |map| &map[&ty]);
             }
         }
 
-        let vwt = b.value_witness_tables().get(b, ty);
+        let vwt = b.value_witness_tables().get(b, ty).alloc(b);
         let lookup = ty.lookup(b.db());
         let layout = b.db().layout_of(ty);
         let flags = lookup.flags;
 
         let generics = match lookup.kind {
-            | typ::Generic(ref params, _) => params.len(),
-            | typ::Def(id, None) => id.lookup(b.db()).generic_params.len(),
-            | _ => 0,
-        };
-
-        let fields = match layout.fields {
-            | Fields::Arbitrary { ref offsets, .. } => offsets.iter().map(|o| o.bytes() as usize).collect(),
+            | typ::Generic(ref params, _) => vec![None; params.len()],
+            | typ::Def(id, None) => vec![None; id.lookup(b.db()).generic_params.len()],
+            | typ::Def(_, Some(ref args)) => args.iter().map(|arg| match *arg {
+                Subst::Type(ty) => if b.db().layout_of(ty).abi.is_unsized() {
+                    None
+                } else {
+                    Some(self.get(b, ty).alloc(b))
+                },
+                _ => todo!(),
+            }).collect(),
             | _ => Vec::new(),
         };
 
-        let info = TypeInfo { vwt, flags, generics, fields };
-        let id = b.alloc_type_info(&info);
+        let fields = match layout.fields {
+            | Fields::Arbitrary { ref offsets, .. } => offsets.iter().map(|o| o.bytes()).collect(),
+            | _ => Vec::new(),
+        };
 
-        self.ty_to_data.borrow_mut().insert(ty, id);
-        self.data_to_info.borrow_mut().insert(id, info);
+        let info = TypeInfo { ty, vwt, flags, generics, fields };
 
-        id
+        self.ty_to_info.borrow_mut().insert(ty, info);
+
+        let borrow = self.ty_to_info.borrow();
+
+        Ref::map(borrow, |map| &map[&ty])
     }
 }
 
-impl<B: BackendMethods> TypeInfo<B> {
-    pub fn ty(&self, db: &dyn IrDatabase, infos: &TypeInfos<B>, vwts: &ValueWitnessTables<B>) -> Ty {
+impl<DataId> TypeInfo<DataId> {
+    pub fn alloc<B>(&self, b: &B) -> DataId
+    where
+        B: BackendMethods<DataId = DataId>,
+        DataId: Copy,
+    {
+        if let Some(&id) = b.type_infos().ty_to_data.borrow().get(&self.ty) {
+            return id;
+        }
+
+        let id = b.alloc_type_info(self);
+
+        b.type_infos().ty_to_data.borrow_mut().insert(self.ty, id);
+        id
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.generics.iter().all(Option::is_some)
+    }
+
+    pub fn ty<FuncId>(&self, db: &dyn IrDatabase, infos: &TypeInfos<DataId>, vwts: &ValueWitnessTables<DataId, FuncId>) -> Ty {
         let vwt = vwts.vwt_ty(db);
-        let ty = infos.type_info_ty(db).ptr(db);
+        let ty = infos.type_info_ty(db, vwts).ptr(db);
         let int = Ty::int(db, Integer::ISize, false);
         let mut fields = vec![vwt, int];
 
-        for _ in 0..self.generics {
+        for _ in 0..self.generics.len() {
             fields.push(ty);
         }
 
@@ -89,11 +128,11 @@ impl<B: BackendMethods> TypeInfo<B> {
 
     #[inline]
     pub fn field_index(&self, idx: usize) -> usize {
-        2 + self.generics + idx
+        2 + self.generics.len() + idx
     }
 
     #[inline]
-    pub fn field_offset(&self, idx: usize) -> usize {
-        self.fields[self.field_index(idx)]
+    pub fn field_offset(&self, idx: usize) -> u64 {
+        self.fields[idx]
     }
 }

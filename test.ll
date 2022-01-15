@@ -5,7 +5,7 @@ local type List
 
 export main : $(i32, **u8) -> i32
 export identity : $<type T>([in] T) -> [out] T
-export first : $<type T>([in] Pair<$T>) -> [out] T
+export second : $<type T>([in] Pair<$T>) -> [out] T
 local  print_args : $(i32, **u8) -> ()
 import puts : $(*u8) -> i32
 ; import write : $(i32, *u8, usize) -> isize
@@ -25,8 +25,16 @@ enum List<type T> {
 body main {
 
 entry(argc : $i32, argv : $**u8):
-    identity = func_ref identity
-    argv = apply identity<$**u8>(argv)
+    n120 = const_int 120, $i32
+    pair = struct $Pair<$i32>(a: n120, b: argc)
+    second = func_ref second
+    t1 = stack_alloc $Pair<$i32>
+    t2 = stack_alloc $i32
+    store pair, t1
+    apply second<$i32>(t2, t1)
+    argc = load t2
+    stack_free t2
+    stack_free t1
     print_args = func_ref print_args
     apply print_args(argc, argv)
     zero = const_int 0, $i32
@@ -59,15 +67,16 @@ exit:
 body identity <type T> {
 
 entry(ret : $*T, x : $*T):
-    copy_addr x, ret [init]
+    copy_addr x [take], ret [init]
     return
 }
 
 
-body first <type T> {
+body second <type T> {
 
 entry(ret : $*T, pair : $*Pair<$T>):
     a = struct_addr pair, b
-    copy_addr a, ret [init]
+    identity = func_ref identity
+    apply identity<$T>(ret, a)
     return
 }
