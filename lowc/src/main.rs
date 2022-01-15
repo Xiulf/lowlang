@@ -30,7 +30,7 @@ fn main() {
 
     let obj_file = codegen::compile_module(&db, &module, codegen::Backend::Clif);
     let _ = std::fs::copy(obj_file.path(), "test.o").unwrap();
-    let link_args = [
+    /*let link_args = [
         "-dynamic-linker",
         "/lib64/ld-linux-x86-64.so.2",
         "-o",
@@ -52,5 +52,5 @@ fn main() {
         eprintln!("{}", e);
     }
 
-    std::fs::remove_file("test.o").unwrap();
+    std::fs::remove_file("test.o").unwrap();*/
 }

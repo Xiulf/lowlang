@@ -2,6 +2,7 @@
 
 mod intrinsic;
 mod metadata;
+mod middle2;
 mod middle;
 mod pass;
 mod ptr;
@@ -33,6 +34,10 @@ mod clif {
 #[no_mangle]
 pub fn compile_module(db: &dyn IrDatabase, ir: &ir::Module, object_file: &mut NamedTempFile) {
     with_codegen_ctx(db, ir, |mut ctx| {
+        let mut mcx = ctx.middle_ctx();
+
+        ctx.middle.register_types(&mut mcx, db, ir);
+
         for (id, func) in ir.funcs.iter() {
             ctx.declare_func(id, func);
         }
@@ -56,6 +61,7 @@ pub struct CodegenCtx<'ctx> {
     ctx: &'ctx mut clif::Context,
     fcx: &'ctx mut clif::FunctionBuilderContext,
     module: clif::ObjectModule,
+    middle: middle2::State,
     func_ids: ArenaMap<Idx<ir::Func>, (clif::FuncId, clif::Signature)>,
     runtime_defs: runtime::RuntimeDefs,
 }
@@ -94,6 +100,7 @@ pub fn with_codegen_ctx<T>(db: &dyn IrDatabase, ir: &ir::Module, f: impl FnOnce(
         ctx: &mut ctx,
         fcx: &mut fcx,
         module,
+        middle: ::middle2::State::default(),
         func_ids: ArenaMap::default(),
         runtime_defs: runtime::RuntimeDefs::default(),
     };
@@ -102,6 +109,10 @@ pub fn with_codegen_ctx<T>(db: &dyn IrDatabase, ir: &ir::Module, f: impl FnOnce(
 }
 
 impl<'ctx> CodegenCtx<'ctx> {
+    pub fn middle_ctx(&mut self) -> middle2::MiddleCtx {
+        middle2::MiddleCtx::new(&mut self.module)
+    }
+
     pub fn declare_func(&mut self, id: Idx<ir::Func>, func: &ir::Func) {
         let sig = self.ty_as_sig(func.sig);
         let new_id = self

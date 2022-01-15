@@ -6,6 +6,7 @@ impl Module {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            types: Vec::new(),
             funcs: Arena::default(),
             bodies: Arena::default(),
         }
@@ -39,6 +40,13 @@ impl Module {
             body_id,
             block_id: Block::ENTRY,
         }
+    }
+
+    pub fn add_type(&mut self, linkage: Linkage, id: TypeDefId) {
+        self.types.push(LocalTypeDef {
+            id,
+            linkage,
+        });
     }
 }
 
