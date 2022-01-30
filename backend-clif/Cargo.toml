@@ -8,7 +8,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ir = { path = "../ir" }
-middle2 = { path = "../middle2" }
 middle = { path = "../middle" }
 arena = { git = "https://github.com/Xiulf/arena.git" }
 cranelift = "0.74.0"

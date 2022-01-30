@@ -1,7 +1,6 @@
 module test
 
 local type Pair
-local type List
 
 export main : $(i32, **u8) -> i32
 export identity : $<type T>([in] T) -> [out] T
@@ -14,11 +13,6 @@ import puts : $(*u8) -> i32
 struct Pair<type T> {
     a : $T,
     b : $T,
-}
-
-enum List<type T> {
-    Nil,
-    Cons : $(T, List<$T>),
 }
 
 

@@ -30,7 +30,7 @@ impl<T> Iterator for EmptySinglePair<T> {
     }
 }
 
-impl<'ctx> CodegenCtx<'ctx> {
+impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
     pub fn pass_mode(&self, layout: &TyAndLayout) -> PassMode {
         if layout.is_zst() {
             PassMode::NoPass
@@ -47,7 +47,7 @@ impl<'ctx> CodegenCtx<'ctx> {
     }
 }
 
-impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
+impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
     pub fn value_for_ret(&mut self, val: Val) -> EmptySinglePair<clif::Value> {
         match self.pass_mode(val.layout()) {
             | PassMode::NoPass | PassMode::ByRef { .. } => EmptySinglePair::Empty,

@@ -73,7 +73,7 @@ pub struct SigParam {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GenericVar(pub(crate) u8, pub(crate) u8);
+pub struct GenericVar(pub u8, pub u8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GenericParam {
@@ -159,6 +159,12 @@ impl Ty {
         Self::new(db, typ::Tuple(types), flags)
     }
 
+    pub fn def(db: &dyn IrDatabase, id: TypeDefId, subst: Option<Vec<Subst>>) -> Self {
+        let flags = if id.lookup(db).is_trivial(db) { Flags::TRIVIAL } else { Flags::EMPTY };
+
+        Self::new(db, typ::Def(id, subst), flags)
+    }
+
     pub fn owned(self, db: &dyn IrDatabase) -> Self {
         self.flag(db, Flags::OWNED)
     }
@@ -230,7 +236,7 @@ impl Ty {
 
     #[track_caller]
     pub fn subst(self, db: &dyn IrDatabase, args: &[Subst], depth: u8) -> Self {
-        let lookup  =self.lookup(db);
+        let lookup = self.lookup(db);
 
         match lookup.kind {
             | typ::Ptr(to) => Ty::new(db, typ::Ptr(to.subst(db, args, depth)), lookup.flags),
@@ -282,6 +288,23 @@ impl Ty {
                 lookup.flags,
             ),
             | _ => self,
+        }
+    }
+
+    pub fn var_count(self, db: &dyn IrDatabase, var: GenericVar) -> u64 {
+        match self.lookup(db).kind {
+            | typ::Var(v) if v == var => 1,
+            | typ::Tuple(ref tys) => tys.iter().map(|t| t.var_count(db, var)).sum(),
+            | typ::Array(ty, len) => ty.var_count(db, var) * len,
+            | typ::Generic(_, ty) => ty.var_count(db, GenericVar(var.0 + 1, var.1)),
+            | typ::Def(_, Some(ref subst)) => subst
+                .iter()
+                .map(|s| match s {
+                    | Subst::Type(ty) => ty.var_count(db, var),
+                    | _ => 0,
+                })
+                .sum(),
+            | _ => 0,
         }
     }
 }

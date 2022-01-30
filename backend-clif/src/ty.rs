@@ -2,7 +2,7 @@ use super::{clif, pass::PassMode, CodegenCtx};
 use clif::{types, Module};
 use ir::layout::{Abi, Integer, Primitive, Scalar, TyAndLayout};
 
-impl<'ctx> CodegenCtx<'ctx> {
+impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
     pub fn ir_type(&self, layout: &TyAndLayout) -> Option<clif::Type> {
         if let Abi::Scalar(s) = &layout.abi {
             Some(self.scalar_type(s))

@@ -129,6 +129,7 @@ impl Val {
         match self.inner {
             | ValInner::Addr(ptr) => ptr,
             | ValInner::Value(addr) => Pointer::addr(addr),
+            | ValInner::Ref(ptr, _) => ptr,
             | _ => unreachable!(),
         }
     }

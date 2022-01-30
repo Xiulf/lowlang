@@ -28,7 +28,6 @@ dependencies = [
  "cranelift-module",
  "cranelift-object",
  "ir",
- "middle2",
  "middle",
  "target-lexicon",
  "tempfile",
@@ -328,14 +327,6 @@ checksum = "5c7a06cc0998566a3df79f0120bdeaf4152706fb3a85b1505823362c59931a96"
 
 [[package]]
 name = "middle"
-version = "0.1.0"
-dependencies = [
- "ir",
- "rustc-hash",
-]
-
-[[package]]
-name = "middle2"
 version = "0.1.0"
 dependencies = [
  "ir",

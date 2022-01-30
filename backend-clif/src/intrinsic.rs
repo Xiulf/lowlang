@@ -16,7 +16,7 @@ macro_rules! intrinsics {
     };
 }
 
-impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
+impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
     pub fn lower_intrinsic(&mut self, name: &str, rets: &[ir::Var], args: Vec<Val>) {
         let mut args = args.into_iter();
 

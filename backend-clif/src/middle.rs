@@ -1,243 +1,264 @@
-use crate::clif;
-use cranelift::{
-    codegen::{
-        binemit::{NullStackMapSink, NullTrapSink},
-        ir::Endianness,
-    },
-    prelude::{isa::TargetIsa, AbiParam, Value},
-};
-use cranelift_module::{DataContext, DataId, FuncId, Linkage, Module};
-use cranelift_object::ObjectModule;
-use ir::{db::IrDatabase, layout::Align};
-use middle::{BackendMethods, FnBuilder, TypeInfos, ValueWitnessTables};
-use std::lazy::OnceCell;
-use target_lexicon::PointerWidth;
+use std::collections::HashMap;
 
-pub struct MiddleCtx<'module> {
-    pub(crate) db: &'module dyn IrDatabase,
-    pub(crate) module: &'module mut ObjectModule,
-    pub(crate) ctx: clif::Context,
-    pub(crate) fcx: clif::FunctionBuilderContext,
-    pub(crate) type_infos: &'module TypeInfos<clif::DataId>,
-    pub(crate) value_witness_tables: &'module ValueWitnessTables<clif::DataId, clif::FuncId>,
+use super::*;
+use ::middle::{fns::FnBuilder, Backend};
+use ir::ty::{Ty, TypeKind};
 
-    pub(crate) copy_trivial: &'module OnceCell<FuncId>,
-    pub(crate) move_trivial: &'module OnceCell<FuncId>,
-    pub(crate) drop_trivial: &'module OnceCell<FuncId>,
+pub type State<'db> = ::middle::State<MiddleCtx<'db>>;
+
+pub struct MiddleCtx<'db> {
+    db: &'db dyn IrDatabase,
+    module: *mut clif::ObjectModule,
 }
 
-pub struct FnCtx<'ctx, 'module> {
-    cx: &'ctx mut MiddleCtx<'module>,
+struct FnCtx<'module, 'ctx> {
     bcx: clif::FunctionBuilder<'ctx>,
-    params: Vec<Value>,
-    func: FuncId,
+    db: &'module dyn IrDatabase,
+    module: &'module mut clif::ObjectModule,
+    params: Vec<clif::Value>,
+    info_cache: HashMap<Ty, clif::Value>,
+    load_cache: HashMap<(clif::Value, i32), clif::Value>,
+    sig_cache: HashMap<usize, cranelift::codegen::ir::SigRef>,
 }
 
-fn push_int(target: &dyn TargetIsa, bytes: &mut Vec<u8>, int: u64) {
-    match (target.endianness(), target.pointer_width()) {
-        | (Endianness::Big, PointerWidth::U16) => bytes.extend((int as u16).to_be_bytes()),
-        | (Endianness::Big, PointerWidth::U32) => bytes.extend((int as u32).to_be_bytes()),
-        | (Endianness::Big, PointerWidth::U64) => bytes.extend((int as u64).to_be_bytes()),
-        | (Endianness::Little, PointerWidth::U16) => bytes.extend((int as u16).to_le_bytes()),
-        | (Endianness::Little, PointerWidth::U32) => bytes.extend((int as u32).to_le_bytes()),
-        | (Endianness::Little, PointerWidth::U64) => bytes.extend((int as u64).to_le_bytes()),
+impl<'db> MiddleCtx<'db> {
+    pub(super) fn new(db: &'db dyn IrDatabase, module: &mut clif::ObjectModule) -> Self {
+        Self { db, module }
+    }
+
+    #[inline]
+    fn module(&mut self) -> &mut clif::ObjectModule {
+        unsafe { &mut *self.module }
     }
 }
 
-impl<'module> BackendMethods for MiddleCtx<'module> {
-    type DataId = DataId;
-    type FuncId = FuncId;
-    type FnBuilder<'ctx>
-    where
-        'module: 'ctx,
-    = FnCtx<'ctx, 'module>;
+impl<'module, 'ctx> FnCtx<'module, 'ctx> {
+    fn new(bcx: clif::FunctionBuilder<'ctx>, db: &'module dyn IrDatabase, module: &'module mut clif::ObjectModule) -> Self {
+        Self {
+            bcx,
+            db,
+            module,
+            params: Vec::new(),
+            info_cache: HashMap::new(),
+            load_cache: HashMap::new(),
+            sig_cache: HashMap::new(),
+        }
+    }
+}
 
-    fn db(&self) -> &dyn ir::db::IrDatabase {
-        self.db
+impl<'db> Backend for MiddleCtx<'db> {
+    type DataId = clif::DataId;
+    type FuncId = clif::FuncId;
+    type Value = clif::Value;
+
+    fn import_data(&mut self, name: &str) -> Self::DataId {
+        self.module().declare_data(name, clif::Linkage::Import, false, false).unwrap()
     }
 
-    fn type_infos(&self) -> &middle::TypeInfos<clif::DataId> {
-        &self.type_infos
+    fn import_fn(&mut self, name: &str, nparams: usize) -> Self::FuncId {
+        let mut sig = self.module().make_signature();
+        let ptr_type = self.module().target_config().pointer_type();
+
+        sig.params = (0..nparams).map(|_| clif::AbiParam::new(ptr_type)).collect();
+
+        self.module().declare_function(name, clif::Linkage::Import, &sig).unwrap()
     }
 
-    fn value_witness_tables(&self) -> &middle::ValueWitnessTables<clif::DataId, clif::FuncId> {
-        &self.value_witness_tables
-    }
+    fn mk_fn(&mut self, name: &str, export: bool, nparams: usize, f: impl FnOnce(&mut dyn FnBuilder<Self>)) -> Self::FuncId {
+        let mut ctx = self.module().make_context();
+        let mut fcx = clif::FunctionBuilderContext::new();
+        let mut sig = self.module().make_signature();
+        let ptr_type = self.module().target_config().pointer_type();
 
-    fn alloc_type_info(&self, type_info: &middle::TypeInfo<clif::DataId>) -> Self::DataId {
-        let module = unsafe { &mut *(self.module as *const _ as *mut ObjectModule) };
-        let id = module.declare_anonymous_data(false, false).unwrap();
-        let target = module.isa();
-        let mut dcx = DataContext::new();
-        let mut bytes = Vec::new();
+        sig.params = (0..nparams).map(|_| clif::AbiParam::new(ptr_type)).collect();
 
-        push_int(target, &mut bytes, 0);
-        push_int(target, &mut bytes, type_info.flags.0 as u64);
+        let id = self
+            .module()
+            .declare_function(name, if export { clif::Linkage::Export } else { clif::Linkage::Local }, &sig)
+            .unwrap();
 
-        for _ in 0..type_info.generics.len() {
-            push_int(target, &mut bytes, 0);
-        }
+        ctx.func.signature = sig;
+        ctx.func.name = clif::ExternalName::user(0, id.as_u32());
+        ctx.func.collect_debug_info();
 
-        for &offset in &type_info.fields {
-            push_int(target, &mut bytes, offset);
-        }
+        let mut fx = FnCtx::new(clif::FunctionBuilder::new(&mut ctx.func, &mut fcx), self.db, unsafe { &mut *self.module });
+        let entry = fx.bcx.create_block();
 
-        let ptr_size = target.pointer_bytes() as u32;
-        let vwt = module.declare_data_in_data(type_info.vwt, &mut dcx);
+        fx.bcx.switch_to_block(entry);
+        fx.bcx.append_block_params_for_function_params(entry);
+        fx.params = fx.bcx.block_params(entry).to_vec();
 
-        dcx.write_data_addr(0, vwt, 0);
+        f(&mut fx);
 
-        for (i, &gen) in type_info.generics.iter().enumerate() {
-            if let Some(id) = gen {
-                let gv = module.declare_data_in_data(id, &mut dcx);
+        fx.bcx.seal_all_blocks();
+        fx.bcx.finalize();
 
-                dcx.write_data_addr((i + 2) as u32 * ptr_size, gv, 0);
-            }
-        }
+        ctx.compute_cfg();
+        ctx.compute_domtree();
+        ctx.eliminate_unreachable_code(self.module().isa()).unwrap();
+        ctx.dce(self.module().isa()).unwrap();
+        ctx.domtree.clear();
 
-        dcx.define(bytes.into_boxed_slice());
-        module.define_data(id, &dcx).unwrap();
+        eprintln!("{}:", name);
+        eprintln!("{}", ctx.func);
+
+        self.module()
+            .define_function(id, &mut ctx, &mut clif::NullTrapSink {}, &mut clif::NullStackMapSink {})
+            .unwrap();
 
         id
-    }
-
-    fn alloc_value_witness_table(&self, vwt: &middle::ValueWitnessTable<clif::FuncId>) -> Self::DataId {
-        let module = unsafe { &mut *(self.module as *const _ as *mut ObjectModule) };
-        let id = module.declare_anonymous_data(false, false).unwrap();
-        let target = module.isa();
-        let mut dcx = DataContext::new();
-        let mut bytes = Vec::new();
-
-        push_int(target, &mut bytes, vwt.size);
-        push_int(target, &mut bytes, vwt.align);
-        push_int(target, &mut bytes, vwt.stride);
-        push_int(target, &mut bytes, 0);
-        push_int(target, &mut bytes, 0);
-        push_int(target, &mut bytes, 0);
-
-        let ptr_size = target.pointer_bytes() as u32;
-        let copy_fn = module.declare_func_in_data(vwt.copy_fn, &mut dcx);
-        let move_fn = module.declare_func_in_data(vwt.move_fn, &mut dcx);
-        let drop_fn = module.declare_func_in_data(vwt.drop_fn, &mut dcx);
-
-        dcx.write_function_addr(3 * ptr_size, copy_fn);
-        dcx.write_function_addr(4 * ptr_size, move_fn);
-        dcx.write_function_addr(5 * ptr_size, drop_fn);
-
-        dcx.define(bytes.into_boxed_slice());
-        module.define_data(id, &dcx).unwrap();
-
-        id
-    }
-
-    fn create_vwt_fn<'a>(&'a mut self, nparams: usize) -> Self::FnBuilder<'a> {
-        let ptr_ty = self.module.target_config().pointer_type();
-        let mut sig = self.module.make_signature();
-        for _ in 0..nparams {
-            sig.params.push(AbiParam::new(ptr_ty));
-        }
-        let func = unsafe { &mut *(&mut self.ctx.func as *mut _) };
-        let fcx = unsafe { &mut *(&mut self.fcx as *mut _) };
-        let mut bcx = clif::FunctionBuilder::new(func, fcx);
-        let block = bcx.create_block();
-        bcx.switch_to_block(block);
-        let params = (0..nparams).map(|_| bcx.append_block_param(block, ptr_ty)).collect();
-        let func = self.module.declare_anonymous_function(&sig).unwrap();
-
-        FnCtx { cx: self, bcx, params, func }
     }
 
     fn copy_trivial(&mut self) -> Self::FuncId {
-        let module = &mut self.module;
-
-        *self.copy_trivial.get_or_init(|| {
-            let ptr_type = module.target_config().pointer_type();
-            let mut sig = module.make_signature();
-
-            sig.params.push(AbiParam::new(ptr_type));
-            sig.params.push(AbiParam::new(ptr_type));
-            sig.params.push(AbiParam::new(ptr_type));
-
-            module.declare_function("copy_trivial", Linkage::Import, &sig).unwrap()
-        })
+        todo!()
     }
 
     fn move_trivial(&mut self) -> Self::FuncId {
-        let module = &mut self.module;
-
-        *self.move_trivial.get_or_init(|| {
-            let ptr_type = module.target_config().pointer_type();
-            let mut sig = module.make_signature();
-
-            sig.params.push(AbiParam::new(ptr_type));
-            sig.params.push(AbiParam::new(ptr_type));
-            sig.params.push(AbiParam::new(ptr_type));
-
-            module.declare_function("move_trivial", Linkage::Import, &sig).unwrap()
-        })
+        todo!()
     }
 
-    fn drop_trivial(&mut self) -> Self::FuncId {
-        let module = &mut self.module;
+    fn copy_move_nop(&mut self) -> Self::FuncId {
+        todo!()
+    }
 
-        *self.drop_trivial.get_or_init(|| {
-            let ptr_type = module.target_config().pointer_type();
-            let mut sig = module.make_signature();
-
-            sig.params.push(AbiParam::new(ptr_type));
-            sig.params.push(AbiParam::new(ptr_type));
-
-            module.declare_function("drop_trivial", Linkage::Import, &sig).unwrap()
-        })
+    fn drop_nop(&mut self) -> Self::FuncId {
+        todo!()
     }
 }
 
-impl<'ctx, 'module> FnBuilder<'ctx, MiddleCtx<'module>> for FnCtx<'ctx, 'module> {
-    type Value = Value;
-
-    fn get_param(&self, param: usize) -> Self::Value {
-        self.params[param]
+impl<'module, 'ctx> FnBuilder<MiddleCtx<'module>> for FnCtx<'module, 'ctx> {
+    fn ptr_size(&self) -> i32 {
+        self.module.target_config().pointer_bytes() as i32
     }
 
-    fn memcopy(&mut self, src: Self::Value, dst: Self::Value, len: Result<u64, Self::Value>) {
-        let config = self.cx.module.target_config();
+    fn param(&self, n: usize) -> clif::Value {
+        self.params[n]
+    }
 
-        match len {
-            | Ok(bytes) => {
-                let align = Align::from_bytes(bytes);
-                let align = align.bytes() as u8;
-
-                self.bcx
-                    .emit_small_memory_copy(config, dst, src, bytes, align, align, true, clif::MemFlags::new());
-            },
-            | Err(value) => {
-                self.bcx.call_memcpy(config, dst, src, value);
-            },
+    fn type_info(&mut self, ty: ir::ty::Ty, info: clif::Value) -> clif::Value {
+        if let Some(value) = self.info_cache.get(&ty) {
+            return *value;
         }
+
+        let value = if let TypeKind::Var(var) = ty.lookup(self.db).kind {
+            let ptr_size = self.ptr_size() as i32;
+
+            self.load(info, (2 + var.idx() as i32) * ptr_size)
+        } else {
+            todo!()
+        };
+
+        self.info_cache.insert(ty, value);
+        value
     }
 
-    fn memmove(&mut self, src: Self::Value, dst: Self::Value, len: Result<u64, Self::Value>) {
-        let config = self.cx.module.target_config();
+    fn stack_alloc(&mut self, size: u64) -> clif::Value {
+        let ptr_type = self.module.target_config().pointer_type();
+        let slot = self.bcx.create_stack_slot(clif::StackSlotData {
+            kind: clif::StackSlotKind::ExplicitSlot,
+            size: size as u32,
+            offset: None,
+        });
 
-        match len {
-            | Ok(bytes) => {
-                let align = Align::from_bytes(bytes);
-                let align = align.bytes() as u8;
+        self.bcx.ins().stack_addr(ptr_type, slot, 0)
+    }
 
-                self.bcx
-                    .emit_small_memory_copy(config, dst, src, bytes, align, align, false, clif::MemFlags::new());
-            },
-            | Err(value) => {
-                self.bcx.call_memmove(config, dst, src, value);
-            },
+    fn const_int(&mut self, int: u64) -> clif::Value {
+        let ptr_type = self.module.target_config().pointer_type();
+
+        self.bcx.ins().iconst(ptr_type, int as i64)
+    }
+
+    fn fn_addr(&mut self, id: clif::FuncId) -> clif::Value {
+        let ptr_type = self.module.target_config().pointer_type();
+        let func_ref = self.module.declare_func_in_func(id, &mut self.bcx.func);
+
+        self.bcx.ins().func_addr(ptr_type, func_ref)
+    }
+
+    fn load(&mut self, ptr: clif::Value, offset: i32) -> clif::Value {
+        if let Some(value) = self.load_cache.get(&(ptr, offset)) {
+            return *value;
         }
+
+        let ptr_type = self.module.target_config().pointer_type();
+        let value = self.bcx.ins().load(ptr_type, clif::MemFlags::trusted(), ptr, offset);
+
+        self.load_cache.insert((ptr, offset), value);
+        value
     }
 
-    fn finish(self) -> <MiddleCtx<'module> as BackendMethods>::FuncId {
-        self.cx
-            .module
-            .define_function(self.func, &mut self.cx.ctx, &mut NullTrapSink {}, &mut NullStackMapSink {})
-            .unwrap();
-        self.func
+    fn store(&mut self, ptr: clif::Value, offset: i32, value: clif::Value) {
+        self.bcx.ins().store(clif::MemFlags::trusted(), value, ptr, offset);
+    }
+
+    fn add(&mut self, a: clif::Value, b: clif::Value) -> clif::Value {
+        self.bcx.ins().iadd(a, b)
+    }
+
+    fn mul(&mut self, a: clif::Value, b: clif::Value) -> clif::Value {
+        self.bcx.ins().imul(a, b)
+    }
+
+    fn offset(&mut self, ptr: clif::Value, value: clif::Value) -> clif::Value {
+        self.bcx.ins().iadd(ptr, value)
+    }
+
+    fn offset_u64(&mut self, ptr: clif::Value, value: u64) -> clif::Value {
+        self.bcx.ins().iadd_imm(ptr, value as i64)
+    }
+
+    fn memcopy(&mut self, dst: clif::Value, src: clif::Value, bytes: u64) {
+        let config = self.module.target_config();
+        let align = ir::layout::Align::from_bytes(bytes).bytes() as u8;
+
+        self.bcx
+            .emit_small_memory_copy(config, dst, src, bytes, align, align, true, clif::MemFlags::new());
+    }
+
+    fn memmove(&mut self, dst: clif::Value, src: clif::Value, bytes: u64) {
+        let config = self.module.target_config();
+        let align = ir::layout::Align::from_bytes(bytes).bytes() as u8;
+
+        self.bcx
+            .emit_small_memory_copy(config, dst, src, bytes, align, align, false, clif::MemFlags::new());
+    }
+
+    fn gt(&mut self, a: clif::Value, b: clif::Value) -> clif::Value {
+        self.bcx.ins().icmp(clif::IntCC::UnsignedGreaterThan, a, b)
+    }
+
+    fn conditional(&mut self, condition: clif::Value, a: clif::Value, b: clif::Value) -> clif::Value {
+        let ptr_type = self.module.target_config().pointer_type();
+        let next = self.bcx.create_block();
+        let ret = self.bcx.append_block_param(next, ptr_type);
+
+        self.bcx.ins().brz(condition, next, &[b]);
+        self.bcx.ins().jump(next, &[a]);
+        self.bcx.switch_to_block(next);
+
+        ret
+    }
+
+    fn call(&mut self, fn_ptr: clif::Value, args: &[clif::Value]) {
+        let sig = if let Some(sig) = self.sig_cache.get(&args.len()) {
+            *sig
+        } else {
+            let ptr_type = self.module.target_config().pointer_type();
+            let mut sig = self.module.make_signature();
+
+            sig.params = args.iter().map(|_| clif::AbiParam::new(ptr_type)).collect();
+
+            let sig = self.bcx.import_signature(sig);
+
+            self.sig_cache.insert(args.len(), sig);
+            sig
+        };
+
+        self.bcx.ins().call_indirect(sig, fn_ptr, args);
+    }
+
+    fn ret(&mut self) {
+        self.bcx.ins().return_(&[]);
     }
 }

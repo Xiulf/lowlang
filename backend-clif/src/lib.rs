@@ -2,7 +2,6 @@
 
 mod intrinsic;
 mod metadata;
-mod middle2;
 mod middle;
 mod pass;
 mod ptr;
@@ -10,7 +9,6 @@ mod runtime;
 mod ty;
 mod value;
 
-use self::middle::MiddleCtx;
 use arena::{ArenaMap, Idx};
 use clif::InstBuilder;
 use cranelift_module::Module;
@@ -55,19 +53,19 @@ pub fn compile_module(db: &dyn IrDatabase, ir: &ir::Module, object_file: &mut Na
     })
 }
 
-pub struct CodegenCtx<'ctx> {
-    db: &'ctx dyn IrDatabase,
+pub struct CodegenCtx<'db, 'ctx> {
+    db: &'db dyn IrDatabase,
     ir: &'ctx ir::Module,
     ctx: &'ctx mut clif::Context,
     fcx: &'ctx mut clif::FunctionBuilderContext,
     module: clif::ObjectModule,
-    middle: middle2::State,
+    middle: middle::State<'db>,
     func_ids: ArenaMap<Idx<ir::Func>, (clif::FuncId, clif::Signature)>,
     runtime_defs: runtime::RuntimeDefs,
 }
 
-pub struct BodyCtx<'a, 'ctx> {
-    cx: &'a mut CodegenCtx<'ctx>,
+pub struct BodyCtx<'a, 'db, 'ctx> {
+    cx: &'a mut CodegenCtx<'db, 'ctx>,
     bcx: clif::FunctionBuilder<'ctx>,
     func: Idx<ir::Func>,
     body: &'ctx ir::Body,
@@ -77,8 +75,8 @@ pub struct BodyCtx<'a, 'ctx> {
     rets: Vec<Option<Pointer>>,
 }
 
-impl<'a, 'ctx> std::ops::Deref for BodyCtx<'a, 'ctx> {
-    type Target = CodegenCtx<'ctx>;
+impl<'a, 'db, 'ctx> std::ops::Deref for BodyCtx<'a, 'db, 'ctx> {
+    type Target = CodegenCtx<'db, 'ctx>;
 
     fn deref(&self) -> &Self::Target {
         self.cx
@@ -100,7 +98,7 @@ pub fn with_codegen_ctx<T>(db: &dyn IrDatabase, ir: &ir::Module, f: impl FnOnce(
         ctx: &mut ctx,
         fcx: &mut fcx,
         module,
-        middle: ::middle2::State::default(),
+        middle: ::middle::State::default(),
         func_ids: ArenaMap::default(),
         runtime_defs: runtime::RuntimeDefs::default(),
     };
@@ -108,9 +106,9 @@ pub fn with_codegen_ctx<T>(db: &dyn IrDatabase, ir: &ir::Module, f: impl FnOnce(
     f(ctx)
 }
 
-impl<'ctx> CodegenCtx<'ctx> {
-    pub fn middle_ctx(&mut self) -> middle2::MiddleCtx {
-        middle2::MiddleCtx::new(&mut self.module)
+impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
+    pub fn middle_ctx(&mut self) -> middle::MiddleCtx<'db> {
+        middle::MiddleCtx::new(self.db, &mut self.module)
     }
 
     pub fn declare_func(&mut self, id: Idx<ir::Func>, func: &ir::Func) {
@@ -148,23 +146,9 @@ impl<'ctx> CodegenCtx<'ctx> {
         }
         .lower();
     }
-
-    pub fn middle(&mut self) -> MiddleCtx {
-        MiddleCtx {
-            db: self.db,
-            ctx: self.module.make_context(),
-            fcx: clif::FunctionBuilderContext::new(),
-            type_infos: &self.runtime_defs.type_infos,
-            value_witness_tables: &self.runtime_defs.value_witness_tables,
-            copy_trivial: &self.runtime_defs.copy_trivial,
-            move_trivial: &self.runtime_defs.move_trivial,
-            drop_trivial: &self.runtime_defs.drop_trivial,
-            module: &mut self.module,
-        }
-    }
 }
 
-impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
+impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
     fn lower(&mut self) {
         let (id, sig) = self.func_ids[self.func].clone();
         let (generics, sig2) = self.ir.funcs[self.func].sig.get_sig(self.db);
@@ -172,6 +156,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         let entry = self.bcx.create_block();
 
         self.bcx.func.signature = sig;
+        self.bcx.func.name = clif::ExternalName::user(0, id.as_u32());
         self.bcx.switch_to_block(entry);
 
         let mut params = Vec::new();
@@ -231,12 +216,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             }
         }
 
-        let generic_layout = self.db.layout_of(
-            self.cx
-                .runtime_defs
-                .type_infos
-                .type_info_ty(self.db, &self.cx.runtime_defs.value_witness_tables),
-        );
+        let generic_layout = self.db.layout_of(self.typ());
 
         for gen in generics {
             match gen {
@@ -295,6 +275,8 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
         self.cx.ctx.compute_cfg();
         self.cx.ctx.compute_domtree();
         self.cx.ctx.eliminate_unreachable_code(self.cx.module.isa()).unwrap();
+        self.cx.ctx.dce(self.cx.module.isa()).unwrap();
+        self.cx.ctx.domtree.clear();
 
         eprintln!("{}", self.ir.funcs[self.func].name);
         eprintln!("{}", self.bcx.func);
@@ -744,7 +726,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
                     .flat_map(|sub| match *sub {
                         | ir::ty::Subst::Type(t) => {
                             sig.params.push(clif::AbiParam::new(ptr_type));
-                            pass::EmptySinglePair::Single(self.get_type_metadata(t).load(self))
+                            pass::EmptySinglePair::Single(self.get_type_metadata(t).as_ptr().get_addr(self))
                         },
                         | _ => unimplemented!(),
                     })

@@ -1,12 +1,11 @@
 use super::*;
-use ::middle::BackendMethods;
 use ir::{
     layout::{Fields, Size, TyAndLayout},
     ty::typ,
     Flags, TypeDefBody,
 };
 
-impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
+impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
     pub fn get_type_metadata(&mut self, ty: ir::ty::Ty) -> Val {
         let lookup = ty.lookup(self.db);
 
@@ -25,23 +24,20 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             }
         }
 
-        let middle = self.cx.middle();
-        let id = {
-            let info = middle.type_infos().get(&middle, ty);
-            dbg!(&info);
-            info.alloc(&middle)
-        };
-        let gv = self.cx.module.declare_data_in_func(id, &mut self.cx.ctx.func);
-        let ptr_type = self.module.target_config().pointer_type();
-        let ty = self
-            .runtime_defs
-            .type_infos
-            .type_info_ty(self.db, &self.runtime_defs.value_witness_tables)
-            .ptr(self.db);
-        let layout = self.db.layout_of(ty);
-        let value = self.bcx.ins().global_value(ptr_type, gv);
+        todo!();
+        // let middle = self.cx.middle();
+        // let id = {
+        //     let info = middle.type_infos().get(&middle, ty);
+        //     dbg!(&info);
+        //     info.alloc(&middle)
+        // };
+        // let gv = self.cx.module.declare_data_in_func(id, &mut self.cx.ctx.func);
+        // let ptr_type = self.module.target_config().pointer_type();
+        // let ty = self.typ().ptr(self.db);
+        // let layout = self.db.layout_of(ty);
+        // let value = self.bcx.ins().global_value(ptr_type, gv);
 
-        Val::new_val(value, layout)
+        // Val::new_val(value, layout)
     }
 
     pub fn get_trivial_meta(&mut self, size: u64) -> Option<Val> {
@@ -57,7 +53,7 @@ impl<'a, 'ctx> BodyCtx<'a, 'ctx> {
             | _ => return None,
         };
 
-        let typ = self.runtime_defs.type_infos.type_info_ty(self.db, &self.runtime_defs.value_witness_tables);
+        let typ = self.typ();
         let layout = self.db.layout_of(typ);
         let gv = self.cx.module.declare_data_in_func(trivial_metas, &mut self.bcx.func);
         let addr = self.bcx.ins().global_value(ptr_type, gv);
