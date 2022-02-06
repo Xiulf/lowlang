@@ -90,6 +90,7 @@ impl Val {
         &self.layout
     }
 
+    #[track_caller]
     pub fn load(self, ctx: &mut BodyCtx) -> clif::Value {
         match self.inner {
             | ValInner::Value(v) => v,

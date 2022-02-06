@@ -312,7 +312,7 @@ impl<B: Backend> State<B> {
                             for g in 0..def.generic_params.len() {
                                 let count = fields[j].ty.var_count(db, GenericVar(0, g as u8));
 
-                                if count >= 1 {
+                                if count > 0 {
                                     let param = fx.load(info.clone(), (2 + i as i32) * ptr_size);
                                     let vwt = fx.load(param, 0);
                                     let stride = fx.load(vwt, 2 * ptr_size);

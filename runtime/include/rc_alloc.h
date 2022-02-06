@@ -7,7 +7,7 @@
 typedef struct RcBoxS {
     size_t strong_count;
     size_t weak_count;
-    char val;
+    char val[];
 } RcBox;
 
 typedef struct RcBoxTypeS {

@@ -756,9 +756,10 @@ impl<'a, 'b> BodyParser<'a, 'b> {
                 Vec::new()
             },
             | "box_alloc" => {
-                let kind = match self.lexer.peek() {
-                    | Some(&Ident("rc")) => BoxKind::Rc,
-                    | _ => BoxKind::Gen,
+                let kind = match self.ident()? {
+                    | "gen" => BoxKind::Gen,
+                    | "rc" => BoxKind::Rc,
+                    | _ => return None,
                 };
 
                 let _ = self.expect(Dollar)?;

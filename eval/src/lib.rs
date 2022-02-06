@@ -195,7 +195,7 @@ impl<'a> Frame<'a> {
 
                 self.vars.insert(ret.0, val::Val::StackPtr(ptr));
             },
-            | ir::Instr::BoxAlloc { ret, ty } => {
+            | ir::Instr::BoxAlloc { ret, ty, kind: _ } => {
                 let layout = self.db.layout_of(ty);
                 let res = self.heap().alloc(layout.size.bytes() as usize);
 

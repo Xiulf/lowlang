@@ -10,13 +10,16 @@ use std::hash::Hash;
 
 pub mod fns;
 
-pub trait Backend {
+pub trait Backend: Sized {
     type DataId: Copy + Eq + Hash;
     type FuncId: Copy + Eq + Hash;
     type Value: Clone;
 
     fn import_data(&mut self, name: &str) -> Self::DataId;
     fn import_fn(&mut self, name: &str, nparams: usize) -> Self::FuncId;
+
+    fn alloc_vwt(&mut self, vwt: &ValueWitnessTable<Self>) -> Self::DataId;
+    fn alloc_info(&mut self, name: &str, export: bool, vwt: Self::DataId, flags: u64) -> Self::DataId;
 
     fn mk_fn(&mut self, name: &str, export: bool, nparams: usize, build: impl FnOnce(&mut dyn fns::FnBuilder<Self>)) -> Self::FuncId;
 
@@ -31,6 +34,8 @@ pub struct State<B: Backend> {
     value_witness_tables: Vec<ValueWitnessTable<B>>,
     ty_to_ti: FxHashMap<Ty, TypeInfoId>,
     def_to_ti: FxHashMap<TypeDefId, TypeInfoId>,
+    ti_to_data: FxHashMap<TypeInfoId, B::DataId>,
+    vwt_to_data: FxHashMap<ValueWitnessTableId, B::DataId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -75,6 +80,8 @@ impl<B: Backend> Default for State<B> {
             value_witness_tables: Vec::new(),
             ty_to_ti: FxHashMap::default(),
             def_to_ti: FxHashMap::default(),
+            ti_to_data: FxHashMap::default(),
+            vwt_to_data: FxHashMap::default(),
         }
     }
 }
@@ -84,6 +91,10 @@ impl<B: Backend> State<B> {
         for local_type in &module.types {
             self.register_type(backend, db, &module.name, local_type.linkage, local_type.id);
         }
+    }
+
+    pub fn info_alloc(&self, ti: TypeInfoId) -> B::DataId {
+        self.ti_to_data[&ti]
     }
 
     pub fn info_of(&mut self, backend: &mut B, db: &dyn IrDatabase, ty: Ty) -> TypeInfoId {
@@ -96,7 +107,7 @@ impl<B: Backend> State<B> {
         if lookup.flags.is_set(Flags::TRIVIAL) {
             let layout = db.layout_of(ty);
 
-            self.alloc_trivial(backend, layout.size, layout.align)
+            self.alloc_trivial(backend, "", false, layout.size, layout.align)
         } else {
             match lookup.kind {
                 | TypeKind::Box(..) => todo!(),
@@ -115,9 +126,11 @@ impl<B: Backend> State<B> {
             if def.generic_params.is_empty() {
                 let name = mangle(format!("{}#{}", module, def.name).as_bytes());
                 let data_id = backend.import_data(&name);
-                let info = self.alloc_info(TypeInfo::External(data_id));
+                let info_id = TypeInfoId(self.type_infos.len());
+                let info = TypeInfo::External(data_id);
 
-                self.def_to_ti.insert(id, info);
+                self.type_infos.push(info);
+                self.def_to_ti.insert(id, info_id);
             } else {
                 let mut import = |name: &str, nparams: usize| {
                     let name = mangle(format!("{}#{}.{}", module, def.name, name).as_bytes());
@@ -130,7 +143,8 @@ impl<B: Backend> State<B> {
                 let mk_generics = import("generics", def.generic_params.len() + 1);
                 let mk_vwt = import("vwt", 2);
                 let mk_info = import("info", 3);
-                let info = self.alloc_info(TypeInfo::Generic {
+                let info_id = TypeInfoId(self.type_infos.len());
+                let info = TypeInfo::Generic {
                     copy_fn,
                     move_fn,
                     drop_fn,
@@ -139,19 +153,21 @@ impl<B: Backend> State<B> {
                     mk_info,
                     generic_count: def.generic_params.len(),
                     info_field_count: 2 + def.generic_params.len(),
-                });
+                };
 
-                self.def_to_ti.insert(id, info);
+                self.type_infos.push(info);
+                self.def_to_ti.insert(id, info_id);
             }
         } else if def.is_trivial(db) {
-            let info = self.alloc_trivial(backend, layout.size, layout.align);
+            let name = mangle(format!("{}#{}", module, def.name).as_bytes());
+            let info = self.alloc_trivial(backend, &name, linkage == Linkage::Export, layout.size, layout.align);
 
             self.def_to_ti.insert(id, info);
         } else if def.generic_params.is_empty() {
             let copy_fn = self.generate_def_copy(backend, db, module, linkage, &def, &layout);
             let move_fn = self.generate_def_move(backend, db, module, linkage, &def, &layout);
             let drop_fn = self.generate_def_drop(backend, db, module, linkage, &def, &layout);
-            let vwt = self.alloc_vwt(ValueWitnessTable {
+            let vwt = self.alloc_vwt(backend, ValueWitnessTable {
                 size: layout.size,
                 align: layout.align,
                 stride: layout.stride,
@@ -160,9 +176,16 @@ impl<B: Backend> State<B> {
                 drop_fn,
             });
 
-            let info = self.alloc_info(TypeInfo::Concrete { vwt });
+            let info_id = TypeInfoId(self.type_infos.len());
+            let name = mangle(format!("{}#{}", module, def.name).as_bytes());
+            let info = TypeInfo::Concrete { vwt };
+            let vwt = self.vwt_to_data[&vwt];
+            let export = linkage == Linkage::Export;
+            let data = backend.alloc_info(&name, export, vwt, 0);
 
-            self.def_to_ti.insert(id, info);
+            self.type_infos.push(info);
+            self.ti_to_data.insert(info_id, data);
+            self.def_to_ti.insert(id, info_id);
         } else {
             let copy_fn = self.generate_def_copy(backend, db, module, linkage, &def, &layout);
             let move_fn = self.generate_def_move(backend, db, module, linkage, &def, &layout);
@@ -170,7 +193,8 @@ impl<B: Backend> State<B> {
             let mk_generics = self.generate_mk_generics(backend, db, module, linkage, &def, &layout);
             let mk_vwt = self.generate_mk_vwt(backend, db, module, linkage, &def, &layout, copy_fn, move_fn, drop_fn);
             let mk_info = self.generate_mk_info(backend, db, module, linkage, &def, &layout);
-            let info = self.alloc_info(TypeInfo::Generic {
+            let info_id = TypeInfoId(self.type_infos.len());
+            let info = TypeInfo::Generic {
                 mk_generics,
                 mk_vwt,
                 mk_info,
@@ -179,13 +203,14 @@ impl<B: Backend> State<B> {
                 drop_fn,
                 generic_count: def.generic_params.len(),
                 info_field_count: 2 + def.generic_params.len(),
-            });
+            };
 
-            self.def_to_ti.insert(id, info);
+            self.type_infos.push(info);
+            self.def_to_ti.insert(id, info_id);
         }
     }
 
-    fn alloc_trivial(&mut self, backend: &mut B, size: Size, align: Align) -> TypeInfoId {
+    fn alloc_trivial(&mut self, backend: &mut B, name: &str, export: bool, size: Size, align: Align) -> TypeInfoId {
         let find_ti = |ti: &TypeInfo<B>| match *ti {
             | TypeInfo::Trivial { vwt } => {
                 let vwt = &self.value_witness_tables[vwt.0];
@@ -198,8 +223,14 @@ impl<B: Backend> State<B> {
             TypeInfoId(idx)
         } else {
             let vwt = self.trivial_vwt(backend, size, align);
+            let info_id = TypeInfoId(self.type_infos.len());
+            let info = TypeInfo::Trivial { vwt };
+            let vwt = self.vwt_to_data[&vwt];
+            let data = backend.alloc_info(&name, export, vwt, 0);
 
-            self.alloc_info(TypeInfo::Trivial { vwt })
+            self.ti_to_data.insert(info_id, data);
+            self.type_infos.push(info);
+            info_id
         }
     }
 
@@ -224,20 +255,15 @@ impl<B: Backend> State<B> {
             }
         };
 
-        self.alloc_vwt(vwt)
+        self.alloc_vwt(backend, vwt)
     }
 
-    fn alloc_info(&mut self, info: TypeInfo<B>) -> TypeInfoId {
-        let id = TypeInfoId(self.type_infos.len());
-
-        self.type_infos.push(info);
-        id
-    }
-
-    fn alloc_vwt(&mut self, vwt: ValueWitnessTable<B>) -> ValueWitnessTableId {
+    fn alloc_vwt(&mut self, backend: &mut B, vwt: ValueWitnessTable<B>) -> ValueWitnessTableId {
         let id = ValueWitnessTableId(self.value_witness_tables.len());
+        let data = backend.alloc_vwt(&vwt);
 
         self.value_witness_tables.push(vwt);
+        self.vwt_to_data.insert(id, data);
         id
     }
 }

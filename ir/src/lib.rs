@@ -122,6 +122,7 @@ pub enum Instr {
     // Heap allocation
     BoxAlloc {
         ret: Var,
+        kind: BoxKind,
         ty: Ty,
     },
     BoxFree {
@@ -261,8 +262,8 @@ impl Module {
 impl TypeDef {
     pub fn is_trivial(&self, db: &dyn db::IrDatabase) -> bool {
         match &self.body {
-            None => false,
-            Some(b) => b.is_trivial(db),
+            | None => false,
+            | Some(b) => b.is_trivial(db),
         }
     }
 }
@@ -270,17 +271,11 @@ impl TypeDef {
 impl TypeDefBody {
     pub fn is_trivial(&self, db: &dyn db::IrDatabase) -> bool {
         match self {
-            TypeDefBody::Struct { fields } => fields.iter().all(|f| {
-                f.ty.lookup(db).flags.is_set(Flags::TRIVIAL)
-            }),
-            TypeDefBody::Union { fields } => fields.iter().all(|f| {
-                f.ty.lookup(db).flags.is_set(Flags::TRIVIAL)
-            }),
-            TypeDefBody::Enum { variants } => variants.iter().all(|v| {
-                match v.payload {
-                    None => true,
-                    Some(p) => p.lookup(db).flags.is_set(Flags::TRIVIAL),
-                }
+            | TypeDefBody::Struct { fields } => fields.iter().all(|f| f.ty.lookup(db).flags.is_set(Flags::TRIVIAL)),
+            | TypeDefBody::Union { fields } => fields.iter().all(|f| f.ty.lookup(db).flags.is_set(Flags::TRIVIAL)),
+            | TypeDefBody::Enum { variants } => variants.iter().all(|v| match v.payload {
+                | None => true,
+                | Some(p) => p.lookup(db).flags.is_set(Flags::TRIVIAL),
             }),
         }
     }

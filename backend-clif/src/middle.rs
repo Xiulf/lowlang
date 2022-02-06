@@ -1,5 +1,6 @@
 use super::*;
 use ::middle::{fns::FnBuilder, Backend};
+use cranelift::codegen::ir::Endianness;
 use ir::ty::{Ty, TypeKind};
 use std::{collections::HashMap, lazy::OnceCell};
 
@@ -40,6 +41,25 @@ impl<'db> MiddleCtx<'db> {
     fn module<'a>(&mut self) -> &'a mut clif::ObjectModule {
         unsafe { &mut *self.module }
     }
+
+    fn write_u64(&self, bytes: &mut Vec<u8>, value: u64) {
+        let module = unsafe { &*self.module };
+        let ptr_size = module.target_config().pointer_bytes() as usize;
+        let mid = 8 - ptr_size;
+
+        match module.isa().endianness() {
+            | Endianness::Big => {
+                bytes.extend_from_slice(&value.to_be_bytes()[mid..]);
+                bytes.extend_from_slice(&value.to_be_bytes()[mid..]);
+                bytes.extend_from_slice(&value.to_be_bytes()[mid..]);
+            },
+            | Endianness::Little => {
+                bytes.extend_from_slice(&value.to_le_bytes()[..mid]);
+                bytes.extend_from_slice(&value.to_le_bytes()[..mid]);
+                bytes.extend_from_slice(&value.to_le_bytes()[..mid]);
+            },
+        }
+    }
 }
 
 impl<'module, 'ctx> FnCtx<'module, 'ctx> {
@@ -72,6 +92,52 @@ impl<'db> Backend for MiddleCtx<'db> {
         sig.params = (0..nparams).map(|_| clif::AbiParam::new(ptr_type)).collect();
 
         self.module().declare_function(name, clif::Linkage::Import, &sig).unwrap()
+    }
+
+    fn alloc_vwt(&mut self, vwt: &::middle::ValueWitnessTable<Self>) -> Self::DataId {
+        let ptr_size = self.module().target_config().pointer_bytes() as usize;
+        let id = self.module().declare_anonymous_data(false, false).unwrap();
+        let mut dcx = clif::DataContext::new();
+        let mut bytes = Vec::new();
+        let copy_fn = self.module().declare_func_in_data(vwt.copy_fn, &mut dcx);
+        let move_fn = self.module().declare_func_in_data(vwt.move_fn, &mut dcx);
+        let drop_fn = self.module().declare_func_in_data(vwt.drop_fn, &mut dcx);
+
+        self.write_u64(&mut bytes, vwt.size.bytes());
+        self.write_u64(&mut bytes, vwt.align.bytes());
+        self.write_u64(&mut bytes, vwt.stride.bytes());
+        bytes.resize(ptr_size * 6, 0);
+
+        dcx.write_function_addr(ptr_size as u32 * 3, copy_fn);
+        dcx.write_function_addr(ptr_size as u32 * 4, move_fn);
+        dcx.write_function_addr(ptr_size as u32 * 5, drop_fn);
+
+        dcx.define(bytes.into_boxed_slice());
+        self.module().define_data(id, &dcx).unwrap();
+
+        id
+    }
+
+    fn alloc_info(&mut self, name: &str, export: bool, vwt: Self::DataId, flags: u64) -> Self::DataId {
+        let id = if name.is_empty() {
+            self.module().declare_anonymous_data(false, false).unwrap()
+        } else {
+            self.module()
+                .declare_data(name, if export { clif::Linkage::Export } else { clif::Linkage::Local }, false, false)
+                .unwrap()
+        };
+
+        let ptr_size = self.module().target_config().pointer_bytes() as usize;
+        let mut dcx = clif::DataContext::new();
+        let mut bytes = vec![0; ptr_size];
+        let vwt = self.module().declare_data_in_data(vwt, &mut dcx);
+
+        self.write_u64(&mut bytes, flags);
+        dcx.write_data_addr(0, vwt, 0);
+        dcx.define(bytes.into_boxed_slice());
+        self.module().define_data(id, &dcx).unwrap();
+
+        id
     }
 
     fn mk_fn(&mut self, name: &str, export: bool, nparams: usize, f: impl FnOnce(&mut dyn FnBuilder<Self>)) -> Self::FuncId {

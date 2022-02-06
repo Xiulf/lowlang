@@ -13,7 +13,7 @@ typedef struct TypeS {
   size_t flags;
 } Type;
 
-const size_t TYPE_FLAG_TRIVIAL = 1 << 0;
+#define TYPE_FLAG_TRIVIAL 1 << 0
 
 typedef struct ValueWitnessTableS {
   size_t size;
@@ -32,6 +32,7 @@ extern Type TRIVIAL_METAS[6];
 
 void copy_trivial(Opaque *dst, Opaque *src, Type *t);
 void move_trivial(Opaque *dst, Opaque *src, Type *t);
-void drop_trivial(Opaque *val, Type *t);
+void copy_move_nop(Opaque *dst, Opaque *src, Type *t);
+void drop_nop(Opaque *val, Type *t);
 
 #endif

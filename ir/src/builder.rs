@@ -43,10 +43,7 @@ impl Module {
     }
 
     pub fn add_type(&mut self, linkage: Linkage, id: TypeDefId) {
-        self.types.push(LocalTypeDef {
-            id,
-            linkage,
-        });
+        self.types.push(LocalTypeDef { id, linkage });
     }
 }
 
@@ -272,7 +269,7 @@ impl<'a> Builder<'a> {
     pub fn box_alloc(&mut self, kind: BoxKind, ty: Ty) -> Var {
         let ret = self.create_var(ty.clone().boxed(kind, self.db).owned(self.db));
 
-        self.block().instrs.push(Instr::BoxAlloc { ret, ty });
+        self.block().instrs.push(Instr::BoxAlloc { ret, kind, ty });
 
         ret
     }

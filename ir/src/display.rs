@@ -308,16 +308,21 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
         match self.t {
             | Instr::StackAlloc { ret, ty } => write!(f, "{} = stack_alloc ${}", ret, ty.display(self.db)),
             | Instr::StackFree { addr } => write!(f, "stack_free {}", addr),
-            | Instr::BoxAlloc { ret, ty } => write!(f, "{} = box_alloc ${}", ret, ty.display(self.db)),
+            | Instr::BoxAlloc { ret, ty, kind: BoxKind::Gen } => write!(f, "{} = box_alloc gen ${}", ret, ty.display(self.db)),
+            | Instr::BoxAlloc { ret, ty, kind: BoxKind::Rc } => write!(f, "{} = box_alloc rc ${}", ret, ty.display(self.db)),
             | Instr::BoxFree { boxed } => write!(f, "box_free {}", boxed),
             | Instr::BoxAddr { ret, boxed } => write!(f, "{} = box_addr {}", ret, boxed),
             | Instr::Load { ret, addr } => write!(f, "{} = load {}", ret, addr),
             | Instr::Store { val, addr } => write!(f, "store {}, {}", val, addr),
             | Instr::CopyAddr { old, new, flags } => {
                 write!(f, "copy_addr {}", old)?;
-                if flags.is_set(Flags::TAKE) { write!(f, " [take]")?; }
+                if flags.is_set(Flags::TAKE) {
+                    write!(f, " [take]")?;
+                }
                 write!(f, ", {}", new)?;
-                if flags.is_set(Flags::INIT) { write!(f, " [init]")?; }
+                if flags.is_set(Flags::INIT) {
+                    write!(f, " [init]")?;
+                }
                 Ok(())
             },
             | Instr::CopyValue { ret, val } => write!(f, "{} = copy_value {}", ret, val),

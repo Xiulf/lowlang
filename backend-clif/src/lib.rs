@@ -9,15 +9,15 @@ mod runtime;
 mod ty;
 mod value;
 
-use ::middle::TypeInfo;
 use arena::{ArenaMap, Idx};
 use clif::InstBuilder;
 use cranelift_module::Module;
 use ir::db::IrDatabase;
 use ir::layout::Abi;
-use ir::ty::TypeKind;
+use ir::ty::{BoxKind, Ty, TypeKind};
 use ir::Flags;
 use ptr::Pointer;
+use std::collections::HashMap;
 use std::io::Write;
 use tempfile::NamedTempFile;
 use value::Val;
@@ -75,6 +75,14 @@ pub struct BodyCtx<'a, 'db, 'ctx> {
     blocks: ArenaMap<Idx<ir::BlockData>, clif::Block>,
     vars: ArenaMap<Idx<ir::VarInfo>, value::Val>,
     rets: Vec<Option<Pointer>>,
+    cache: BodyCache,
+}
+
+#[derive(Default)]
+struct BodyCache {
+    type_info: HashMap<Ty, value::Val>,
+    vwt: HashMap<Ty, value::Val>,
+    vwt_field: HashMap<(Ty, usize), value::Val>,
 }
 
 impl<'a, 'db, 'ctx> std::ops::Deref for BodyCtx<'a, 'db, 'ctx> {
@@ -145,6 +153,7 @@ impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
             blocks: ArenaMap::default(),
             vars: ArenaMap::default(),
             rets: Vec::new(),
+            cache: BodyCache::default(),
         }
         .lower();
     }
@@ -356,8 +365,107 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 self.vars.insert(ret.0, Val::new_addr(Pointer::stack(ss), layout));
             },
             | ir::Instr::StackFree { addr: _ } => {},
+            | ir::Instr::BoxAlloc { ret, kind, ty } => {
+                let ptr_type = self.module.target_config().pointer_type();
+                let layout = self.db.layout_of(ty);
+                let size = self.bcx.ins().iconst(ptr_type, layout.size.bytes() as i64);
+
+                match kind {
+                    | BoxKind::Gen => {
+                        let gen_alloc = self.cx.gen_alloc();
+                        let gen_alloc = self.cx.module.declare_func_in_func(gen_alloc, &mut self.bcx.func);
+                        let call = self.bcx.ins().call(gen_alloc, &[size]);
+                        let results = self.bcx.inst_results(call);
+                        let layout = self.db.layout_of(self.body[ret].ty);
+                        let val = Val::new_val_pair(results[0], results[1], layout);
+
+                        self.vars.insert(ret.0, val);
+                    },
+                    | BoxKind::Rc => {
+                        let rc_alloc = self.cx.rc_alloc();
+                        let rc_alloc = self.cx.module.declare_func_in_func(rc_alloc, &mut self.bcx.func);
+                        let call = self.bcx.ins().call(rc_alloc, &[size]);
+                        let res = self.bcx.inst_results(call)[0];
+                        let layout = self.db.layout_of(self.body[ret].ty);
+
+                        self.vars.insert(ret.0, Val::new_val(res, layout));
+                    },
+                }
+            },
+            | ir::Instr::BoxFree { boxed } => {
+                let (kind, ty) = match self.body[boxed].ty.lookup(self.db).kind {
+                    | TypeKind::Box(kind, ty) => (kind, ty),
+                    | _ => unreachable!(),
+                };
+
+                let ptr_type = self.module.target_config().pointer_type();
+
+                match kind {
+                    | BoxKind::Gen => {
+                        let val = self.vars[boxed.0].clone().field(self, 0);
+                        let ptr = val.clone().load(self);
+
+                        self.drop_addr(val, ty);
+
+                        let gen_free = self.cx.gen_free();
+                        let gen_free = self.cx.module.declare_func_in_func(gen_free, &mut self.bcx.func);
+                        let size = self.db.layout_of(ty).size;
+                        let size = self.bcx.ins().iconst(ptr_type, size.bytes() as i64);
+
+                        self.bcx.ins().call(gen_free, &[ptr, size]);
+                    },
+                    | BoxKind::Rc => {
+                        let ptr = self.vars[boxed.0].as_ptr().get_addr(self);
+                        let one = self.bcx.ins().iconst(ptr_type, 1);
+                        let strong_count = self.bcx.ins().load(ptr_type, clif::MemFlags::trusted(), ptr, 0);
+                        let strong_count = self.bcx.ins().isub(strong_count, one);
+                        let drop_block = self.bcx.create_block();
+                        let else_block = self.bcx.create_block();
+                        let exit_block = self.bcx.create_block();
+
+                        self.bcx.ins().brz(strong_count, drop_block, &[]);
+                        self.bcx.ins().jump(else_block, &[]);
+                        self.bcx.switch_to_block(drop_block);
+
+                        let layout = self.db.layout_of(ty.ptr(self.db));
+                        let val = Pointer::addr(ptr).offset_i64(self, ptr_type.bytes() as i64 * 2);
+                        let val = Val::new_addr(val, layout);
+
+                        self.drop_addr(val, ty);
+                        self.call_free(ptr);
+                        self.bcx.ins().jump(exit_block, &[]);
+                        self.bcx.switch_to_block(else_block);
+                        self.bcx.ins().store(clif::MemFlags::trusted(), strong_count, ptr, 0);
+                        self.bcx.ins().jump(exit_block, &[]);
+                        self.bcx.switch_to_block(exit_block);
+                    },
+                }
+            },
+            | ir::Instr::BoxAddr { ret, boxed } => {
+                let kind = match self.body[boxed].ty.lookup(self.db).kind {
+                    | TypeKind::Box(kind, _) => kind,
+                    | _ => unreachable!(),
+                };
+
+                match kind {
+                    | BoxKind::Gen => {
+                        let res = self.vars[boxed.0].clone().field(self, 0);
+
+                        self.vars.insert(ret.0, res);
+                    },
+                    | BoxKind::Rc => {
+                        let ptr_size = self.module.target_config().pointer_bytes();
+                        let ptr = self.vars[boxed.0].as_ptr();
+                        let val = ptr.offset_i64(self, ptr_size as i64 * 2);
+                        let layout = self.db.layout_of(self.body[ret].ty);
+                        let res = Val::new_addr(val, layout);
+
+                        self.vars.insert(ret.0, res);
+                    },
+                }
+            },
             | ir::Instr::Load { ret, addr } => {
-                let ptr = self.vars[addr.0].clone().as_ptr();
+                let ptr = self.vars[addr.0].as_ptr();
                 let layout = self.db.layout_of(self.body[ret].ty);
                 let res = Val::new_ref(ptr, layout);
 
@@ -375,17 +483,16 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 let new = self.vars[new.0].clone();
 
                 if let ir::ty::typ::Var(var) = elem_ty.lookup(self.db).kind {
-                    let typ = self.generic_params[var.idx()].clone();
-                    let vwt = typ.clone().field(self, 0).deref(self);
-                    let copy = vwt.field(self, if flags.is_set(Flags::TAKE) { 4 } else { 3 });
-                    let sig = self.ty_as_sig(copy.layout().ty);
+                    let info = self.generic_params[var.idx()].clone();
+                    let copy_fn = self.get_vwt_field(elem_ty, if flags.is_set(Flags::TAKE) { 4 } else { 3 });
+                    let sig = self.ty_as_sig(copy_fn.layout().ty);
                     let sig = self.bcx.import_signature(sig);
-                    let copy = copy.load(self);
-                    let typ = typ.as_ref().0.get_addr(self);
+                    let copy_fn = copy_fn.load(self);
+                    let info = info.as_ptr().get_addr(self);
                     let old = old.load(self);
                     let new = new.load(self);
 
-                    self.bcx.ins().call_indirect(sig, copy, &[new, old, typ]);
+                    self.bcx.ins().call_indirect(sig, copy_fn, &[new, old, info]);
                 } else {
                     let align = old.layout().align.bytes();
                     let size = old.layout().size.bytes();
@@ -734,7 +841,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                     .flat_map(|sub| match *sub {
                         | ir::ty::Subst::Type(t) => {
                             sig.params.push(clif::AbiParam::new(ptr_type));
-                            pass::EmptySinglePair::Single(self.get_type_metadata(t).as_ptr().get_addr(self))
+                            pass::EmptySinglePair::Single(self.get_type_info(t).as_ptr().get_addr(self))
                         },
                         | _ => unimplemented!(),
                     })
@@ -782,6 +889,18 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
             },
             | _ => unimplemented!("{}", instr.display(self.db, self.body)),
         }
+    }
+
+    pub fn call_free(&mut self, ptr: clif::Value) {
+        let ptr_type = self.module.target_config().pointer_type();
+        let mut sig = self.module.make_signature();
+
+        sig.params.push(clif::AbiParam::new(ptr_type));
+
+        let free = self.cx.module.declare_function("free", clif::Linkage::Import, &sig).unwrap();
+        let free = self.cx.module.declare_func_in_func(free, &mut self.bcx.func);
+
+        self.bcx.ins().call(free, &[ptr]);
     }
 
     fn emit_memcpy(&mut self, dst: Pointer, src: Pointer, mut size: u64, mut align: u64, non_overlapping: bool, mut flags: clif::MemFlags) {

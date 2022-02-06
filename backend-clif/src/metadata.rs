@@ -2,7 +2,7 @@ use super::*;
 use ::middle::TypeInfo;
 use ir::{
     layout::{Fields, Size, TyAndLayout},
-    ty::{typ, Subst},
+    ty::{typ, GenericVar, Subst},
     Flags, TypeDefBody,
 };
 
@@ -14,8 +14,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
 
         if let typ::Var(var) = lookup.kind {
             let info = self.generic_params[var.idx()].clone();
-            let vwt = info.clone().field(self, 0).deref(self);
-            let drop_fn = vwt.field(self, 5).load(self);
+            let drop_fn = self.get_vwt_field(ty, 5).load(self);
             let mut drop_sig = self.cx.module.make_signature();
 
             drop_sig.params = (0..2).map(|_| clif::AbiParam::new(ptr_type)).collect();
@@ -39,7 +38,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                     };
 
                     let drop_fn = self.cx.module.declare_func_in_func(drop_fn, &mut self.bcx.func);
-                    let info = self.get_type_metadata(ty).as_ptr().get_addr(self);
+                    let info = self.get_type_info(ty).as_ptr().get_addr(self);
 
                     self.bcx.ins().call(drop_fn, &[addr, info]);
                 },
@@ -47,18 +46,39 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
         }
     }
 
-    pub fn get_type_metadata(&mut self, ty: ir::ty::Ty) -> Val {
+    pub fn get_vwt_field(&mut self, ty: ir::ty::Ty, field: usize) -> Val {
+        if let Some(val) = self.cache.vwt_field.get(&(ty, field)) {
+            return val.clone();
+        }
+
+        let vwt = self.get_vwt(ty);
+        let val = vwt.field(self, field);
+
+        self.cache.vwt_field.insert((ty, field), val.clone());
+        val
+    }
+
+    pub fn get_vwt(&mut self, ty: ir::ty::Ty) -> Val {
+        if let Some(val) = self.cache.vwt.get(&ty) {
+            return val.clone();
+        }
+
+        let info = self.get_type_info(ty);
+        let vwt = info.field(self, 0).deref(self);
+
+        self.cache.vwt.insert(ty, vwt.clone());
+        vwt
+    }
+
+    pub fn get_type_info(&mut self, ty: ir::ty::Ty) -> Val {
+        if let Some(val) = self.cache.type_info.get(&ty) {
+            return val.clone();
+        }
+
         let lookup = ty.lookup(self.db);
 
         if let typ::Var(var) = lookup.kind {
             return self.generic_params[var.idx()].clone();
-        } else if lookup.flags.is_set(Flags::TRIVIAL) {
-            let layout = self.db.layout_of(ty);
-            let size = layout.size.bytes();
-
-            if let Some(val) = self.get_trivial_meta(size) {
-                return val;
-            }
         }
 
         let mut mcx = self.cx.middle_ctx();
@@ -66,6 +86,12 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
         let id = self.cx.middle.info_of(&mut mcx, self.db, ty);
         let val = match self.cx.middle[id] {
             | TypeInfo::External(data) => {
+                let gv = self.cx.module.declare_data_in_func(data, &mut self.bcx.func);
+
+                self.bcx.ins().global_value(ptr_type, gv)
+            },
+            | TypeInfo::Trivial { .. } | TypeInfo::Concrete { .. } => {
+                let data = self.cx.middle.info_alloc(id);
                 let gv = self.cx.module.declare_data_in_func(data, &mut self.bcx.func);
 
                 self.bcx.ins().global_value(ptr_type, gv)
@@ -95,7 +121,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 let generics = self.bcx.ins().stack_addr(ptr_type, generics, 0);
                 let args = std::iter::once(generics)
                     .chain(subst.iter().map(|s| match s {
-                        | Subst::Type(ty) => self.get_type_metadata(*ty).load(self),
+                        | Subst::Type(ty) => self.get_type_info(*ty).as_ptr().get_addr(self),
                         | _ => todo!(),
                     }))
                     .collect::<Vec<_>>();
@@ -123,94 +149,84 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 self.bcx.ins().call(mk_info, &[info, vwt, generics]);
                 info
             },
-            | _ => todo!(),
         };
 
         let ty = self.typ().ptr(self.db);
         let layout = self.db.layout_of(ty);
+        let val = Val::new_val(val, layout);
 
-        Val::new_val(val, layout)
+        self.cache.type_info.insert(ty, val.clone());
+        val
     }
 
-    pub fn get_trivial_meta(&mut self, size: u64) -> Option<Val> {
-        let ptr_type = self.module.target_config().pointer_type();
-        let trivial_metas = self.cx.trivial_metas();
-        let idx = match size {
-            | 0 => 0,
-            | 1 => 1,
-            | 2 => 2,
-            | 4 => 3,
-            | 8 => 4,
-            | 16 => 5,
-            | _ => return None,
-        };
+    // pub fn get_trivial_meta(&mut self, size: u64) -> Option<Val> {
+    //     let ptr_type = self.module.target_config().pointer_type();
+    //     let trivial_metas = self.cx.trivial_metas();
+    //     let idx = match size {
+    //         | 0 => 0,
+    //         | 1 => 1,
+    //         | 2 => 2,
+    //         | 4 => 3,
+    //         | 8 => 4,
+    //         | 16 => 5,
+    //         | _ => return None,
+    //     };
 
-        let typ = self.typ();
-        let layout = self.db.layout_of(typ);
-        let gv = self.cx.module.declare_data_in_func(trivial_metas, &mut self.bcx.func);
-        let addr = self.bcx.ins().global_value(ptr_type, gv);
-        let addr = self.bcx.ins().iadd_imm(addr, layout.stride.bytes() as i64 * idx);
-        let layout = self.db.layout_of(typ.ptr(self.db));
+    //     let typ = self.typ();
+    //     let layout = self.db.layout_of(typ);
+    //     let gv = self.cx.module.declare_data_in_func(trivial_metas, &mut self.bcx.func);
+    //     let addr = self.bcx.ins().global_value(ptr_type, gv);
+    //     let addr = self.bcx.ins().iadd_imm(addr, layout.stride.bytes() as i64 * idx);
+    //     let layout = self.db.layout_of(typ.ptr(self.db));
 
-        Some(Val::new_val(addr, layout))
+    //     Some(Val::new_val(addr, layout))
+    // }
+
+    pub fn dynamic_offset(&mut self, ptr: Pointer, layout: &TyAndLayout, field: usize) -> Pointer {
+        match layout.ty.lookup(self.db).kind {
+            | typ::Tuple(ref fields) => self.dynamic_offset_internal(ptr, fields, layout, field),
+            | typ::Def(id, ref subst) => {
+                let subst = subst.as_deref().unwrap_or(&[]);
+                let info = id.lookup(self.db);
+                let body = info.body.as_ref().unwrap();
+                let fields = match body {
+                    | TypeDefBody::Struct { fields } => fields.iter().map(|f| f.ty.subst(self.db, subst, 0)).collect::<Vec<_>>(),
+                    | _ => unreachable!(),
+                };
+
+                self.dynamic_offset_internal(ptr, &fields, layout, field)
+            },
+            | _ => unreachable!(),
+        }
     }
 
-    pub fn dynamic_offset(&mut self, mut ptr: Pointer, layout: &TyAndLayout, field: usize) -> Pointer {
+    fn dynamic_offset_internal(&mut self, mut ptr: Pointer, fields: &[Ty], layout: &TyAndLayout, field: usize) -> Pointer {
         if let Fields::Arbitrary { offsets, memory_index } = &layout.fields {
             let inverse_index = ir::layout::invert_mapping(memory_index);
             let mut offset = Size::ZERO;
 
-            match layout.ty.lookup(self.db).kind {
-                | typ::Tuple(ref fields) => {
-                    for (i, j) in inverse_index.into_iter().enumerate() {
-                        if j == field {
-                            break;
-                        }
+            for (i, j) in inverse_index.into_iter().enumerate() {
+                if j == field {
+                    break;
+                }
 
-                        if let typ::Var(var) = fields[j].lookup(self.db).kind {
-                            let typ = self.generic_params[var.idx()].clone();
-                            let vwt = typ.clone().field(self, 0).deref(self);
-                            let stride = vwt.field(self, 2);
-                            let stride = stride.load(self);
+                offset = offsets[i];
 
-                            ptr = ptr.offset_i64(self, offset.bytes() as i64);
+                for g in 0..self.body.generic_params.len() {
+                    let count = fields[j].var_count(self.db, GenericVar(0, g as u8));
+
+                    if count > 0 {
+                        let stride = self.get_vwt_field(fields[j], 2).load(self);
+
+                        if count > 1 {
+                            let stride = self.bcx.ins().imul_imm(stride, count as i64);
+
                             ptr = ptr.offset_value(self, stride);
-                            offset = Size::ZERO;
                         } else {
-                            offset = offsets[i];
+                            ptr = ptr.offset_value(self, stride);
                         }
                     }
-                },
-                | typ::Def(id, ref subst) => {
-                    let subst = subst.as_deref().unwrap_or(&[]);
-                    let info = id.lookup(self.db);
-                    let body = info.body.as_ref().unwrap();
-
-                    match body {
-                        | TypeDefBody::Struct { fields } => {
-                            for (i, j) in inverse_index.into_iter().enumerate() {
-                                if j == field {
-                                    break;
-                                }
-
-                                if let typ::Var(var) = fields[j].ty.subst(self.db, subst, 0).lookup(self.db).kind {
-                                    let typ = self.generic_params[var.idx()].clone();
-                                    let vwt = typ.clone().field(self, 0).deref(self);
-                                    let stride = vwt.field(self, 2);
-                                    let stride = stride.load(self);
-
-                                    ptr = ptr.offset_i64(self, offset.bytes() as i64);
-                                    ptr = ptr.offset_value(self, stride);
-                                    offset = Size::ZERO;
-                                } else {
-                                    offset = offsets[i];
-                                }
-                            }
-                        },
-                        | _ => unreachable!(),
-                    }
-                },
-                | _ => unreachable!(),
+                }
             }
 
             ptr.offset_i64(self, offset.bytes() as i64)

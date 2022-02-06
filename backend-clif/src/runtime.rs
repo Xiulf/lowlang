@@ -1,5 +1,8 @@
 use super::*;
-use ir::{layout::Integer, ty::{Signature, Ty}};
+use ir::{
+    layout::Integer,
+    ty::{Signature, Ty},
+};
 use std::lazy::OnceCell;
 
 #[derive(Default)]
@@ -7,15 +10,12 @@ pub(super) struct RuntimeDefs {
     // runtime/gen_alloc
     gen_alloc: OnceCell<clif::FuncId>,
     gen_free: OnceCell<clif::FuncId>,
+    rc_alloc: OnceCell<clif::FuncId>,
 
     // runtime/metadata
     vwt: OnceCell<Ty>,
     typ: OnceCell<Ty>,
     trivial_metas: OnceCell<clif::DataId>,
-
-    pub(super) copy_trivial: OnceCell<clif::FuncId>,
-    pub(super) move_trivial: OnceCell<clif::FuncId>,
-    pub(super) drop_trivial: OnceCell<clif::FuncId>,
 }
 
 impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
@@ -48,6 +48,20 @@ impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
         })
     }
 
+    pub fn rc_alloc(&mut self) -> clif::FuncId {
+        let module = &mut self.module;
+
+        *self.runtime_defs.rc_alloc.get_or_init(|| {
+            let size_t = module.target_config().pointer_type();
+            let mut sig = module.make_signature();
+
+            sig.params.push(clif::AbiParam::new(size_t));
+            sig.returns.push(clif::AbiParam::new(size_t));
+
+            module.declare_function("rc_alloc", clif::Linkage::Import, &sig).unwrap()
+        })
+    }
+
     pub fn trivial_metas(&mut self) -> clif::DataId {
         let module = &mut self.module;
 
@@ -65,7 +79,11 @@ impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
             let opaque = Ty::def(self.db, opaque, None).ptr(self.db);
             let size_t = Ty::int(self.db, Integer::ISize, false);
             let typ_ptr = Ty::def(self.db, typ, None).ptr(self.db);
-            let copy_ty = Signature::new().param(self.db, opaque).param(self.db, opaque).param(self.db, typ_ptr).to_ty(self.db);
+            let copy_ty = Signature::new()
+                .param(self.db, opaque)
+                .param(self.db, opaque)
+                .param(self.db, typ_ptr)
+                .to_ty(self.db);
             let drop_ty = Signature::new().param(self.db, opaque).param(self.db, typ_ptr).to_ty(self.db);
             let fields = [
                 ir::TypeDefField {

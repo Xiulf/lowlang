@@ -24,7 +24,7 @@ ValueWitnessTable UNOWNED_BOX_VWT = {
     .stride = sizeof(size_t) * 2,
     .copy = copy_trivial,
     .move = move_trivial,
-    .drop = drop_trivial,
+    .drop = drop_nop,
 };
 
 ValueWitnessTable RC_BOX_VWT = {
@@ -43,7 +43,7 @@ ValueWitnessTable TRIVIAL_VWT[6] = {
         .stride = 0,
         .copy = copy_zst,
         .move = move_zst,
-        .drop = drop_trivial,
+        .drop = drop_nop,
     },
     {
         .size = 1,
@@ -51,7 +51,7 @@ ValueWitnessTable TRIVIAL_VWT[6] = {
         .stride = 1,
         .copy = copy_trivial,
         .move = move_trivial,
-        .drop = drop_trivial,
+        .drop = drop_nop,
     },
     {
         .size = 2,
@@ -59,7 +59,7 @@ ValueWitnessTable TRIVIAL_VWT[6] = {
         .stride = 2,
         .copy = copy_trivial,
         .move = move_trivial,
-        .drop = drop_trivial,
+        .drop = drop_nop,
     },
     {
         .size = 4,
@@ -67,7 +67,7 @@ ValueWitnessTable TRIVIAL_VWT[6] = {
         .stride = 4,
         .copy = copy_trivial,
         .move = move_trivial,
-        .drop = drop_trivial,
+        .drop = drop_nop,
     },
     {
         .size = 8,
@@ -75,7 +75,7 @@ ValueWitnessTable TRIVIAL_VWT[6] = {
         .stride = 8,
         .copy = copy_trivial,
         .move = move_trivial,
-        .drop = drop_trivial,
+        .drop = drop_nop,
     },
     {
         .size = 16,
@@ -83,7 +83,7 @@ ValueWitnessTable TRIVIAL_VWT[6] = {
         .stride = 16,
         .copy = copy_trivial,
         .move = move_trivial,
-        .drop = drop_trivial,
+        .drop = drop_nop,
     },
 };
 
@@ -120,7 +120,9 @@ void move_trivial(Opaque *dst, Opaque *src, Type *t) {
   memcpy(dst, src, t->vwt->size);
 }
 
-void drop_trivial(Opaque *val, Type *t) {}
+void copy_move_nop(Opaque *dst, Opaque *src, Type *t) {}
+
+void drop_nop(Opaque *val, Type *t) {}
 
 void copy_zst(Opaque *dst, Opaque *src, Type *t) {}
 void move_zst(Opaque *dst, Opaque *src, Type *t) {}
