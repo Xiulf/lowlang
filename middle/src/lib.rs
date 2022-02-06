@@ -1,8 +1,8 @@
 use ir::{
     db::IrDatabase,
     layout::{Align, Size},
-    ty::Ty,
-    Linkage, TypeDefId,
+    ty::{Ty, TypeKind},
+    Flags, Linkage, TypeDefId,
 };
 use mangling::mangle;
 use rustc_hash::FxHashMap;
@@ -54,6 +54,8 @@ pub enum TypeInfo<B: Backend> {
         mk_generics: B::FuncId,
         mk_vwt: B::FuncId,
         mk_info: B::FuncId,
+        generic_count: usize,
+        info_field_count: usize,
     },
 }
 
@@ -81,6 +83,26 @@ impl<B: Backend> State<B> {
     pub fn register_types(&mut self, backend: &mut B, db: &dyn IrDatabase, module: &ir::Module) {
         for local_type in &module.types {
             self.register_type(backend, db, &module.name, local_type.linkage, local_type.id);
+        }
+    }
+
+    pub fn info_of(&mut self, backend: &mut B, db: &dyn IrDatabase, ty: Ty) -> TypeInfoId {
+        if let Some(id) = self.ty_to_ti.get(&ty) {
+            return *id;
+        }
+
+        let lookup = ty.lookup(db);
+
+        if lookup.flags.is_set(Flags::TRIVIAL) {
+            let layout = db.layout_of(ty);
+
+            self.alloc_trivial(backend, layout.size, layout.align)
+        } else {
+            match lookup.kind {
+                | TypeKind::Box(..) => todo!(),
+                | TypeKind::Def(id, _) => self.def_to_ti[&id],
+                | _ => unimplemented!(),
+            }
         }
     }
 
@@ -115,6 +137,8 @@ impl<B: Backend> State<B> {
                     mk_generics,
                     mk_vwt,
                     mk_info,
+                    generic_count: def.generic_params.len(),
+                    info_field_count: 2 + def.generic_params.len(),
                 });
 
                 self.def_to_ti.insert(id, info);
@@ -153,6 +177,8 @@ impl<B: Backend> State<B> {
                 copy_fn,
                 move_fn,
                 drop_fn,
+                generic_count: def.generic_params.len(),
+                info_field_count: 2 + def.generic_params.len(),
             });
 
             self.def_to_ti.insert(id, info);
@@ -213,5 +239,21 @@ impl<B: Backend> State<B> {
 
         self.value_witness_tables.push(vwt);
         id
+    }
+}
+
+impl<B: Backend> std::ops::Index<TypeInfoId> for State<B> {
+    type Output = TypeInfo<B>;
+
+    fn index(&self, index: TypeInfoId) -> &Self::Output {
+        &self.type_infos[index.0]
+    }
+}
+
+impl<B: Backend> std::ops::Index<ValueWitnessTableId> for State<B> {
+    type Output = ValueWitnessTable<B>;
+
+    fn index(&self, index: ValueWitnessTableId) -> &Self::Output {
+        &self.value_witness_tables[index.0]
     }
 }

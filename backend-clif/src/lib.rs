@@ -9,11 +9,13 @@ mod runtime;
 mod ty;
 mod value;
 
+use ::middle::TypeInfo;
 use arena::{ArenaMap, Idx};
 use clif::InstBuilder;
 use cranelift_module::Module;
 use ir::db::IrDatabase;
 use ir::layout::Abi;
+use ir::ty::TypeKind;
 use ir::Flags;
 use ptr::Pointer;
 use std::io::Write;
@@ -390,6 +392,12 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
 
                     self.emit_memcpy(new.as_ptr(), old.as_ptr(), size, align, true, clif::MemFlags::new());
                 }
+            },
+            | ir::Instr::DropAddr { addr } => {
+                let elem_ty = self.body[addr].ty.pointee(self.db).unwrap();
+                let addr = self.vars[addr.0].clone();
+
+                self.drop_addr(addr, elem_ty);
             },
             | ir::Instr::ConstInt { ret, val } => {
                 let layout = self.db.layout_of(self.body[ret].ty);

@@ -1,14 +1,17 @@
-use std::collections::HashMap;
-
 use super::*;
 use ::middle::{fns::FnBuilder, Backend};
 use ir::ty::{Ty, TypeKind};
+use std::{collections::HashMap, lazy::OnceCell};
 
 pub type State<'db> = ::middle::State<MiddleCtx<'db>>;
 
 pub struct MiddleCtx<'db> {
     db: &'db dyn IrDatabase,
     module: *mut clif::ObjectModule,
+    copy_trivial: OnceCell<clif::FuncId>,
+    move_trivial: OnceCell<clif::FuncId>,
+    copy_move_nop: OnceCell<clif::FuncId>,
+    drop_nop: OnceCell<clif::FuncId>,
 }
 
 struct FnCtx<'module, 'ctx> {
@@ -23,11 +26,18 @@ struct FnCtx<'module, 'ctx> {
 
 impl<'db> MiddleCtx<'db> {
     pub(super) fn new(db: &'db dyn IrDatabase, module: &mut clif::ObjectModule) -> Self {
-        Self { db, module }
+        Self {
+            db,
+            module,
+            copy_trivial: OnceCell::new(),
+            move_trivial: OnceCell::new(),
+            copy_move_nop: OnceCell::new(),
+            drop_nop: OnceCell::new(),
+        }
     }
 
     #[inline]
-    fn module(&mut self) -> &mut clif::ObjectModule {
+    fn module<'a>(&mut self) -> &'a mut clif::ObjectModule {
         unsafe { &mut *self.module }
     }
 }
@@ -110,19 +120,51 @@ impl<'db> Backend for MiddleCtx<'db> {
     }
 
     fn copy_trivial(&mut self) -> Self::FuncId {
-        todo!()
+        let module = self.module();
+
+        *self.copy_trivial.get_or_init(|| {
+            let mut sig = module.make_signature();
+            let ptr_type = module.target_config().pointer_type();
+
+            sig.params = (0..3).map(|_| clif::AbiParam::new(ptr_type)).collect();
+            module.declare_function("copy_trivial", clif::Linkage::Import, &sig).unwrap()
+        })
     }
 
     fn move_trivial(&mut self) -> Self::FuncId {
-        todo!()
+        let module = self.module();
+
+        *self.move_trivial.get_or_init(|| {
+            let mut sig = module.make_signature();
+            let ptr_type = module.target_config().pointer_type();
+
+            sig.params = (0..3).map(|_| clif::AbiParam::new(ptr_type)).collect();
+            module.declare_function("move_trivial", clif::Linkage::Import, &sig).unwrap()
+        })
     }
 
     fn copy_move_nop(&mut self) -> Self::FuncId {
-        todo!()
+        let module = self.module();
+
+        *self.copy_move_nop.get_or_init(|| {
+            let mut sig = module.make_signature();
+            let ptr_type = module.target_config().pointer_type();
+
+            sig.params = (0..3).map(|_| clif::AbiParam::new(ptr_type)).collect();
+            module.declare_function("copy_move_nop", clif::Linkage::Import, &sig).unwrap()
+        })
     }
 
     fn drop_nop(&mut self) -> Self::FuncId {
-        todo!()
+        let module = self.module();
+
+        *self.drop_nop.get_or_init(|| {
+            let mut sig = module.make_signature();
+            let ptr_type = module.target_config().pointer_type();
+
+            sig.params = (0..2).map(|_| clif::AbiParam::new(ptr_type)).collect();
+            module.declare_function("drop_nop", clif::Linkage::Import, &sig).unwrap()
+        })
     }
 }
 
