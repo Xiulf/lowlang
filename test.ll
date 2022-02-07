@@ -17,7 +17,7 @@ entry(argc : $i32, argv : $**u8):
 body test <type T> {
 
 entry:
-    x = box_alloc gen $T
+    x = box_alloc rc $T
     a = box_addr x
     box_free x
     return

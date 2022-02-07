@@ -182,6 +182,38 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
     //     Some(Val::new_val(addr, layout))
     // }
 
+    pub fn dynamic_size(&mut self, mut value: clif::Value, ty: ir::ty::Ty) -> clif::Value {
+        if let Some(val) = self.cache.size_of.get(&ty) {
+            return *val;
+        }
+
+        let mut changed = false;
+
+        for i in 0..self.body.generic_params.len() {
+            let count = ty.var_count(self.db, GenericVar(0, i as u8));
+
+            if count > 0 {
+                let stride = self.get_vwt_field(ty, 2).load(self);
+
+                if count > 1 {
+                    let stride = self.bcx.ins().imul_imm(stride, count as i64);
+
+                    value = self.bcx.ins().iadd(value, stride);
+                } else {
+                    value = self.bcx.ins().iadd(value, stride);
+                }
+
+                changed = true;
+            }
+        }
+
+        if changed {
+            self.cache.size_of.insert(ty, value);
+        }
+
+        value
+    }
+
     pub fn dynamic_offset(&mut self, ptr: Pointer, layout: &TyAndLayout, field: usize) -> Pointer {
         match layout.ty.lookup(self.db).kind {
             | typ::Tuple(ref fields) => self.dynamic_offset_internal(ptr, fields, layout, field),

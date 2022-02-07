@@ -83,6 +83,7 @@ struct BodyCache {
     type_info: HashMap<Ty, value::Val>,
     vwt: HashMap<Ty, value::Val>,
     vwt_field: HashMap<(Ty, usize), value::Val>,
+    size_of: HashMap<Ty, clif::Value>,
 }
 
 impl<'a, 'db, 'ctx> std::ops::Deref for BodyCtx<'a, 'db, 'ctx> {
@@ -369,8 +370,15 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 let ptr_type = self.module.target_config().pointer_type();
                 let layout = self.db.layout_of(ty);
                 let size = self.bcx.ins().iconst(ptr_type, layout.size.bytes() as i64);
+                let size = self.dynamic_size(size, ty);
 
                 match kind {
+                    | BoxKind::None => {
+                        let res = self.call_malloc(size);
+                        let layout = self.db.layout_of(self.body[ret].ty);
+
+                        self.vars.insert(ret.0, Val::new_val(res, layout));
+                    },
                     | BoxKind::Gen => {
                         let gen_alloc = self.cx.gen_alloc();
                         let gen_alloc = self.cx.module.declare_func_in_func(gen_alloc, &mut self.bcx.func);
@@ -401,6 +409,11 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 let ptr_type = self.module.target_config().pointer_type();
 
                 match kind {
+                    | BoxKind::None => {
+                        let val = self.vars[boxed.0].clone().load(self);
+
+                        self.call_free(val);
+                    },
                     | BoxKind::Gen => {
                         let val = self.vars[boxed.0].clone().field(self, 0);
                         let ptr = val.clone().load(self);
@@ -411,6 +424,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                         let gen_free = self.cx.module.declare_func_in_func(gen_free, &mut self.bcx.func);
                         let size = self.db.layout_of(ty).size;
                         let size = self.bcx.ins().iconst(ptr_type, size.bytes() as i64);
+                        let size = self.dynamic_size(size, ty);
 
                         self.bcx.ins().call(gen_free, &[ptr, size]);
                     },
@@ -447,14 +461,27 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                     | _ => unreachable!(),
                 };
 
-                match kind {
-                    | BoxKind::Gen => {
-                        let res = self.vars[boxed.0].clone().field(self, 0);
+                let ptr_size = self.module.target_config().pointer_bytes() as i32;
 
+                match kind {
+                    | BoxKind::None => {
+                        let val = self.vars[boxed.0].clone();
+                        let val = val.cast(self.db.layout_of(self.body[ret].ty));
+
+                        self.vars.insert(ret.0, val);
+                    },
+                    | BoxKind::Gen => {
+                        let ptr_type = self.module.target_config().pointer_type();
+                        let (ptr, ptr_gen) = self.vars[boxed.0].clone().load_pair(self);
+                        let gen = self.bcx.ins().load(ptr_type, clif::MemFlags::trusted(), ptr, -ptr_size);
+                        let cond = self.bcx.ins().icmp(clif::IntCC::Equal, ptr_gen, gen);
+                        let layout = self.db.layout_of(self.body[ret].ty);
+                        let res = Val::new_val(ptr, layout);
+
+                        self.trapz(cond, "use of deallocated box");
                         self.vars.insert(ret.0, res);
                     },
                     | BoxKind::Rc => {
-                        let ptr_size = self.module.target_config().pointer_bytes();
                         let ptr = self.vars[boxed.0].as_ptr();
                         let val = ptr.offset_i64(self, ptr_size as i64 * 2);
                         let layout = self.db.layout_of(self.body[ret].ty);
@@ -889,6 +916,70 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
             },
             | _ => unimplemented!("{}", instr.display(self.db, self.body)),
         }
+    }
+
+    pub fn trap(&mut self, msg: impl AsRef<[u8]>) {
+        let zero = self.bcx.ins().iconst(clif::types::B1, 0);
+
+        self.print_message(msg);
+        self.bcx.ins().trapz(zero, clif::TrapCode::User(1));
+    }
+
+    pub fn unreachable(&mut self, msg: impl AsRef<[u8]>) {
+        self.print_message(msg);
+        self.bcx.ins().trap(clif::TrapCode::UnreachableCodeReached);
+    }
+
+    pub fn trapz(&mut self, cond: clif::Value, msg: impl AsRef<[u8]>) {
+        let trap_block = self.bcx.create_block();
+        let else_block = self.bcx.create_block();
+
+        self.bcx.ins().brz(cond, trap_block, &[]);
+        self.bcx.ins().jump(else_block, &[]);
+        self.bcx.switch_to_block(trap_block);
+        self.unreachable(msg);
+        self.bcx.switch_to_block(else_block);
+    }
+
+    pub fn alloc_str(&mut self, str: impl AsRef<[u8]>) -> clif::Value {
+        let id = self.cx.module.declare_anonymous_data(false, false).unwrap();
+        let mut dcx = clif::DataContext::new();
+
+        dcx.define(str.as_ref().into());
+        self.cx.module.define_data(id, &dcx).unwrap();
+
+        let gv = self.cx.module.declare_data_in_func(id, &mut self.bcx.func);
+        let ptr_type = self.module.target_config().pointer_type();
+
+        self.bcx.ins().global_value(ptr_type, gv)
+    }
+
+    pub fn print_message(&mut self, msg: impl AsRef<[u8]>) {
+        let ptr_type = self.module.target_config().pointer_type();
+        let mut sig = self.module.make_signature();
+
+        sig.params.push(clif::AbiParam::new(ptr_type));
+        sig.returns.push(clif::AbiParam::new(clif::types::I32));
+
+        let puts = self.cx.module.declare_function("puts", clif::Linkage::Import, &sig).unwrap();
+        let puts = self.cx.module.declare_func_in_func(puts, &mut self.bcx.func);
+        let str = self.alloc_str(msg);
+
+        self.bcx.ins().call(puts, &[str]);
+    }
+
+    pub fn call_malloc(&mut self, size: clif::Value) -> clif::Value {
+        let ptr_type = self.module.target_config().pointer_type();
+        let mut sig = self.module.make_signature();
+
+        sig.params.push(clif::AbiParam::new(ptr_type));
+        sig.returns.push(clif::AbiParam::new(ptr_type));
+
+        let malloc = self.cx.module.declare_function("malloc", clif::Linkage::Import, &sig).unwrap();
+        let malloc = self.cx.module.declare_func_in_func(malloc, &mut self.bcx.func);
+        let call = self.bcx.ins().call(malloc, &[size]);
+
+        self.bcx.inst_results(call)[0]
     }
 
     pub fn call_free(&mut self, ptr: clif::Value) {

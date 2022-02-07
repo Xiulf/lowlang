@@ -757,6 +757,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
             },
             | "box_alloc" => {
                 let kind = match self.ident()? {
+                    | "none" => BoxKind::None,
                     | "gen" => BoxKind::Gen,
                     | "rc" => BoxKind::Rc,
                     | _ => return None,

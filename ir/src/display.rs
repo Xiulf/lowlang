@@ -308,6 +308,7 @@ impl fmt::Display for BodyDisplay<'_, Instr> {
         match self.t {
             | Instr::StackAlloc { ret, ty } => write!(f, "{} = stack_alloc ${}", ret, ty.display(self.db)),
             | Instr::StackFree { addr } => write!(f, "stack_free {}", addr),
+            | Instr::BoxAlloc { ret, ty, kind: BoxKind::None } => write!(f, "{} = box_alloc none ${}", ret, ty.display(self.db)),
             | Instr::BoxAlloc { ret, ty, kind: BoxKind::Gen } => write!(f, "{} = box_alloc gen ${}", ret, ty.display(self.db)),
             | Instr::BoxAlloc { ret, ty, kind: BoxKind::Rc } => write!(f, "{} = box_alloc rc ${}", ret, ty.display(self.db)),
             | Instr::BoxFree { boxed } => write!(f, "box_free {}", boxed),
@@ -453,6 +454,7 @@ impl fmt::Display for IrDisplay<'_, Ty> {
             },
             | typ::Def(id, None) => write!(f, "{}", id),
             | typ::Ptr(to) => write!(f, "*{}", to.display(db)),
+            | typ::Box(BoxKind::None, to) => write!(f, "*{}", to.display(db)),
             | typ::Box(BoxKind::Gen, to) => write!(f, "box {}", to.display(db)),
             | typ::Box(BoxKind::Rc, to) => write!(f, "rc {}", to.display(db)),
             | typ::Tuple(ref ts) => {

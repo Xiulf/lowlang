@@ -56,6 +56,7 @@ pub enum TypeKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BoxKind {
+    None,
     Gen,
     Rc,
 }

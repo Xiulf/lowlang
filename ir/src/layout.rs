@@ -577,7 +577,7 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
 
             Layout::scalar(scalar, &triple)
         },
-        | typ::Box(BoxKind::Rc, _) => {
+        | typ::Box(BoxKind::None, _) => {
             let mut ptr = Scalar::new(Primitive::Pointer, &triple);
 
             ptr.valid_range = 1..=*ptr.valid_range.end();
@@ -591,6 +591,13 @@ pub fn layout_of(db: &dyn IrDatabase, ty: Ty) -> TyAndLayout {
             ptr.valid_range = 1..=*ptr.valid_range.end();
 
             scalar_pair(ptr, gen, &triple)
+        },
+        | typ::Box(BoxKind::Rc, _) => {
+            let mut ptr = Scalar::new(Primitive::Pointer, &triple);
+
+            ptr.valid_range = 1..=*ptr.valid_range.end();
+
+            Layout::scalar(ptr, &triple)
         },
         | typ::Tuple(ref ts) => {
             let fields = ts.iter().map(|&t| db.layout_of(t)).collect::<Vec<_>>();
