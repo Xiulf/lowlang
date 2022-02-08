@@ -3,49 +3,10 @@ use ::middle::TypeInfo;
 use ir::{
     layout::{Fields, Size, TyAndLayout},
     ty::{typ, GenericVar, Subst},
-    Flags, TypeDefBody,
+    TypeDefBody,
 };
 
 impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
-    pub fn drop_addr(&mut self, addr: Val, ty: ir::ty::Ty) {
-        let lookup = ty.lookup(self.db);
-        let ptr_type = self.cx.module.target_config().pointer_type();
-        let addr = addr.load(self);
-
-        if let typ::Var(var) = lookup.kind {
-            let info = self.generic_params[var.idx()].clone();
-            let drop_fn = self.get_vwt_field(ty, 5).load(self);
-            let mut drop_sig = self.cx.module.make_signature();
-
-            drop_sig.params = (0..2).map(|_| clif::AbiParam::new(ptr_type)).collect();
-
-            let drop_sig = self.bcx.import_signature(drop_sig);
-            let info = info.as_ptr().get_addr(self);
-
-            self.bcx.ins().call_indirect(drop_sig, drop_fn, &[addr, info]);
-        } else if !lookup.flags.is_set(Flags::TRIVIAL) {
-            match lookup.kind {
-                | TypeKind::Box(..) => todo!(),
-                | _ => {
-                    let mut mcx = self.cx.middle_ctx();
-                    let id = self.cx.middle.info_of(&mut mcx, self.db, ty);
-
-                    let drop_fn = match self.cx.middle[id] {
-                        | TypeInfo::Trivial { .. } => unreachable!(),
-                        | TypeInfo::Concrete { vwt } => self.cx.middle[vwt].drop_fn,
-                        | TypeInfo::Generic { drop_fn, .. } => drop_fn,
-                        | TypeInfo::External(_) => todo!(),
-                    };
-
-                    let drop_fn = self.cx.module.declare_func_in_func(drop_fn, &mut self.bcx.func);
-                    let info = self.get_type_info(ty).as_ptr().get_addr(self);
-
-                    self.bcx.ins().call(drop_fn, &[addr, info]);
-                },
-            }
-        }
-    }
-
     pub fn get_vwt_field(&mut self, ty: ir::ty::Ty, field: usize) -> Val {
         if let Some(val) = self.cache.vwt_field.get(&(ty, field)) {
             return val.clone();

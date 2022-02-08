@@ -388,7 +388,11 @@ impl<'a> Builder<'a> {
     /// Create a constant string reference.
     /// These strings are always utf8 encoded and null-terminated.
     pub fn const_str(&mut self, val: impl Into<String>) -> Var {
-        let ty = Ty::int(self.db, Integer::I8, false).ptr(self.db);
+        let ty = Ty::tuple(self.db, [
+            Ty::int(self.db, Integer::I8, false).ptr(self.db),
+            Ty::int(self.db, Integer::ISize, false),
+        ]);
+
         let ret = self.create_var(ty);
 
         self.block().instrs.push(Instr::ConstStr { ret, val: val.into() });

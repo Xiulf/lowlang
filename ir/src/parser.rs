@@ -867,7 +867,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
                 let mut vals = Vec::new();
                 let _ = self.expect(LParen)?;
 
-                if self.lexer.peek() != Some(&RParen) {
+                while self.lexer.peek() != Some(&RParen) {
                     let var = self.ident()?;
 
                     vals.push(self.vars[var]);

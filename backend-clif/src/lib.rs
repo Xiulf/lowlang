@@ -1,5 +1,6 @@
 #![feature(once_cell, generic_associated_types)]
 
+mod instr;
 mod intrinsic;
 mod metadata;
 mod middle;
@@ -433,12 +434,13 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                         let one = self.bcx.ins().iconst(ptr_type, 1);
                         let strong_count = self.bcx.ins().load(ptr_type, clif::MemFlags::trusted(), ptr, 0);
                         let strong_count = self.bcx.ins().isub(strong_count, one);
+                        let cond = self.bcx.ins().icmp_imm(clif::IntCC::SignedLessThanOrEqual, strong_count, 0);
                         let drop_block = self.bcx.create_block();
-                        let else_block = self.bcx.create_block();
                         let exit_block = self.bcx.create_block();
 
-                        self.bcx.ins().brz(strong_count, drop_block, &[]);
-                        self.bcx.ins().jump(else_block, &[]);
+                        self.bcx.ins().store(clif::MemFlags::trusted(), strong_count, ptr, 0);
+                        self.bcx.ins().brnz(cond, drop_block, &[]);
+                        self.bcx.ins().jump(exit_block, &[]);
                         self.bcx.switch_to_block(drop_block);
 
                         let layout = self.db.layout_of(ty.ptr(self.db));
@@ -447,9 +449,6 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
 
                         self.drop_addr(val, ty);
                         self.call_free(ptr);
-                        self.bcx.ins().jump(exit_block, &[]);
-                        self.bcx.switch_to_block(else_block);
-                        self.bcx.ins().store(clif::MemFlags::trusted(), strong_count, ptr, 0);
                         self.bcx.ins().jump(exit_block, &[]);
                         self.bcx.switch_to_block(exit_block);
                     },
@@ -478,7 +477,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                         let layout = self.db.layout_of(self.body[ret].ty);
                         let res = Val::new_val(ptr, layout);
 
-                        self.trapz(cond, "use of deallocated box");
+                        self.trapz(cond, "use of deallocated box\0");
                         self.vars.insert(ret.0, res);
                     },
                     | BoxKind::Rc => {
@@ -509,23 +508,17 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 let old = self.vars[old.0].clone();
                 let new = self.vars[new.0].clone();
 
-                if let ir::ty::typ::Var(var) = elem_ty.lookup(self.db).kind {
-                    let info = self.generic_params[var.idx()].clone();
-                    let copy_fn = self.get_vwt_field(elem_ty, if flags.is_set(Flags::TAKE) { 4 } else { 3 });
-                    let sig = self.ty_as_sig(copy_fn.layout().ty);
-                    let sig = self.bcx.import_signature(sig);
-                    let copy_fn = copy_fn.load(self);
-                    let info = info.as_ptr().get_addr(self);
-                    let old = old.load(self);
-                    let new = new.load(self);
-
-                    self.bcx.ins().call_indirect(sig, copy_fn, &[new, old, info]);
-                } else {
-                    let align = old.layout().align.bytes();
-                    let size = old.layout().size.bytes();
-
-                    self.emit_memcpy(new.as_ptr(), old.as_ptr(), size, align, true, clif::MemFlags::new());
+                if !flags.is_set(Flags::INIT) {
+                    self.drop_addr(old.clone(), elem_ty);
                 }
+
+                self.copy_addr(new, old, elem_ty, !flags.is_set(Flags::TAKE));
+            },
+            | ir::Instr::CopyValue { ret, val } => {
+                let val = self.vars[val.0].clone();
+                let val = self.copy_value(val);
+
+                self.vars.insert(ret.0, val);
             },
             | ir::Instr::DropAddr { addr } => {
                 let elem_ty = self.body[addr].ty.pointee(self.db).unwrap();
@@ -533,9 +526,23 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
 
                 self.drop_addr(addr, elem_ty);
             },
+            | ir::Instr::DropValue { val } => {
+                let val = self.vars[val.0].clone();
+
+                self.drop_value(val);
+            },
             | ir::Instr::ConstInt { ret, val } => {
                 let layout = self.db.layout_of(self.body[ret].ty);
                 let val = Val::new_const(self, val, layout);
+
+                self.vars.insert(ret.0, val);
+            },
+            | ir::Instr::ConstStr { ret, ref val } => {
+                let ptr_type = self.module.target_config().pointer_type();
+                let layout = self.db.layout_of(self.body[ret].ty);
+                let ptr = self.alloc_str(val);
+                let len = self.bcx.ins().iconst(ptr_type, val.len() as i64);
+                let val = Val::new_val_pair(ptr, len, layout);
 
                 self.vars.insert(ret.0, val);
             },
@@ -547,45 +554,9 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 self.vars.insert(ret.0, Val::new_func(func, layout));
             },
             | ir::Instr::Tuple { ret, ref vals } => {
+                let vals = vals.iter().map(|v| self.vars[v.0].clone()).collect();
                 let layout = self.db.layout_of(self.body[ret].ty);
-                let res = match &layout.abi {
-                    | Abi::Scalar(_) => {
-                        assert_eq!(vals.len(), 1);
-                        let val = self.vars[vals[0].0].clone().load(self);
-
-                        Val::new_val(val, layout)
-                    },
-                    | Abi::ScalarPair(_, _) => {
-                        assert!(vals.len() <= 2);
-
-                        let (a, b) = if vals.len() == 1 {
-                            self.vars[vals[0].0].clone().load_pair(self)
-                        } else {
-                            let a = self.vars[vals[0].0].clone().load(self);
-                            let b = self.vars[vals[1].0].clone().load(self);
-                            (a, b)
-                        };
-
-                        Val::new_val_pair(a, b, layout)
-                    },
-                    | _ => {
-                        let ss = self.bcx.create_stack_slot(clif::StackSlotData {
-                            kind: clif::StackSlotKind::ExplicitSlot,
-                            size: layout.size.bytes() as u32,
-                            offset: None,
-                        });
-
-                        let res = Val::new_ref(Pointer::stack(ss), layout);
-
-                        for (i, val) in vals.iter().enumerate() {
-                            let (ptr, _) = res.clone().field(self, i).as_ref();
-
-                            self.vars[val.0].clone().store_to(self, ptr, clif::MemFlags::trusted());
-                        }
-
-                        res
-                    },
-                };
+                let res = self.mk_tuple(vals, layout);
 
                 self.vars.insert(ret.0, res);
             },
@@ -914,19 +885,18 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
 
                 self.lower_intrinsic(name.as_str(), rets, args);
             },
-            | _ => unimplemented!("{}", instr.display(self.db, self.body)),
         }
     }
 
     pub fn trap(&mut self, msg: impl AsRef<[u8]>) {
         let zero = self.bcx.ins().iconst(clif::types::B1, 0);
 
-        self.print_message(msg);
+        self.call_puts(msg);
         self.bcx.ins().trapz(zero, clif::TrapCode::User(1));
     }
 
     pub fn unreachable(&mut self, msg: impl AsRef<[u8]>) {
-        self.print_message(msg);
+        self.call_puts(msg);
         self.bcx.ins().trap(clif::TrapCode::UnreachableCodeReached);
     }
 
@@ -954,7 +924,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
         self.bcx.ins().global_value(ptr_type, gv)
     }
 
-    pub fn print_message(&mut self, msg: impl AsRef<[u8]>) {
+    pub fn call_puts(&mut self, msg: impl AsRef<[u8]>) {
         let ptr_type = self.module.target_config().pointer_type();
         let mut sig = self.module.make_signature();
 
