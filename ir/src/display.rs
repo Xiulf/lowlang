@@ -14,7 +14,7 @@ impl fmt::Display for TypeDefId {
 
 impl fmt::Display for FuncId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let id: u32 = self.0.into_raw().into();
+        let id: u32 = self.0.into();
 
         write!(f, "fn{}", id)
     }
@@ -22,7 +22,7 @@ impl fmt::Display for FuncId {
 
 impl fmt::Display for BodyId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let id: u32 = self.0.into_raw().into();
+        let id: u32 = self.0.into();
 
         write!(f, "body{}", id)
     }
@@ -55,17 +55,21 @@ impl fmt::Display for IrDisplay<'_, Module> {
         let IrDisplay(this, db) = *self;
 
         writeln!(f, "module {} {{", this.name)?;
-        writeln!(f)?;
 
-        for (id, func) in this.funcs.iter() {
-            writeln!(f, "{}: {}", FuncId(id), func.display(db))?;
+        for local in &this.types {
+            let type_ = local.id.lookup(db);
+
+            writeln!(f, "\t{} {}\t({})", local.linkage, type_.display(db), local.id)?;
         }
 
-        writeln!(f)?;
-
-        for (id, body) in this.bodies.iter() {
-            writeln!(f, "{}: {}", BodyId(id), body.display(db))?;
+        if !this.types.is_empty() {
             writeln!(f)?;
+        }
+
+        for local in &this.funcs {
+            let func = local.id.lookup(db);
+
+            writeln!(f, "\t{} {}\t({})", local.linkage, func.display(db), local.id)?;
         }
 
         write!(f, "}}")
@@ -82,7 +86,7 @@ impl fmt::Display for IrDisplay<'_, Func> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let IrDisplay(this, db) = *self;
 
-        write!(f, "{} {:?} : ${}", this.linkage, this.name, this.sig.display(db))
+        write!(f, "{} : ${}", this.name, this.sig.display(db))
     }
 }
 
@@ -106,7 +110,7 @@ impl fmt::Display for IrDisplay<'_, TypeDef> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let IrDisplay(this, db) = *self;
 
-        write!(f, "type {:?}", this.name)?;
+        write!(f, "type {}", this.name)?;
 
         if !this.generic_params.is_empty() {
             write!(f, "<")?;

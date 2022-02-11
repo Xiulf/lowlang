@@ -185,7 +185,7 @@ impl<'a> Parser<'a> {
         let id = TypeDef::declare(self.db, name);
 
         self.types.insert(name, id);
-        self.module.add_type(linkage, id);
+        self.module.declare_type(linkage, id);
         Some(())
     }
 
@@ -194,8 +194,9 @@ impl<'a> Parser<'a> {
         let _ = self.expect(Token::Colon)?;
         let _ = self.expect(Token::Dollar)?;
         let ty = self.parse_type()?;
-        let id = self.module.declare_func(name, linkage, ty);
+        let id = Func::declare(self.db, name, ty);
 
+        self.module.declare_func(linkage, id);
         self.funcs.insert(name, id);
         Some(())
     }
@@ -305,8 +306,7 @@ impl<'a> Parser<'a> {
 
     fn parse_body(&mut self) -> Option<()> {
         let parser = unsafe { &mut *(self as *mut _) };
-        let body = self.module.declare_body();
-        let builder = self.module.define_body(self.db, body);
+        let builder = Body::builder(self.db);
         let parser = BodyParser {
             parser,
             builder,
@@ -315,7 +315,7 @@ impl<'a> Parser<'a> {
             block_refs: Vec::new(),
         };
 
-        parser.parse(body)
+        parser.parse()
     }
 
     fn parse_type(&mut self) -> Option<Ty> {
@@ -520,13 +520,8 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a, 'b> BodyParser<'a, 'b> {
-    fn parse(mut self, id: BodyId) -> Option<()> {
-        if let Some(&Ident(name) | &Path(name)) = self.lexer.peek() {
-            let func = *self.funcs.get(name)?;
-            let _ = self.lexer.next()?;
-
-            self.parser.module.define_func(func, id);
-        }
+    fn parse(mut self) -> Option<()> {
+        let name = self.def_name()?;
 
         if self.eat(LAngle) {
             self.generics.push(HashMap::new());
@@ -559,7 +554,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
         let _ = self.expect(RBrace)?;
 
         for (name, BlockRef { block, case }) in self.block_refs {
-            let block_data = &mut self.builder.body_mut()[block];
+            let block_data = &mut self.builder.body[block];
 
             match &mut block_data.term {
                 | Some(Term::Br { to }) => {
@@ -575,6 +570,11 @@ impl<'a, 'b> BodyParser<'a, 'b> {
                 | _ => {},
             }
         }
+
+        let func = *self.parser.funcs.get(name)?;
+        let id = self.builder.finish();
+
+        func.lookup(self.parser.db).define(id);
 
         Some(())
     }

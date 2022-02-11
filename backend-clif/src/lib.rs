@@ -18,8 +18,10 @@ use ir::layout::Abi;
 use ir::ty::{BoxKind, Ty, TypeKind};
 use ir::Flags;
 use ptr::Pointer;
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::io::Write;
+use std::sync::Arc;
 use tempfile::NamedTempFile;
 use value::Val;
 
@@ -39,13 +41,15 @@ pub fn compile_module(db: &dyn IrDatabase, ir: &ir::Module, object_file: &mut Na
 
         ctx.middle.register_types(&mut mcx, db, ir);
 
-        for (id, func) in ir.funcs.iter() {
-            ctx.declare_func(id, func);
+        for func in ir.funcs.iter() {
+            ctx.declare_func(func);
         }
 
-        for (id, func) in ir.funcs.iter() {
+        for local in ir.funcs.iter() {
+            let func = local.id.lookup(db);
+
             if let Some(body) = func.body {
-                ctx.lower_body(id, body);
+                ctx.lower_body(local.id, body);
             }
         }
 
@@ -58,20 +62,19 @@ pub fn compile_module(db: &dyn IrDatabase, ir: &ir::Module, object_file: &mut Na
 
 pub struct CodegenCtx<'db, 'ctx> {
     db: &'db dyn IrDatabase,
-    ir: &'ctx ir::Module,
     ctx: &'ctx mut clif::Context,
     fcx: &'ctx mut clif::FunctionBuilderContext,
     module: clif::ObjectModule,
     middle: middle::State<'db>,
-    func_ids: ArenaMap<Idx<ir::Func>, (clif::FuncId, clif::Signature)>,
+    func_ids: FxHashMap<ir::FuncId, (clif::FuncId, clif::Signature)>,
     runtime_defs: runtime::RuntimeDefs,
 }
 
 pub struct BodyCtx<'a, 'db, 'ctx> {
     cx: &'a mut CodegenCtx<'db, 'ctx>,
     bcx: clif::FunctionBuilder<'ctx>,
-    func: Idx<ir::Func>,
-    body: &'ctx ir::Body,
+    func: ir::FuncId,
+    body: Arc<ir::Body>,
     generic_params: Vec<Val>,
     blocks: ArenaMap<Idx<ir::BlockData>, clif::Block>,
     vars: ArenaMap<Idx<ir::VarInfo>, value::Val>,
@@ -106,12 +109,11 @@ pub fn with_codegen_ctx<T>(db: &dyn IrDatabase, ir: &ir::Module, f: impl FnOnce(
     let module = clif::ObjectModule::new(builder);
     let ctx = CodegenCtx {
         db,
-        ir,
         ctx: &mut ctx,
         fcx: &mut fcx,
         module,
         middle: ::middle::State::default(),
-        func_ids: ArenaMap::default(),
+        func_ids: FxHashMap::default(),
         runtime_defs: runtime::RuntimeDefs::default(),
     };
 
@@ -123,13 +125,14 @@ impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
         middle::MiddleCtx::new(self.db, &mut self.module)
     }
 
-    pub fn declare_func(&mut self, id: Idx<ir::Func>, func: &ir::Func) {
+    pub fn declare_func(&mut self, local: &ir::LocalFunc) {
+        let func = local.id.lookup(self.db);
         let sig = self.ty_as_sig(func.sig);
         let new_id = self
             .module
             .declare_function(
                 &func.name,
-                match func.linkage {
+                match local.linkage {
                     | ir::Linkage::Import => clif::Linkage::Import,
                     | ir::Linkage::Export => clif::Linkage::Export,
                     | ir::Linkage::Local => clif::Linkage::Local,
@@ -138,10 +141,10 @@ impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
             )
             .unwrap();
 
-        self.func_ids.insert(id, (new_id, sig));
+        self.func_ids.insert(local.id, (new_id, sig));
     }
 
-    fn lower_body(&mut self, id: Idx<ir::Func>, body: ir::BodyId) {
+    fn lower_body(&mut self, id: ir::FuncId, body: ir::BodyId) {
         let func = unsafe { &mut *(&mut self.ctx.func as *mut _) };
         let fcx = unsafe { &mut *(self.fcx as *mut _) };
         let bcx = clif::FunctionBuilder::new(func, fcx);
@@ -149,7 +152,7 @@ impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
         BodyCtx {
             bcx,
             func: id,
-            body: &self.ir[body],
+            body: body.lookup(self.db),
             cx: self,
             generic_params: Vec::new(),
             blocks: ArenaMap::default(),
@@ -163,8 +166,8 @@ impl<'db, 'ctx> CodegenCtx<'db, 'ctx> {
 
 impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
     fn lower(&mut self) {
-        let (id, sig) = self.func_ids[self.func].clone();
-        let (generics, sig2) = self.ir.funcs[self.func].sig.get_sig(self.db);
+        let (id, sig) = self.func_ids[&self.func].clone();
+        let (generics, sig2) = self.func.lookup(self.db).sig.get_sig(self.db);
         let ptr_type = self.module.target_config().pointer_type();
         let entry = self.bcx.create_block();
 
@@ -277,7 +280,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
         self.bcx.ins().jump(self.blocks[ir::Block::ENTRY.0], &params);
         self.bcx.seal_block(entry);
 
-        for (idx, block) in self.body.blocks.iter() {
+        for (idx, block) in self.body.clone().blocks.iter() {
             let bb = self.blocks[idx];
 
             self.lower_block(bb, ir::Block(idx), block);
@@ -291,7 +294,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
         self.cx.ctx.dce(self.cx.module.isa()).unwrap();
         self.cx.ctx.domtree.clear();
 
-        eprintln!("{}", self.ir.funcs[self.func].name);
+        eprintln!("{}", self.func.lookup(self.db).name);
         eprintln!("{}", self.bcx.func);
 
         self.cx
@@ -553,7 +556,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 self.vars.insert(ret.0, val);
             },
             | ir::Instr::FuncRef { ret, func } => {
-                let (id, _) = self.func_ids[func.0];
+                let (id, _) = self.func_ids[&func];
                 let func = self.cx.module.declare_func_in_func(id, &mut self.cx.ctx.func);
                 let layout = self.db.layout_of(self.body[ret].ty);
 

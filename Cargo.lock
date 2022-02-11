@@ -38,6 +38,7 @@ dependencies = [
  "cranelift-object",
  "ir",
  "middle",
+ "rustc-hash",
  "target-lexicon",
  "tempfile",
 ]
@@ -53,12 +54,6 @@ name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
-
-[[package]]
-name = "bytemuck"
-version = "1.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72957246c41db82b8ef88a5486143830adeb8227ef9837740bdec67724cf2c5b"
 
 [[package]]
 name = "cc"
@@ -196,15 +191,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "eval"
-version = "0.1.0"
-dependencies = [
- "arena",
- "bytemuck",
- "ir",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -335,7 +321,6 @@ name = "lowc"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "eval",
  "ir",
  "mun_lld",
  "salsa",

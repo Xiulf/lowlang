@@ -13,22 +13,21 @@ use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 use ty::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Module {
     pub name: String,
     pub types: Vec<LocalTypeDef>,
-    pub funcs: Arena<Func>,
-    bodies: Arena<Body>,
+    pub funcs: Vec<LocalFunc>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeDefId(salsa::InternId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FuncId(pub Idx<Func>);
+pub struct FuncId(salsa::InternId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BodyId(pub Idx<Body>);
+pub struct BodyId(salsa::InternId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Var(pub Idx<VarInfo>);
@@ -36,7 +35,7 @@ pub struct Var(pub Idx<VarInfo>);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Block(pub Idx<BlockData>);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LocalTypeDef {
     pub id: TypeDefId,
     pub linkage: Linkage,
@@ -68,29 +67,34 @@ pub struct TypeDefVariant {
     pub payload: Option<Ty>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Func {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LocalFunc {
+    pub id: FuncId,
     pub linkage: Linkage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Func {
     pub name: String,
     pub sig: Ty,
     pub body: Option<BodyId>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Linkage {
     Import,
     Export,
     Local,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Body {
     pub generic_params: Vec<GenericParam>,
     pub vars: Arena<VarInfo>,
     pub blocks: Arena<BlockData>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VarInfo {
     pub ty: Ty,
     pub flags: Flags,
@@ -101,14 +105,14 @@ impl Flags {
     pub const RETURN: Self = Self(1 << 1);
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BlockData {
     pub params: Vec<Var>,
     pub instrs: Vec<Instr>,
     pub term: Option<Term>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Instr {
     // Stack allocation
     StackAlloc {
@@ -233,7 +237,7 @@ pub enum Instr {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Flags(pub u32);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Term {
     Unreachable,
     Return { vals: Vec<Var> },
@@ -241,22 +245,16 @@ pub enum Term {
     Switch { pred: Var, cases: Vec<SwitchCase>, default: BrTarget },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SwitchCase {
     pub val: u128,
     pub to: BrTarget,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BrTarget {
     pub block: Block,
     pub args: Vec<Var>,
-}
-
-impl Module {
-    pub fn func(&self, name: &str) -> Option<BodyId> {
-        self.funcs.iter().find(|(_, f)| f.name == name).and_then(|(_, f)| f.body)
-    }
 }
 
 impl TypeDef {
@@ -319,6 +317,30 @@ impl TypeDefId {
     }
 }
 
+impl Func {
+    pub fn intern(self, db: &dyn db::IrDatabase) -> FuncId {
+        db.intern_func(Arc::new(self))
+    }
+}
+
+impl FuncId {
+    pub fn lookup(self, db: &dyn db::IrDatabase) -> Arc<Func> {
+        db.lookup_intern_func(self)
+    }
+}
+
+impl Body {
+    pub fn intern(self, db: &dyn db::IrDatabase) -> BodyId {
+        db.intern_body(Arc::new(self))
+    }
+}
+
+impl BodyId {
+    pub fn lookup(self, db: &dyn db::IrDatabase) -> Arc<Body> {
+        db.lookup_intern_body(self)
+    }
+}
+
 impl salsa::InternKey for TypeDefId {
     fn from_intern_id(v: salsa::InternId) -> Self {
         Self(v)
@@ -329,31 +351,23 @@ impl salsa::InternKey for TypeDefId {
     }
 }
 
-impl Index<FuncId> for Module {
-    type Output = Func;
+impl salsa::InternKey for FuncId {
+    fn from_intern_id(v: salsa::InternId) -> Self {
+        Self(v)
+    }
 
-    fn index(&self, id: FuncId) -> &Self::Output {
-        &self.funcs[id.0]
+    fn as_intern_id(&self) -> salsa::InternId {
+        self.0
     }
 }
 
-impl IndexMut<FuncId> for Module {
-    fn index_mut(&mut self, id: FuncId) -> &mut Self::Output {
-        &mut self.funcs[id.0]
+impl salsa::InternKey for BodyId {
+    fn from_intern_id(v: salsa::InternId) -> Self {
+        Self(v)
     }
-}
 
-impl Index<BodyId> for Module {
-    type Output = Body;
-
-    fn index(&self, id: BodyId) -> &Self::Output {
-        &self.bodies[id.0]
-    }
-}
-
-impl IndexMut<BodyId> for Module {
-    fn index_mut(&mut self, id: BodyId) -> &mut Self::Output {
-        &mut self.bodies[id.0]
+    fn as_intern_id(&self) -> salsa::InternId {
+        self.0
     }
 }
 
