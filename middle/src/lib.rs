@@ -112,6 +112,7 @@ impl<B: Backend> State<B> {
             match lookup.kind {
                 | TypeKind::Box(..) => todo!(),
                 | TypeKind::Def(id, _) => self.def_to_ti[&id],
+                | TypeKind::Tuple(ref _tys) => todo!(),
                 | _ => unimplemented!(),
             }
         }

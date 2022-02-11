@@ -43,7 +43,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
                 [Val::new_val(res, layout)]
             }
 
-            | lt_i8 | lt_i16| lt_i32 | lt_i64 | lt_i128 => (lhs, rhs) {
+            | lt_i8 | lt_i16 | lt_i32 | lt_i64 | lt_i128 => (lhs, rhs) {
                 let lhs = lhs.load(self);
                 let rhs = rhs.load(self);
                 let cmp = self.bcx.ins().icmp(clif::IntCC::SignedLessThan, lhs, rhs);

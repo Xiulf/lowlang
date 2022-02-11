@@ -314,7 +314,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
     fn lower_term(&mut self, term: &ir::Term) {
         match *term {
             | ir::Term::Unreachable => {
-                self.bcx.ins().trap(clif::TrapCode::UnreachableCodeReached);
+                self.unreachable("unreachable code reached\0");
             },
             | ir::Term::Return { ref vals } => {
                 let vals = vals
@@ -411,7 +411,13 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
 
                 match kind {
                     | BoxKind::None => {
-                        let val = self.vars[boxed.0].clone().load(self);
+                        let val = self.vars[boxed.0].clone();
+                        let ptr = self.db.layout_of(ty.ptr(self.db));
+                        let addr = val.clone().cast(ptr);
+
+                        self.drop_addr(addr, ty);
+
+                        let val = val.load(self);
 
                         self.call_free(val);
                     },

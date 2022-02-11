@@ -132,7 +132,6 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
     pub fn drop_addr(&mut self, addr: Val, ty: ir::ty::Ty) {
         let lookup = ty.lookup(self.db);
         let ptr_type = self.cx.module.target_config().pointer_type();
-        let addr = addr.load(self);
 
         if let typ::Var(var) = lookup.kind {
             let info = self.generic_params[var.idx()].clone();
@@ -143,11 +142,25 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
 
             let drop_sig = self.bcx.import_signature(drop_sig);
             let info = info.as_ptr().get_addr(self);
+            let addr = addr.load(self);
 
             self.bcx.ins().call_indirect(drop_sig, drop_fn, &[addr, info]);
         } else if !lookup.flags.is_set(Flags::TRIVIAL) {
             match lookup.kind {
                 | TypeKind::Box(..) => todo!(),
+                | TypeKind::Tuple(ref tys) => {
+                    let ptr = addr.as_ptr();
+                    let pointee = addr.layout().pointee(self.db);
+
+                    for i in 0..tys.len() {
+                        let ty = pointee.field(self.db, i).ty;
+                        let layout = self.db.layout_of(ty.ptr(self.db));
+                        let field = self.dynamic_offset(ptr, &pointee, i);
+                        let field = Val::new_addr(field, layout);
+
+                        self.drop_addr(field, ty);
+                    }
+                },
                 | _ => {
                     let mut mcx = self.cx.middle_ctx();
                     let id = self.cx.middle.info_of(&mut mcx, self.db, ty);
@@ -161,6 +174,7 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
 
                     let drop_fn = self.cx.module.declare_func_in_func(drop_fn, &mut self.bcx.func);
                     let info = self.get_type_info(ty).as_ptr().get_addr(self);
+                    let addr = addr.load(self);
 
                     self.bcx.ins().call(drop_fn, &[addr, info]);
                 },

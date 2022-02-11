@@ -17,7 +17,5 @@ entry(argc : $i32, argv : $**u8):
 body test <type T> {
 
 entry:
-    x = box_alloc none $(i32, T)
-    box_free x
     return
 }

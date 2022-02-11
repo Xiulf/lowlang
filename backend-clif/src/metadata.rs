@@ -120,29 +120,6 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
         val
     }
 
-    // pub fn get_trivial_meta(&mut self, size: u64) -> Option<Val> {
-    //     let ptr_type = self.module.target_config().pointer_type();
-    //     let trivial_metas = self.cx.trivial_metas();
-    //     let idx = match size {
-    //         | 0 => 0,
-    //         | 1 => 1,
-    //         | 2 => 2,
-    //         | 4 => 3,
-    //         | 8 => 4,
-    //         | 16 => 5,
-    //         | _ => return None,
-    //     };
-
-    //     let typ = self.typ();
-    //     let layout = self.db.layout_of(typ);
-    //     let gv = self.cx.module.declare_data_in_func(trivial_metas, &mut self.bcx.func);
-    //     let addr = self.bcx.ins().global_value(ptr_type, gv);
-    //     let addr = self.bcx.ins().iadd_imm(addr, layout.stride.bytes() as i64 * idx);
-    //     let layout = self.db.layout_of(typ.ptr(self.db));
-
-    //     Some(Val::new_val(addr, layout))
-    // }
-
     pub fn dynamic_size(&mut self, mut value: clif::Value, ty: ir::ty::Ty) -> clif::Value {
         if let Some(val) = self.cache.size_of.get(&ty) {
             return *val;
@@ -151,10 +128,12 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
         let mut changed = false;
 
         for i in 0..self.body.generic_params.len() {
-            let count = ty.var_count(self.db, GenericVar(0, i as u8));
+            let var = GenericVar(0, i as u8);
+            let count = ty.var_count(self.db, var);
 
             if count > 0 {
-                let stride = self.get_vwt_field(ty, 2).load(self);
+                let var = Ty::new(self.db, typ::Var(var), Flags::EMPTY);
+                let stride = self.get_vwt_field(var, 2).load(self);
 
                 if count > 1 {
                     let stride = self.bcx.ins().imul_imm(stride, count as i64);
@@ -199,17 +178,19 @@ impl<'a, 'db, 'ctx> BodyCtx<'a, 'db, 'ctx> {
             let mut offset = Size::ZERO;
 
             for (i, j) in inverse_index.into_iter().enumerate() {
+                offset = offsets[i];
+
                 if j == field {
                     break;
                 }
 
-                offset = offsets[i];
-
                 for g in 0..self.body.generic_params.len() {
-                    let count = fields[j].var_count(self.db, GenericVar(0, g as u8));
+                    let var = GenericVar(0, g as u8);
+                    let count = fields[j].var_count(self.db, var);
 
                     if count > 0 {
-                        let stride = self.get_vwt_field(fields[j], 2).load(self);
+                        let var = Ty::new(self.db, typ::Var(var), Flags::EMPTY);
+                        let stride = self.get_vwt_field(var, 2).load(self);
 
                         if count > 1 {
                             let stride = self.bcx.ins().imul_imm(stride, count as i64);
