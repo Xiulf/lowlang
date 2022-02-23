@@ -335,7 +335,7 @@ impl Signature {
 
     pub fn ret(mut self, db: &dyn IrDatabase, ty: Ty) -> Self {
         let flags = match ty.pass_indirectly(db) {
-            | true => Flags::IN,
+            | true => Flags::OUT,
             | false => Flags::EMPTY,
         };
 

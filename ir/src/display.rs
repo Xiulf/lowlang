@@ -146,7 +146,7 @@ impl fmt::Display for IrDisplay<'_, TypeDefBody> {
                 writeln!(f, "struct {{")?;
 
                 for field in fields {
-                    writeln!(f, "    {},", field.display(db))?;
+                    writeln!(f, "\t\t{},", field.display(db))?;
                 }
 
                 write!(f, "}}")
@@ -155,7 +155,7 @@ impl fmt::Display for IrDisplay<'_, TypeDefBody> {
                 writeln!(f, "union {{")?;
 
                 for field in fields {
-                    writeln!(f, "    {},", field.display(db))?;
+                    writeln!(f, "\t\t{},", field.display(db))?;
                 }
 
                 write!(f, "}}")
@@ -164,7 +164,7 @@ impl fmt::Display for IrDisplay<'_, TypeDefBody> {
                 writeln!(f, "enum {{")?;
 
                 for variant in variants {
-                    writeln!(f, "    {},", variant.display(db))?;
+                    writeln!(f, "\t\t{},", variant.display(db))?;
                 }
 
                 write!(f, "}}")
@@ -278,11 +278,11 @@ impl fmt::Display for BodyDisplay<'_, BlockData> {
         writeln!(f, ":")?;
 
         for instr in &self.t.instrs {
-            writeln!(f, "    {}", instr.display(self.db, self.body))?;
+            writeln!(f, "\t{}", instr.display(self.db, self.body))?;
         }
 
         if let Some(term) = &self.t.term {
-            writeln!(f, "    {}", term.display(self.db, self.body))
+            writeln!(f, "\t{}", term.display(self.db, self.body))
         } else {
             Ok(())
         }
