@@ -59,17 +59,17 @@ impl fmt::Display for IrDisplay<'_, Module> {
         for local in &this.types {
             let type_ = local.id.lookup(db);
 
-            writeln!(f, "\t{} {}\t({})", local.linkage, type_.display(db), local.id)?;
+            writeln!(f, "\t({}) {} {}", local.id, local.linkage, type_.display(db))?;
         }
 
-        if !this.types.is_empty() {
+        if !this.types.is_empty() && !this.funcs.is_empty() {
             writeln!(f)?;
         }
 
         for local in &this.funcs {
             let func = local.id.lookup(db);
 
-            writeln!(f, "\t{} {}\t({})", local.linkage, func.display(db), local.id)?;
+            writeln!(f, "\t({}) {} {}", local.id, local.linkage, func.display(db))?;
         }
 
         write!(f, "}}")
