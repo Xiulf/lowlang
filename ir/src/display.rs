@@ -143,28 +143,28 @@ impl fmt::Display for IrDisplay<'_, TypeDefBody> {
 
         match this {
             | TypeDefBody::Struct { fields } => {
-                writeln!(f, "struct {{")?;
+                write!(f, "struct {{")?;
 
                 for field in fields {
-                    writeln!(f, "\t\t{},", field.display(db))?;
+                    write!(f, "{}, ", field.display(db))?;
                 }
 
                 write!(f, "}}")
             },
             | TypeDefBody::Union { fields } => {
-                writeln!(f, "union {{")?;
+                write!(f, "union {{")?;
 
                 for field in fields {
-                    writeln!(f, "\t\t{},", field.display(db))?;
+                    write!(f, "{}, ", field.display(db))?;
                 }
 
                 write!(f, "}}")
             },
             | TypeDefBody::Enum { variants } => {
-                writeln!(f, "enum {{")?;
+                write!(f, "enum {{")?;
 
                 for variant in variants {
-                    writeln!(f, "\t\t{},", variant.display(db))?;
+                    write!(f, "{}, ", variant.display(db))?;
                 }
 
                 write!(f, "}}")
