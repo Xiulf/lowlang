@@ -143,7 +143,7 @@ impl fmt::Display for IrDisplay<'_, TypeDefBody> {
 
         match this {
             | TypeDefBody::Struct { fields } => {
-                write!(f, "struct {{")?;
+                write!(f, "struct {{ ")?;
 
                 for field in fields {
                     write!(f, "{}, ", field.display(db))?;
@@ -152,7 +152,7 @@ impl fmt::Display for IrDisplay<'_, TypeDefBody> {
                 write!(f, "}}")
             },
             | TypeDefBody::Union { fields } => {
-                write!(f, "union {{")?;
+                write!(f, "union {{ ")?;
 
                 for field in fields {
                     write!(f, "{}, ", field.display(db))?;
@@ -161,7 +161,7 @@ impl fmt::Display for IrDisplay<'_, TypeDefBody> {
                 write!(f, "}}")
             },
             | TypeDefBody::Enum { variants } => {
-                write!(f, "enum {{")?;
+                write!(f, "enum {{ ")?;
 
                 for variant in variants {
                     write!(f, "{}, ", variant.display(db))?;
