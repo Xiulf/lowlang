@@ -49,11 +49,7 @@ impl Transform for LifetimeAnnotator {
 
             if let ir::LocalKind::Var | ir::LocalKind::Tmp = body.locals[ann.local].kind {
                 let block = &mut body.blocks[ann.loc.block];
-                let stmt = if ann.state {
-                    ir::Stmt::Init(ann.local)
-                } else {
-                    ir::Stmt::Drop(ann.local)
-                };
+                let stmt = if ann.state { ir::Stmt::Init(ann.local) } else { ir::Stmt::Drop(ann.local) };
 
                 if ann.loc.stmt == block.stmts.len() {
                     block.stmts.push(stmt);
@@ -129,11 +125,7 @@ impl LifetimeAnalyzer {
         let data = &body.blocks[block];
 
         for (i, stmt) in data.stmts.iter().enumerate() {
-            let loc = ir::Location {
-                body: body.id,
-                stmt: i,
-                block,
-            };
+            let loc = ir::Location { body: body.id, stmt: i, block };
 
             match stmt {
                 ir::Stmt::Init(_) => {}
@@ -216,15 +208,17 @@ impl LifetimeAnalyzer {
 
         match &data.term {
             ir::Term::Switch(op, _, _) => {
-                self.op_lifetime(
-                    op,
-                    ir::Location {
-                        body: body.id,
-                        block: end.unwrap(),
-                        stmt: 0,
-                    },
-                    false,
-                );
+                if let Some(end) = end {
+                    self.op_lifetime(
+                        op,
+                        ir::Location {
+                            body: body.id,
+                            block: end,
+                            stmt: 0,
+                        },
+                        false,
+                    );
+                }
             }
             _ => {}
         }
@@ -272,12 +266,7 @@ impl LifetimeAnalyzer {
         }
     }
 
-    fn find_vars_block(
-        body: &ir::Body,
-        block: ir::Block,
-        end: Option<ir::Block>,
-        vars: &mut HashSet<ir::Local>,
-    ) {
+    fn find_vars_block(body: &ir::Body, block: ir::Block, end: Option<ir::Block>, vars: &mut HashSet<ir::Local>) {
         if Some(block) == end {
             return;
         }

@@ -9,4 +9,5 @@ members = [
     "assemble",
     "lowc",
     "umbrella",
+    "runtime",
 ]

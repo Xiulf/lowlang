@@ -8,6 +8,7 @@ pub fn evaluate(module: &Module, body: &Body, target: &target_lexicon::Triple) -
     eval_ctx.finish()
 }
 
+#[allow(dead_code)]
 pub struct EvalCtx<'ir> {
     module: &'ir Module,
     body: &'ir Body,
@@ -29,21 +30,14 @@ impl<'ir> EvalCtx<'ir> {
             module,
             body,
             target,
-            locals: body
-                .locals
-                .iter()
-                .map(|l| Const::Undefined(l.ty.clone()))
-                .collect(),
+            locals: body.locals.iter().map(|l| Const::Undefined(l.ty.clone())).collect(),
             current_block: body.blocks.first().unwrap().id,
             status: EvalStatus::Busy,
         }
     }
 
     pub fn finish(self) -> Vec<Const> {
-        self.body
-            .rets()
-            .map(|r| self.locals[r.id].clone())
-            .collect()
+        self.body.rets().map(|r| self.locals[r.id].clone()).collect()
     }
 
     pub fn eval(&mut self) {

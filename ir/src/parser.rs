@@ -17,18 +17,11 @@ pub fn parse(src: &str) -> Result<Module, String> {
         } else if peek_body(&tokens, i) {
             i = parse_body(&tokens, i, &decls, &mut bodies)?;
         } else {
-            return Err(format!(
-                "Expected end of input, found {:?} at {}",
-                tokens[i], i
-            ));
+            return Err(format!("Expected end of input, found {:?} at {}", tokens[i], i));
         }
     }
 
-    Ok(Module {
-        decls,
-        impls,
-        bodies,
-    })
+    Ok(Module { decls, impls, bodies })
 }
 
 macro_rules! expect {
@@ -59,27 +52,20 @@ fn peek_decl(tokens: &[Token], i: usize) -> bool {
     }
 }
 
-fn parse_decl(
-    tokens: &[Token],
-    i: usize,
-    decls: &mut IndexVec<DeclId, Decl>,
-) -> Result<usize, String> {
+fn parse_decl(tokens: &[Token], i: usize, decls: &mut IndexVec<DeclId, Decl>) -> Result<usize, String> {
     let (linkage, i) = parse_linkage(tokens, i)?;
     let (name, i) = parse_declid(tokens, i)?;
     let i = expect!(tokens, i, Token::DblColon);
     let (ty, i) = parse_type(tokens, i)?;
     let id = decls.next_idx();
 
-    decls.insert(
+    decls.insert(id, Decl {
         id,
-        Decl {
-            id,
-            linkage,
-            name,
-            ty,
-            attrs: Attrs::default(),
-        },
-    );
+        linkage,
+        name,
+        ty,
+        attrs: Attrs::default(),
+    });
 
     Ok(i)
 }
@@ -107,12 +93,7 @@ fn peek_impl(tokens: &[Token], i: usize) -> bool {
     }
 }
 
-fn parse_impl(
-    tokens: &[Token],
-    i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-    impls: &mut IndexVec<ImplId, Impl>,
-) -> Result<usize, String> {
+fn parse_impl(tokens: &[Token], i: usize, decls: &IndexVec<DeclId, Decl>, impls: &mut IndexVec<ImplId, Impl>) -> Result<usize, String> {
     let (name, i) = parse_ident(tokens, i + 1)?;
     let mut i = expect!(tokens, i, Token::LBrace);
     let mut entries = Vec::new();
@@ -132,12 +113,7 @@ fn parse_impl(
     Ok(i)
 }
 
-fn parse_impl_entry(
-    tokens: &[Token],
-    i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-    impls: &IndexVec<ImplId, Impl>,
-) -> Result<(ImplEntry, usize), String> {
+fn parse_impl_entry(tokens: &[Token], i: usize, decls: &IndexVec<DeclId, Decl>, impls: &IndexVec<ImplId, Impl>) -> Result<(ImplEntry, usize), String> {
     match &tokens[i] {
         Token::Identifier(id) => match id.as_str() {
             "base" => {
@@ -178,12 +154,7 @@ fn peek_body(tokens: &[Token], i: usize) -> bool {
     }
 }
 
-fn parse_body(
-    tokens: &[Token],
-    i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-    bodies: &mut IndexVec<BodyId, Body>,
-) -> Result<usize, String> {
+fn parse_body(tokens: &[Token], i: usize, decls: &IndexVec<DeclId, Decl>, bodies: &mut IndexVec<BodyId, Body>) -> Result<usize, String> {
     let (name, i) = parse_declid(tokens, i + 1)?;
     let decl = if let Some(decl) = decls.iter().find(|d| d.name == name) {
         decl.id
@@ -208,15 +179,7 @@ fn parse_body(
     let i = expect!(tokens, i, Token::RBrace);
     let id = bodies.next_idx();
 
-    bodies.insert(
-        id,
-        Body {
-            id,
-            decl,
-            locals,
-            blocks,
-        },
-    );
+    bodies.insert(id, Body { id, decl, locals, blocks });
 
     Ok(i)
 }
@@ -231,12 +194,7 @@ fn peek_local(tokens: &[Token], i: usize) -> bool {
     }
 }
 
-fn parse_local(
-    tokens: &[Token],
-    i: usize,
-    locals: &mut IndexVec<Local, LocalData>,
-    local_ids: &mut HashMap<String, Local>,
-) -> Result<usize, String> {
+fn parse_local(tokens: &[Token], i: usize, locals: &mut IndexVec<Local, LocalData>, local_ids: &mut HashMap<String, Local>) -> Result<usize, String> {
     let (kind, i) = parse_local_kind(tokens, i)?;
     let (name, i) = parse_local_name(tokens, i)?;
     let i = expect!(tokens, i, Token::DblColon);
@@ -322,12 +280,7 @@ fn peek_term(tokens: &[Token], i: usize) -> bool {
     }
 }
 
-fn parse_stmt(
-    tokens: &[Token],
-    i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-    locals: &HashMap<String, Local>,
-) -> Result<(Stmt, usize), String> {
+fn parse_stmt(tokens: &[Token], i: usize, decls: &IndexVec<DeclId, Decl>, locals: &HashMap<String, Local>) -> Result<(Stmt, usize), String> {
     if peek!(tokens, i, Token::Identifier(id) if id == "call") {
         let (func, i) = parse_operand(tokens, i + 1, decls, locals)?;
         let mut i = expect!(tokens, i, Token::LParen);
@@ -371,12 +324,7 @@ fn parse_stmt(
     }
 }
 
-fn parse_term(
-    tokens: &[Token],
-    i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-    locals: &HashMap<String, Local>,
-) -> Result<(Term, usize), String> {
+fn parse_term(tokens: &[Token], i: usize, decls: &IndexVec<DeclId, Decl>, locals: &HashMap<String, Local>) -> Result<(Term, usize), String> {
     match &tokens[i] {
         Token::Identifier(id) => match id.as_str() {
             "abort" => Ok((Term::Abort, i + 1)),
@@ -392,9 +340,7 @@ fn parse_term(
                 let mut vals = Vec::new();
                 let mut blocks = Vec::new();
 
-                while i < tokens.len()
-                    && !peek!(tokens, i, Token::Identifier(id) if id == "otherwise")
-                {
+                while i < tokens.len() && !peek!(tokens, i, Token::Identifier(id) if id == "otherwise") {
                     let (val, next_i) = parse_scalar(tokens, i)?;
                     let next_i = expect!(tokens, next_i, Token::Comma);
                     let (block, next_i) = parse_block_id(tokens, next_i)?;
@@ -417,12 +363,7 @@ fn parse_term(
     }
 }
 
-fn parse_rvalue(
-    tokens: &[Token],
-    i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-    locals: &HashMap<String, Local>,
-) -> Result<(RValue, usize), String> {
+fn parse_rvalue(tokens: &[Token], i: usize, decls: &IndexVec<DeclId, Decl>, locals: &HashMap<String, Local>) -> Result<(RValue, usize), String> {
     if peek!(tokens, i, Token::Identifier(id) if id == "addrof") {
         let (place, i) = parse_place(tokens, i + 1, decls, locals)?;
 
@@ -452,12 +393,7 @@ fn parse_rvalue(
     }
 }
 
-fn parse_operand(
-    tokens: &[Token],
-    i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-    locals: &HashMap<String, Local>,
-) -> Result<(Operand, usize), String> {
+fn parse_operand(tokens: &[Token], i: usize, decls: &IndexVec<DeclId, Decl>, locals: &HashMap<String, Local>) -> Result<(Operand, usize), String> {
     if peek_place(tokens, i) {
         let (p, i) = parse_place(tokens, i, decls, locals)?;
 
@@ -478,12 +414,7 @@ fn peek_place(tokens: &[Token], i: usize) -> bool {
     }
 }
 
-fn parse_place(
-    tokens: &[Token],
-    i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-    locals: &HashMap<String, Local>,
-) -> Result<(Place, usize), String> {
+fn parse_place(tokens: &[Token], i: usize, decls: &IndexVec<DeclId, Decl>, locals: &HashMap<String, Local>) -> Result<(Place, usize), String> {
     fn rec(
         tokens: &[Token],
         i: usize,
@@ -531,11 +462,7 @@ fn parse_place(
     Ok((Place { local, elems }, i))
 }
 
-fn parse_const(
-    tokens: &[Token],
-    mut i: usize,
-    decls: &IndexVec<DeclId, Decl>,
-) -> Result<(Const, usize), String> {
+fn parse_const(tokens: &[Token], mut i: usize, decls: &IndexVec<DeclId, Decl>) -> Result<(Const, usize), String> {
     if let Token::LParen = tokens[i] {
         let mut cs = Vec::new();
 
@@ -582,7 +509,7 @@ fn parse_type(tokens: &[Token], i: usize) -> Result<(Ty, usize), String> {
 fn parse_type_union(tokens: &[Token], i: usize) -> Result<(Type, usize), String> {
     let (ty, mut i) = parse_type_func(tokens, i)?;
     let mut tys = vec![Ty::new(ty)];
-    let mut tagged = false;
+    let tagged = false;
 
     while i < tokens.len() {
         match tokens[i] {
@@ -615,16 +542,10 @@ fn parse_type_func(tokens: &[Token], i: usize) -> Result<(Type, usize), String> 
             if let Type::Tuple(rets) = right {
                 Ok((Type::Func(Signature { params, rets }), i))
             } else {
-                Err(format!(
-                    "Right hand side of a function arrow must be a list of types at {}",
-                    i
-                ))
+                Err(format!("Right hand side of a function arrow must be a list of types at {}", i))
             }
         } else {
-            Err(format!(
-                "Left hand side of a function arrow must be a list of types at {}",
-                i
-            ))
+            Err(format!("Left hand side of a function arrow must be a list of types at {}", i))
         }
     } else {
         Ok((left, i))

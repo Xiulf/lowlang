@@ -57,17 +57,13 @@ pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
             ptr.valid_range = 1..=*ptr.valid_range.end();
             Layout::scalar(ptr, target)
         }
-        Type::Tuple(tys) => {
-            struct_layout(tys.iter().map(|t| layout_of(t, target)).collect(), target)
-        }
+        Type::Tuple(tys) => struct_layout(tys.iter().map(|t| layout_of(t, target)).collect(), target),
         Type::Opaque(_) => Layout {
             size: Size::ZERO,
             align: Align::from_bytes(1),
             stride: Size::ZERO,
             abi: Abi::Aggregate { sized: false },
-            fields: FieldsShape::Arbitrary {
-                offsets: Vec::new(),
-            },
+            fields: FieldsShape::Arbitrary { offsets: Vec::new() },
             variants: Variants::Single { index: 0 },
             largest_niche: None,
         },
@@ -108,10 +104,7 @@ pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
             }
         }
         Type::Tagged(tys) => {
-            let lyts = tys
-                .iter()
-                .map(|t| layout_of(t, target).layout)
-                .collect::<Vec<_>>();
+            let lyts = tys.iter().map(|t| layout_of(t, target).layout).collect::<Vec<_>>();
 
             enum_layout(lyts, target)
         }
@@ -136,10 +129,7 @@ pub fn layout_of(ty: &Ty, target: &Triple) -> TyLayout {
         layout.abi = abi.clone();
     }
 
-    TyLayout {
-        ty: ty.clone(),
-        layout,
-    }
+    TyLayout { ty: ty.clone(), layout }
 }
 
 fn struct_layout(fields: Vec<TyLayout>, target: &Triple) -> Layout {
@@ -178,9 +168,7 @@ fn struct_layout(fields: Vec<TyLayout>, target: &Triple) -> Layout {
 fn enum_layout(mut variants: Vec<Layout>, target: &Triple) -> Layout {
     if variants.is_empty() {
         Layout {
-            fields: FieldsShape::Arbitrary {
-                offsets: Vec::new(),
-            },
+            fields: FieldsShape::Arbitrary { offsets: Vec::new() },
             variants: Variants::Single { index: 0 },
             largest_niche: None,
             abi: Abi::Aggregate { sized: true },
@@ -232,15 +220,12 @@ fn enum_layout(mut variants: Vec<Layout>, target: &Triple) -> Layout {
                 }
             }
 
-            (
-                FieldsShape::Arbitrary { offsets },
-                Variants::Multiple {
-                    tag,
-                    tag_encoding,
-                    variants,
-                    tag_field: 0,
-                },
-            )
+            (FieldsShape::Arbitrary { offsets }, Variants::Multiple {
+                tag,
+                tag_encoding,
+                variants,
+                tag_field: 0,
+            })
         };
 
         let (fields, variants) = if let Some(niche) = largest_niche {
@@ -410,9 +395,7 @@ impl TyLayout {
                 align: Align::from_bytes(1),
                 stride: Size::ZERO,
                 abi: Abi::Aggregate { sized: true },
-                fields: FieldsShape::Arbitrary {
-                    offsets: Vec::new(),
-                },
+                fields: FieldsShape::Arbitrary { offsets: Vec::new() },
                 variants: Variants::Single { index: 0 },
                 largest_niche: None,
             },
@@ -431,7 +414,7 @@ impl TyLayout {
         }
     }
 
-    pub fn element(&self, target: &Triple) -> Self {
+    pub fn element(&self, _target: &Triple) -> Self {
         unimplemented!();
     }
 
@@ -439,24 +422,24 @@ impl TyLayout {
         assert!(field < self.fields.count());
 
         let ty = match &self.ty.access().kind {
-            Type::U8
-            | Type::U16
-            | Type::U32
-            | Type::U64
-            | Type::U128
-            | Type::I8
-            | Type::I16
-            | Type::I32
-            | Type::I64
-            | Type::I128
-            | Type::F32
-            | Type::F64
-            | Type::Ptr(_)
-            | Type::Box(_)
-            | Type::Func(_)
-            | Type::Opaque(_)
-            | Type::Discr(_)
-            | Type::Recurse(_) => unreachable!(),
+            Type::U8 |
+            Type::U16 |
+            Type::U32 |
+            Type::U64 |
+            Type::U128 |
+            Type::I8 |
+            Type::I16 |
+            Type::I32 |
+            Type::I64 |
+            Type::I128 |
+            Type::F32 |
+            Type::F64 |
+            Type::Ptr(_) |
+            Type::Box(_) |
+            Type::Func(_) |
+            Type::Opaque(_) |
+            Type::Discr(_) |
+            Type::Recurse(_) => unreachable!(),
             Type::Type(t) => match field {
                 0 => ptr_sized_int(target),
                 1 => ptr_sized_int(target),
@@ -473,10 +456,7 @@ impl TyLayout {
             Type::Tuple(tys) => tys[field].clone(),
             Type::Union(tys) => tys[field].clone(),
             Type::Tagged(tys) => match self.variants {
-                Variants::Single { index } => layout_of(&tys[index], target)
-                    .field(field, target)
-                    .ty
-                    .clone(),
+                Variants::Single { index } => layout_of(&tys[index], target).field(field, target).ty.clone(),
                 Variants::Multiple { ref tag, .. } => {
                     assert_eq!(field, 0);
 
@@ -493,11 +473,7 @@ impl TyLayout {
 
     pub fn variant(&self, variant: usize) -> Self {
         let layout = match self.variants {
-            Variants::Single { index }
-                if variant == index && self.fields != FieldsShape::Primitive =>
-            {
-                self.layout.clone()
-            }
+            Variants::Single { index } if variant == index && self.fields != FieldsShape::Primitive => self.layout.clone(),
             Variants::Single { index } => {
                 let fields = match &self.ty {
                     // Type::Data(id) => db.variants(*id).len(),
@@ -508,9 +484,7 @@ impl TyLayout {
                 Layout {
                     variants: Variants::Single { index },
                     fields: if fields == 0 {
-                        FieldsShape::Arbitrary {
-                            offsets: Vec::new(),
-                        }
+                        FieldsShape::Arbitrary { offsets: Vec::new() }
                     } else {
                         FieldsShape::Union(fields)
                     },
@@ -524,10 +498,7 @@ impl TyLayout {
             Variants::Multiple { ref variants, .. } => variants[variant].clone(),
         };
 
-        TyLayout {
-            layout,
-            ty: self.ty.clone(),
-        }
+        TyLayout { layout, ty: self.ty.clone() }
     }
 }
 
@@ -616,11 +587,7 @@ impl FieldsShape {
 }
 
 impl Niche {
-    pub fn from_scalar(
-        triple: &target_lexicon::Triple,
-        offset: Size,
-        scalar: Scalar,
-    ) -> Option<Self> {
+    pub fn from_scalar(triple: &target_lexicon::Triple, offset: Size, scalar: Scalar) -> Option<Self> {
         let niche = Niche { offset, scalar };
 
         if niche.available(triple) > 0 {
@@ -631,10 +598,7 @@ impl Niche {
     }
 
     pub fn available(&self, triple: &target_lexicon::Triple) -> u128 {
-        let Scalar {
-            value,
-            valid_range: ref v,
-        } = self.scalar;
+        let Scalar { value, valid_range: ref v } = self.scalar;
         let bits = value.size(triple).bits();
         assert!(bits <= 128);
         let max_value = !0u128 >> (128 - bits);
@@ -645,10 +609,7 @@ impl Niche {
 
     pub fn reserve(&self, triple: &target_lexicon::Triple, count: u128) -> Option<(u128, Scalar)> {
         assert!(count > 0);
-        let Scalar {
-            value,
-            valid_range: ref v,
-        } = self.scalar;
+        let Scalar { value, valid_range: ref v } = self.scalar;
         let bits = value.size(triple).bits();
         assert!(bits <= 128);
         let max_value = !0u128 >> (128 - bits);
@@ -670,13 +631,10 @@ impl Niche {
         if valid_range_contains(end) {
             None
         } else {
-            Some((
-                start,
-                Scalar {
-                    value,
-                    valid_range: *v.start()..=end,
-                },
-            ))
+            Some((start, Scalar {
+                value,
+                valid_range: *v.start()..=end,
+            }))
         }
     }
 }
@@ -760,9 +718,7 @@ impl Add for Size {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        Size {
-            raw: self.raw + other.raw,
-        }
+        Size { raw: self.raw + other.raw }
     }
 }
 
@@ -770,9 +726,7 @@ impl Mul<u64> for Size {
     type Output = Self;
 
     fn mul(self, other: u64) -> Self {
-        Size {
-            raw: self.raw * other,
-        }
+        Size { raw: self.raw * other }
     }
 }
 
