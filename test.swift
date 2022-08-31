@@ -1,12 +1,14 @@
-struct Pair<T> {
-    let x: T;
-    let y: T;
+apply(a, 3);
+apply(b, "test");
+
+func apply<A, R>(_ f: (A) -> R, _ a: A) -> R {
+    return f(a);
 }
 
-func identity<T>(_ x: T) -> T {
-    return x;
+func a(_ a: Int32) -> Bool {
+    return a == 0;
 }
 
-func second<T>(_ pair: Pair<T>) -> T {
-    return identity(pair.y);
+func b<T>(_ a: T) -> Bool {
+    return true;
 }
